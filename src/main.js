@@ -130,6 +130,52 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// --- Size normalization ---------------------------------------------------
+// Scale so the mean of the inscribed- and circumscribed-sphere radii is held
+// constant: circumradius = farthest vertex from the origin, inradius =
+// nearest face plane to the origin (face-centre distance). Computed live from
+// the current triangle soup so the apparent size stays steady through every
+// morph instead of ballooning when a solid stellates outward.
+const TARGET_MEAN_RADIUS = 1.1;
+
+function meanRadius(pos) {
+  const N = pos.length;
+  let circum = 0;
+  for (let i = 0; i < N; i += 3) {
+    const d = Math.hypot(pos[i], pos[i + 1], pos[i + 2]);
+    if (d > circum) circum = d;
+  }
+  const eps = circum * 1e-3 + 1e-6;
+  let inr = Infinity;
+  for (let i = 0; i < N; i += 9) {
+    const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
+    const ux = pos[i + 3] - ax, uy = pos[i + 4] - ay, uz = pos[i + 5] - az;
+    const vx = pos[i + 6] - ax, vy = pos[i + 7] - ay, vz = pos[i + 8] - az;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const L = Math.hypot(nx, ny, nz);
+    if (L < 1e-9) continue; // skip collapsed/degenerate triangles
+    nx /= L; ny /= L; nz /= L;
+    let pd = ax * nx + ay * ny + az * nz; // signed origin -> plane distance
+    if (pd < 0) { pd = -pd; nx = -nx; ny = -ny; nz = -nz; } // orient outward
+    if (pd >= inr) continue; // can't lower the running minimum
+    // Only count true hull faces: a supporting plane has every vertex on its
+    // inner side. This rejects interior/folded triangles from vertex collapses,
+    // which would otherwise read a bogus near-zero inradius.
+    let supporting = true;
+    for (let j = 0; j < N; j += 3) {
+      if (pos[j] * nx + pos[j + 1] * ny + pos[j + 2] * nz > pd + eps) {
+        supporting = false;
+        break;
+      }
+    }
+    if (supporting) inr = pd;
+  }
+  if (!isFinite(inr)) inr = circum;
+  return (circum + inr) / 2;
+}
+
 // --- Render loop ----------------------------------------------------------
 const clock = new THREE.Clock();
 
@@ -147,6 +193,7 @@ function frame() {
   segments[idx].apply(t);
   label.textContent = timeline.label();
 
+  group.scale.setScalar(TARGET_MEAN_RADIUS / meanRadius(segments[idx].current));
   group.rotation.y += dt * 0.25; // gentle idle spin
 
   controls.update();
