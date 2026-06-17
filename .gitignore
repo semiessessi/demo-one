@@ -1,0 +1,10 @@
+# dependencies & build output
+node_modules/
+dist/
+
+# tooling caches
+.playwright-mcp/
+.serena/
+
+# local verification screenshots (root-level only; src/ assets are kept)
+/*.png

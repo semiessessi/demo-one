@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Platonic Solid Morph</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #050505;
+        overflow: hidden;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        color: #888;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      canvas {
+        display: block;
+      }
+
+      /* Bottom control bar */
+      #controls {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 14px 18px 12px;
+        width: min(640px, calc(100vw - 40px));
+        background: rgba(20, 20, 20, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 22px;
+        backdrop-filter: blur(8px);
+        user-select: none;
+      }
+      #row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      #playToggle {
+        flex: none;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        color: #ccc;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      #playToggle:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      #scrub {
+        flex: 1 1 auto;
+        accent-color: #9a9a9a;
+        cursor: pointer;
+      }
+      #label {
+        text-align: center;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        color: #9a9a9a;
+        height: 1em;
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="controls">
+      <div id="row">
+        <button id="playToggle" title="Play / pause" aria-label="Play or pause">❚❚</button>
+        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Scrub morph" />
+      </div>
+      <span id="label">tetrahedron</span>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
