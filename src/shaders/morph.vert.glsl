@@ -21,7 +21,7 @@ uniform float uTime;
 uniform float uSpawn; // spawn-in intro clock: objects scale up as it sweeps past their slot
 uniform float uScaleNotes; // pdx music-scale note counter (smoothed); objects pulse in size
 uniform sampler2D uMorphPTex; // per-object morph position (CPU note-stepped), indexed by aOrigIndex
-uniform int uMorphPTexW;
+uniform highp int uMorphPTexW; // highp: shared with the fragment stage, must match precision
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 

@@ -24,7 +24,7 @@ uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of 
 uniform float uMusicTime;       // music clock the beat timestamps are measured in
 uniform float uScaleNotes;      // pdx music-scale note counter (smoothed); objects pulse in size
 uniform sampler2D uMorphPTex;   // per-object morph position (CPU note-stepped), indexed by object id
-uniform int uMorphPTexW;
+uniform highp int uMorphPTexW;  // highp: shared with the vertex stage, must match precision
 uniform float uNumSegments;
 uniform float uNormScale[128];
 uniform float uMaxCircumradius; // occluder bounding radius = scale * this (cull)
