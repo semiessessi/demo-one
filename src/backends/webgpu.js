@@ -9,6 +9,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { buildMorphMesh } from '../gpu/morphMaterial.js';
 import { buildLightSprites } from '../gpu/spriteMaterial.js';
 import { createOrderCuller } from '../gpu/orderCull.js';
+import { createComputeCuller } from '../gpu/computeCull.js';
 
 // pdx night environment (kept identical to shaders/lib.glsl / morph env).
 const envColor = wgslFn(`
@@ -72,12 +73,22 @@ export async function createWebGPUBackend(data) {
   scene.add(morph.mesh);
   scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn));
 
-  // Per-frame frustum cull + near→far compaction (rewrites the order buffer + shrinks
-  // instanceCount the morph vertex shader draws).
-  const culler = createOrderCuller(data.objects, morph.orderArr, morph.orderAttr, morph.geometry);
+  // Per-frame frustum cull. Default: CPU order-buffer culler (reliable; same result
+  // + same perf as compute at these scales). ?computecull opts into the WIP fully
+  // GPU-driven compute cull + indirect draw (see gpu/computeCull.js — atomic compute
+  // pipeline currently fails to compile on three r171).
+  let cull;
+  if (params.has('computecull')) {
+    const cc = createComputeCuller(data.objects, morph.orderAttr);
+    cc.attach(morph.geometry);
+    cull = () => cc.update(renderer, camera);
+  } else {
+    const oc = createOrderCuller(data.objects, morph.orderArr, morph.orderAttr, morph.geometry);
+    cull = () => oc.cull(camera);
+  }
 
   if (params.has('debug')) {
-    window.__wgpu = { renderer, scene, camera, morphMesh: morph.mesh, culler };
+    window.__wgpu = { renderer, scene, camera, morphMesh: morph.mesh, cull };
   }
 
   // Post: bloom + ACES tone map (matches the WebGL EffectComposer chain).
@@ -110,7 +121,7 @@ export async function createWebGPUBackend(data) {
     },
     render() {
       if (flycam) flycam.update(camera);
-      culler.cull(camera); // frustum-cull + compact the instances for this view
+      cull(); // frustum-cull + compact the instances for this view
       postProcessing.render();
     },
   };
