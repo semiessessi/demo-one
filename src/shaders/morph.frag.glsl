@@ -17,6 +17,7 @@ uniform vec3 cameraPosition;
 uniform float uTime;
 uniform float uNumSegments;
 uniform float uNormScale[128];
+uniform float uMaxCircumradius; // occluder bounding radius = scale * this (cull)
 
 uniform sampler2D uLightsTex;
 uniform sampler2D uLightIndexTex;
@@ -125,9 +126,17 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   return false;
 }
 
+// Cheap ray-sphere reject (bounding radius = scale * uMaxCircumradius) skips the
+// full hull trace for occluders the shadow ray can't reach.
 float traceShadow(vec3 p, vec3 L, float distToLight) {
   for (int s = 0; s < vShadowCount; s++) {
     int oi = int(texelFetch(uShadowIndexTex, texel(vShadowOffset + s, uShadowIndexW), 0).r + 0.5);
+    vec4 t0 = texelFetch(uOccTransformTex, texel(oi * 4, uOccTransformTexW), 0);
+    vec3 D = t0.xyz - p;
+    float r = t0.w * uMaxCircumradius;
+    float t = dot(D, L);
+    float perp2 = dot(D, D) - t * t;
+    if (t <= -r || t >= distToLight + r || perp2 >= r * r) continue; // can't reach
     float tHit; vec3 nW;
     if (traceHull(oi, p, L, tHit, nW) && tHit > 1e-3 && tHit < distToLight) return 0.0;
   }
@@ -146,17 +155,29 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     vec3 L = lightPos - p;
     float dist = length(L);
     L /= max(dist, 1e-4);
+    float fall = falloff(dist, colRad.w);
+    float lum = max(colRad.r, max(colRad.g, colRad.b));
+    // skip lights that can't contribute: back-facing, out of radius, or dark
+    if (dot(N, L) <= 0.0 || fall <= 1e-6 || lum <= 0.0) continue;
     float shadow = (doShadow && k < SHADOW_LIGHTS) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
-    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * falloff(dist, colRad.w) * shadow;
+    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow;
   }
   return lit;
 }
 
-bool traceReflection(vec3 ro, vec3 rd, out float bestT, out vec3 bestN, out int bestObj) {
+// `N` is the reflecting surface normal: occluders behind the surface, behind the
+// reflection ray, or that the ray misses are culled before the full hull trace.
+bool traceReflection(vec3 ro, vec3 rd, vec3 N, out float bestT, out vec3 bestN, out int bestObj) {
   bestT = 1e9;
   bool hit = false;
   for (int s = 0; s < vReflCount; s++) {
     int oi = int(texelFetch(uReflIndexTex, texel(vReflOffset + s, uReflIndexW), 0).r + 0.5);
+    vec4 t0 = texelFetch(uOccTransformTex, texel(oi * 4, uOccTransformTexW), 0);
+    vec3 D = t0.xyz - ro;
+    float r = t0.w * uMaxCircumradius;
+    float t = dot(D, rd);
+    float perp2 = dot(D, D) - t * t;
+    if (dot(D, N) <= -r || t <= -r || perp2 >= r * r) continue; // behind surface/ray or missed
     float tHit; vec3 nW;
     if (traceHull(oi, ro, rd, tHit, nW) && tHit > 1e-3 && tHit < bestT) {
       bestT = tHit; bestN = nW; bestObj = oi; hit = true;
@@ -183,7 +204,7 @@ void main() {
 
     float ht; vec3 hN; int hObj;
     vec3 refl;
-    if (traceReflection(vWorldPos + N * 0.02, Rdir, ht, hN, hObj)) {
+    if (traceReflection(vWorldPos + N * 0.02, Rdir, N, ht, hN, hObj)) {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);

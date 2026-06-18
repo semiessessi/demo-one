@@ -9,7 +9,7 @@ import {
   Loop, If, Break, and,
   float, int, vec3, vec4, mix, max, length, normalize, dot, abs, pow, reflect,
 } from 'three/tsl';
-import { buildJourneySegments, NUM_SEGMENTS } from '../journey.js';
+import { buildJourneySegments, NUM_SEGMENTS, MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildNormScaleLUT } from '../normalize.js';
 import { buildPlaneData } from '../occluderData.js';
 import {
@@ -260,14 +260,24 @@ export function buildMorphMesh(data, uTime) {
   });
 
   // 0 if any occluder in the object's shadow list blocks the light, else 1.
+  // Cheap ray-sphere reject per occluder (bounding radius = scale * max circumradius)
+  // skips the full hull trace for occluders the shadow ray can't reach.
   const traceShadow = Fn(([p, L, distToLight, shadowOff, shadowCount]) => {
     const sh = float(1).toVar();
     Loop(shadowCount, ({ i }) => {
       const oi = uIndices.element(SHADOW_BASE.add(shadowOff).add(int(i))).add(0.5).floor().toInt();
-      const h = traceHull(oi, p, L);
-      If(and(h.w.greaterThan(1e-3), h.w.lessThan(distToLight)), () => {
-        sh.assign(0);
-        Break();
+      const D = uOccXf.element(oi.mul(4)); // center.xyz, scale
+      const r = D.w.mul(MAX_NORM_CIRCUMRADIUS);
+      const dc = D.xyz.sub(p);
+      const t = dot(dc, L);
+      const perp2 = dot(dc, dc).sub(t.mul(t));
+      // behind P, beyond the light, or the ray misses the bounding sphere -> skip
+      If(and(and(t.greaterThan(r.negate()), t.lessThan(distToLight.add(r))), perp2.lessThan(r.mul(r))), () => {
+        const h = traceHull(oi, p, L);
+        If(and(h.w.greaterThan(1e-3), h.w.lessThan(distToLight)), () => {
+          sh.assign(0);
+          Break();
+        });
       });
     });
     return sh;
@@ -295,14 +305,18 @@ export function buildMorphMesh(data, uTime) {
       const Lv = lpos.xyz.sub(p);
       const dist = length(Lv);
       const L = Lv.div(max(dist, 1e-4));
-      const shadow = float(1).toVar();
-      If(and(doShadow.greaterThan(0.5), int(i).lessThan(SHADOW_LIGHTS)), () => {
-        shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
+      const fall = wgFalloff(dist, colRad.w);
+      const lum = max(colRad.x, max(colRad.y, colRad.z));
+      // skip lights that can't contribute: back-facing, out of radius, or dark
+      If(and(and(dot(N, L).greaterThan(0), fall.greaterThan(1e-6)), lum.greaterThan(0)), () => {
+        const shadow = float(1).toVar();
+        If(and(doShadow.greaterThan(0.5), int(i).lessThan(SHADOW_LIGHTS)), () => {
+          shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
+        });
+        lit.addAssign(
+          wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow),
+        );
       });
-      lit.addAssign(
-        wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist)
-          .mul(colRad.xyz).mul(wgFalloff(dist, colRad.w)).mul(shadow),
-      );
     });
     return lit;
   }).setLayout({
@@ -380,14 +394,23 @@ export function buildMorphMesh(data, uTime) {
       const bestN = vec3(0).toVar();
       const bestObj = int(0).toVar();
       const hit = float(0).toVar();
+      const ro = P.add(N.mul(0.02));
       Loop(reflCount, ({ i }) => {
         const oi = uIndices.element(REFL_BASE.add(reflOff).add(int(i))).add(0.5).floor().toInt();
-        const h = traceHull(oi, P.add(N.mul(0.02)), Rdir);
-        If(and(h.w.greaterThan(1e-3), h.w.lessThan(bestT)), () => {
-          bestT.assign(h.w);
-          bestN.assign(h.xyz);
-          bestObj.assign(oi);
-          hit.assign(1);
+        const D = uOccXf.element(oi.mul(4)); // center.xyz, scale
+        const r = D.w.mul(MAX_NORM_CIRCUMRADIUS);
+        const dc = D.xyz.sub(ro);
+        const t = dot(dc, Rdir);
+        const perp2 = dot(dc, dc).sub(t.mul(t));
+        // behind the surface, behind the reflection ray, or the ray misses -> skip
+        If(and(and(dot(dc, N).greaterThan(r.negate()), t.greaterThan(r.negate())), perp2.lessThan(r.mul(r))), () => {
+          const h = traceHull(oi, ro, Rdir);
+          If(and(h.w.greaterThan(1e-3), h.w.lessThan(bestT)), () => {
+            bestT.assign(h.w);
+            bestN.assign(h.xyz);
+            bestObj.assign(oi);
+            hit.assign(1);
+          });
         });
       });
 

@@ -18,6 +18,7 @@ import {
 } from '../instancedMorph.js';
 import { buildLightSprites } from '../lightSprites.js';
 import { buildNormScaleLUT } from '../normalize.js';
+import { MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
 
 // The original WebGL2 path (RawShaderMaterials + DataTextures + EffectComposer),
@@ -58,6 +59,7 @@ export function createWebGLBackend({
     uTime: { value: 0 },
     uNumSegments: { value: NUM_SEGMENTS },
     uNormScale: { value: buildNormScaleLUT() },
+    uMaxCircumradius: { value: MAX_NORM_CIRCUMRADIUS },
     uLightsTex: { value: lightTex.lightsTex },
     uLightsTexW: { value: lightTex.lightsTexW },
     uLightIndexTex: { value: lightTex.lightIndexTex },
