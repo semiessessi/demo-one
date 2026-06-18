@@ -6,10 +6,16 @@ import { floatTexture } from './textures.js';
 // occluder's current hull from the per-segment face planes + the occluder's
 // transform + its phase.
 
-// Offset that puts a face plane outside the shape so it doesn't constrain the
-// hull (used for faces that fade in/out across a segment). Must exceed the
-// largest raw circumradius (cube ~sqrt(3)).
-const INACTIVE_D = 5.0;
+// Distance from the origin to the shape's supporting plane with normal n (the
+// farthest vertex projected onto n).
+function supportDist(verts, nx, ny, nz) {
+  let m = -Infinity;
+  for (let k = 0; k < verts.length; k += 3) {
+    const d = nx * verts[k] + ny * verts[k + 1] + nz * verts[k + 2];
+    if (d > m) m = d;
+  }
+  return m;
+}
 
 // Unique supporting face planes of a triangle soup (coplanar triangles merged).
 function uniqueFaces(verts) {
@@ -25,10 +31,12 @@ function uniqueFaces(verts) {
   return [...map.values()];
 }
 
-// Pair start faces with end faces by nearest normal; unmatched faces fade in/out
-// (their inactive endpoint plane sits outside the shape). Returns slots that each
-// blend a start plane to an end plane by phase.
-function matchFaces(starts, ends) {
+// Pair start faces with end faces by nearest normal. A face with no counterpart
+// at the other endpoint blends to/from that shape's *supporting* plane along the
+// same normal (not a sharp face yet, but still a real bounding plane) so the hull
+// stays closed throughout the blend — otherwise it opens up and the shadow/
+// reflection develops holes mid-morph.
+function matchFaces(starts, ends, startVerts, endVerts) {
   const slots = [];
   const usedE = new Array(ends.length).fill(false);
   for (const s of starts) {
@@ -40,10 +48,13 @@ function matchFaces(starts, ends) {
       if (d > bestDot) { bestDot = d; best = j; }
     }
     if (best >= 0) { usedE[best] = true; slots.push([s, ends[best]]); }
-    else slots.push([s, [s[0], s[1], s[2], INACTIVE_D]]); // fades out
+    else slots.push([s, [s[0], s[1], s[2], supportDist(endVerts, s[0], s[1], s[2])]]);
   }
   for (let j = 0; j < ends.length; j++) {
-    if (!usedE[j]) slots.push([[ends[j][0], ends[j][1], ends[j][2], INACTIVE_D], ends[j]]); // fades in
+    if (!usedE[j]) {
+      const e = ends[j];
+      slots.push([[e[0], e[1], e[2], supportDist(startVerts, e[0], e[1], e[2])], e]);
+    }
   }
   return slots;
 }
@@ -55,7 +66,8 @@ function matchFaces(starts, ends) {
 // the shader/main don't change (a "tri" entry is now a face slot).
 export function buildPlaneTexture() {
   const segs = buildJourneySegments();
-  const segSlots = segs.map((s) => matchFaces(uniqueFaces(s.start), uniqueFaces(s.end)));
+  const segSlots = segs.map((s) =>
+    matchFaces(uniqueFaces(s.start), uniqueFaces(s.end), s.start, s.end));
 
   let total = 0;
   const segTriStart = [];
