@@ -6,9 +6,9 @@ fallback and A/B baseline.
 
 ## Backend selection (`src/backends/index.js`)
 
-- Default: **WebGPU** when `navigator.gpu` is available; on init failure it falls
-  back to WebGL2 with a console warning.
-- `?force-webgl` — force the WebGL2 path (for comparison / older hardware).
+- Default: **WebGL2** (proven + broad reach) while the WebGPU path's performance
+  is being tuned.
+- `?force-webgpu` — opt into the WebGPU path (falls back to WebGL2 if init fails).
 
 Both backends implement one interface:
 `{ name, domElement, camera, setTime(s), setView(v), setSize(w,h), render() }`,
@@ -63,7 +63,7 @@ The WebGPU path was checked against every baseline and is at visual parity
 backend that is far slower than the WebGL/ANGLE path, so a headless A/B favours
 WebGL (e.g. at 1000 objects ~90 ms WebGPU vs ~33 ms WebGL there). That is a
 software-backend artifact, not the storage-buffer architecture — compare on a real
-GPU with `?objects=N` + `f`, and `?force-webgl` for the WebGL number.
+GPU with `?objects=N` + `f` (default WebGL vs `?force-webgpu`).
 
-To revert the default to WebGL, flip the `useWebGPU` condition in
+To make WebGPU the default once it's faster, flip the `wantsWebGPU` condition in
 `src/backends/index.js`.

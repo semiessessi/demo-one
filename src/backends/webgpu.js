@@ -30,6 +30,7 @@ const envColor = wgslFn(`
 `);
 
 export async function createWebGPUBackend(data) {
+  const params = new URLSearchParams(location.search);
   const renderer = new THREE.WebGPURenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -65,7 +66,7 @@ export async function createWebGPUBackend(data) {
   scene.add(morphMesh);
   scene.add(buildLightSprites(data.lights));
 
-  if (new URLSearchParams(location.search).has('debug')) {
+  if (params.has('debug')) {
     window.__wgpu = { renderer, scene, camera, morphMesh };
   }
 

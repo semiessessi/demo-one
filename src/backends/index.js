@@ -1,13 +1,12 @@
-// Picks the rendering backend: WebGPU when available (storage-buffer driven,
-// the primary path), else the WebGL2 fallback (broad reach + the comparison
-// baseline). Force WebGL with ?force-webgl to A/B the two. Both implement the
-// same interface:
+// Picks the rendering backend. WebGL2 is the default (proven + broad reach) while
+// the WebGPU path's performance is being tuned; opt into WebGPU with ?force-webgpu.
+// (If WebGPU init fails it falls back to WebGL2.) Both implement the same interface:
 //   { name, domElement, camera, setTime(s), setView(v), setSize(w,h), render() }.
 export async function createBackend(data) {
   const params = new URLSearchParams(location.search);
-  const useWebGPU = !params.has('force-webgl');
+  const wantsWebGPU = params.has('force-webgpu');
 
-  if (useWebGPU && typeof navigator !== 'undefined' && navigator.gpu) {
+  if (wantsWebGPU && typeof navigator !== 'undefined' && navigator.gpu) {
     try {
       const { createWebGPUBackend } = await import('./webgpu.js');
       const backend = await createWebGPUBackend(data);
