@@ -12,7 +12,8 @@ const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
 const ORBIT_DUR = 40.0;   // seconds of slow, graceful orbit + pull-back before joining the fly
 const FLY_BLEND = 6.0;    // seconds easing the orbit into the Lissajous fly (smooth, not harsh)
-const FLY_SPEED = 0.4;    // Lissajous time scale
+const FLY_SPEED = 0.4;    // Lissajous time scale (full fly speed)
+const FLY_FULL_SECS = 7.0; // seconds at full speed before the speed follows the music amplitude
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
@@ -29,6 +30,9 @@ export function createFlyCam(domElement, introTarget) {
   let dragging = false;
   let last = performance.now();
   const keys = new Set();
+  let flyU = 0;                   // accumulated Lissajous phase (so the speed can vary)
+  let flySpeedSmooth = FLY_SPEED; // smoothed fly speed
+  let musicLevel = 0;             // 0..1 music amplitude (note density), set by setMusicLevel
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
   function aim(tx, ty, tz) {
@@ -85,8 +89,15 @@ export function createFlyCam(domElement, introTarget) {
       const otx = introTarget[0] * (1 - lookK);
       const oty = introTarget[1] * (1 - lookK);
       const otz = introTarget[2] * (1 - lookK);
-      // Lissajous fly (auto), looking along velocity with a slight inward pull.
-      const U = Math.max(0, introT - ORBIT_DUR) * FLY_SPEED;
+      // Lissajous fly. Speed is full for FLY_FULL_SECS, then very smoothly follows the music
+      // amplitude up to FLY_SPEED*0.5 (near-zero in calm patches). Accumulate the phase so the
+      // speed can vary over time.
+      const flyTime = Math.max(0, introT - ORBIT_DUR);
+      const k = smooth(clamp((flyTime - FLY_FULL_SECS) / 3.0, 0, 1)); // 0 = full speed, 1 = music-reactive
+      const targetSpeed = FLY_SPEED * (1.0 - k) + FLY_SPEED * 0.5 * musicLevel * k;
+      flySpeedSmooth += (targetSpeed - flySpeedSmooth) * (1.0 - Math.exp(-dt / 0.6)); // very smooth
+      if (introT >= ORBIT_DUR) flyU += flySpeedSmooth * dt;
+      const U = flyU;
       const fpx = FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]);
       const fpy = FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]);
       const fpz = FLY_AMP[2] * Math.sin(FLY_FREQ[2] * U + FLY_PHASE[2]);
@@ -137,8 +148,11 @@ export function createFlyCam(domElement, introTarget) {
   function startIntro() {
     if (!introTarget) return;
     introT = 0;
+    flyU = 0;
+    flySpeedSmooth = FLY_SPEED;
     mode = 'intro';
   }
+  function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }
   function dispose() {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
@@ -148,7 +162,7 @@ export function createFlyCam(domElement, introTarget) {
     window.removeEventListener('mousemove', onMouseMove);
   }
 
-  return { update, setPose, startIntro, dispose };
+  return { update, setPose, startIntro, setMusicLevel, dispose };
 }
 
 // Sample the intro camera trajectory — the orbit spiral around `focal` (introT 0..ORBIT_DUR)

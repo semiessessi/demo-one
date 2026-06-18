@@ -68,6 +68,7 @@ const beatSeed = new Float32Array(N_BANDS); // per-slot note seed; re-rolled eac
 let noteCounter = 0; // ever-increasing; stamped into beatSeed[slot] on each note-on
 let scaleNotes = 0; // total note-ons; drives the pdx music-scale
 let scalePhase = 0; // exp-smoothed scaleNotes (NoteChase=12) -> uScaleNotes
+let musicLevel = 0; // 0..1 note-density "amplitude" driving the fly-camera speed
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -88,6 +89,8 @@ function updateMusic(dt) {
   scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
   for (let n = 0; n < notes; n++) morphState.onNote(musicClock); // each note steps ~5% of shapes
   backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase);
+  musicLevel = Math.min(1, musicLevel * Math.exp(-dt / 0.4) + notes * 0.25); // busy = loud, calm ~ 0
+  backend.setMusicLevel(musicLevel);
 }
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
@@ -126,6 +129,7 @@ function setPlaying(next) {
     noteCounter = 0;
     scaleNotes = 0;
     scalePhase = 0;
+    musicLevel = 0;
     morphState.reset();
     scrub.value = '0';
     backend.setTime(0);
@@ -181,7 +185,8 @@ if (!CAPTURE && !TEST) {
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
 const statsEl = document.getElementById('stats');
-let statsOn = false;
+let statsOn = ['localhost', '127.0.0.1'].includes(location.hostname); // on by default on localhost
+statsEl.style.display = statsOn ? 'block' : 'none';
 let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
@@ -262,7 +267,7 @@ function frame() {
   if (statsOn) {
     statsAcc += 1;
     if (statsAcc >= 8) {
-      statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms`;
+      statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms\n♪ ${musicClock.toFixed(1)}s`;
       statsAcc = 0;
     }
   }

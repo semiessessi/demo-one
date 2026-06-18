@@ -133,6 +133,7 @@ export function createWebGLBackend({
       uniforms.uScaleNotes.value = scaleNotes;
     },
     setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
+    setMusicLevel(level) { flycam?.setMusicLevel(level); },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose

@@ -6,7 +6,7 @@
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 import { cameraPathPoints } from './flycam.js';
 
-const TARGET_OBJECTS = 6000;
+const TARGET_OBJECTS = 5000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
 const LIGHTS_PER_OBJECT = 40;
 const LIGHT_RADIUS = 4.5; // light falloff radius (bigger reach; sprite size is decoupled from it)

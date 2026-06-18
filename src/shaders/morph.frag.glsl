@@ -158,7 +158,7 @@ float traceShadow(vec3 p, vec3 L, float distToLight) {
 }
 
 vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
-                 int lo, int lc, bool doShadow) {
+                 int lo, int lc, bool doShadow, int shadowCap) {
   vec3 diffuseAlbedo = albedo * (1.0 - metal);
   vec3 F0 = mix(vec3(0.04), albedo, metal);
   vec3 lit = vec3(0.0);
@@ -182,7 +182,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
                    * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime)
                    * musicBeatLit(idx, uBeatSeed[band]);
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
-    float shadow = (doShadow && k < SHADOW_LIGHTS) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
+    float shadow = (doShadow && k < shadowCap) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
     lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow * emission;
   }
   return lit;
@@ -190,10 +190,10 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
 
 // `N` is the reflecting surface normal: occluders behind the surface, behind the
 // reflection ray, or that the ray misses are culled before the full hull trace.
-bool traceReflection(vec3 ro, vec3 rd, vec3 N, out float bestT, out vec3 bestN, out int bestObj) {
+bool traceReflection(vec3 ro, vec3 rd, vec3 N, int maxRefl, out float bestT, out vec3 bestN, out int bestObj) {
   bestT = 1e9;
   bool hit = false;
-  for (int s = 0; s < vReflCount; s++) {
+  for (int s = 0; s < vReflCount && s < maxRefl; s++) {
     int oi = int(texelFetch(uReflIndexTex, texel(vReflOffset + s, uReflIndexW), 0).r + 0.5);
     vec4 t0 = texelFetch(uOccTransformTex, texel(oi * 4, uOccTransformTexW), 0);
     vec3 D = t0.xyz - ro;
@@ -214,7 +214,13 @@ void main() {
   vec3 N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
   if (dot(N, V) < 0.0) N = -N; // face the camera (winding-independent)
 
-  vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true);
+  // Distance LOD: far surfaces trace fewer shadow lights + reflection occluders (helps fps;
+  // the close hero keeps its full counts).
+  float lod = clamp((distance(vWorldPos, cameraPosition) - 8.0) / 40.0, 0.0, 1.0);
+  int shadowCap = int(mix(float(SHADOW_LIGHTS), 2.0, lod));
+  int reflCap = int(mix(float(vReflCount), 8.0, lod));
+
+  vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap);
 
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
   lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
@@ -227,11 +233,11 @@ void main() {
 
     float ht; vec3 hN; int hObj;
     vec3 refl;
-    if (traceReflection(vWorldPos + N * 0.02, Rdir, N, ht, hN, hObj)) {
+    if (traceReflection(vWorldPos + N * 0.02, Rdir, N, reflCap, ht, hN, hObj)) {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
-      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false);
+      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2);
       refl += m0.rgb * environment(hN) * 0.3;
     } else {
       refl = environment(Rdir);
