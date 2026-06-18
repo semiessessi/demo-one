@@ -45,7 +45,7 @@ export const wgLightEmission = wgslFn(`
     let age = now - beatTime;
     let flare = select(0.0, strength * exp(-age * rate), age >= 0.0) * select(0.0, 1.0, a > 0.0); // dark until host spawns
     var hl = (u32(idxF) ^ u32(seed)) ^ 2747636419u; hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u;
-    let part = select(0.0, 1.0, f32(hl & 0x00FFFFFFu) / 16777215.0 < 0.12); // MUSIC_FRAC — sync with lib.glsl
+    let part = select(0.0, 1.0, f32(hl & 0x00FFFFFFu) / 16777215.0 < 0.25); // MUSIC_FRAC — sync with lib.glsl
     return flare * part;
   }
 `);
@@ -55,10 +55,10 @@ export const wgLightEmission = wgslFn(`
 export const wgMusicScale = wgslFn(`
   fn wgMusicScale(idxF: f32, notes: f32) -> f32 {
     var ho = (u32(idxF) * 5u + 7u) ^ 2747636419u; ho = ho * 2654435769u; ho = ho ^ (ho >> 16u); ho = ho * 2654435769u; ho = ho ^ (ho >> 16u); ho = ho * 2654435769u;
-    let off = (f32(ho & 0x00FFFFFFu) / 16777215.0) * 20.0;
-    let prog = (notes + off) / 20.0;
+    let off = (f32(ho & 0x00FFFFFFu) / 16777215.0) * 100.0; // NotesPerChange = 100 (5x less frequent)
+    let prog = (notes + off) / 100.0;
     let epoch = floor(prog);
-    let blend = smoothstep(0.0, 0.3, prog - epoch);
+    let blend = smoothstep(0.0, 0.9, prog - epoch); // 3x slower transition
     let cs = u32(epoch);
     var hp = (u32(idxF) ^ ((cs - 1u) * 2246822519u)) ^ 2747636419u; hp = hp * 2654435769u; hp = hp ^ (hp >> 16u); hp = hp * 2654435769u; hp = hp ^ (hp >> 16u); hp = hp * 2654435769u;
     var hc = (u32(idxF) ^ (cs * 2246822519u)) ^ 2747636419u; hc = hc * 2654435769u; hc = hc ^ (hc >> 16u); hc = hc * 2654435769u; hc = hc ^ (hc >> 16u); hc = hc * 2654435769u;

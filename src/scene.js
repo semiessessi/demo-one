@@ -6,27 +6,27 @@
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 import { cameraPathPoints } from './flycam.js';
 
-const TARGET_OBJECTS = 8000;
+const TARGET_OBJECTS = 6000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
 const LIGHTS_PER_OBJECT = 40;
-const LIGHT_RADIUS = 3.0; // light falloff radius (raised from 2.0 for the orbit distance)
+const LIGHT_RADIUS = 4.5; // light falloff radius (bigger reach; sprite size is decoupled from it)
 const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;
-const PACK_MARGIN = 0.9; // extra gap between object spheres; must exceed the max orbit reach
+const PACK_MARGIN = 0.35; // extra gap between object spheres (tighter = denser field); > orbit reach
 // Lights orbit their host object on a sphere just outside it, animated entirely
 // in-shader (see animLightDir in shaders/lib.glsl + the WGSL ports). orbitRadius is
 // per-light: object.radius + ORBIT_MARGIN + rng()*ORBIT_SPREAD (always > object.radius,
 // so the light stays outside its host). PACK_MARGIN >= ORBIT_MARGIN + ORBIT_SPREAD so a
 // light never sweeps into a neighbouring object (their light clouds may still overlap).
-const ORBIT_MARGIN = 0.35; // min gap from the object surface to the orbit sphere
-const ORBIT_SPREAD = 0.4; // per-light random extra orbit radius
+const ORBIT_MARGIN = 0.15; // min gap from the object surface to the orbit sphere (tighter for density)
+const ORBIT_SPREAD = 0.15; // per-light random extra orbit radius (reach 0.30 < PACK_MARGIN 0.35)
 const BUCKETS_PER_AXIS = 10;
 const R_PROXY = 1.0; // shadow/reflection sphere-proxy radius factor (× scale)
 const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
-const REFLECTION_CAP = 128; // max occluders per object for reflections
-const REFLECTION_REACH = 7.0; // how far reflection rays look for occluders
+const REFLECTION_CAP = 1024; // max occluders per object for reflections (hero needs lots)
+const REFLECTION_REACH = 26.0; // gather radius to reach ~1024 nearest occluders at this density
 const SEED = 0x1234abcd;
-const CAM_CLEARANCE = 2.5; // keep objects this far (+ their own radius) off the camera's intro path
+const CAM_CLEARANCE = 0.8; // small gap, so the camera makes near-misses past objects (shows off reflections)
 
 // Small LCG (numerical-recipes constants) for reproducible randomness.
 function makeRng(seed) {
@@ -172,7 +172,7 @@ export function generateScene(opts = {}) {
     for (let k = 0; k < lightsPerObject; k++) {
       const orbitRadius = o.radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
       const rgb = hslToRgb(rng(), 0.8, 0.55);
-      const intensity = rand(0.12, 0.35);
+      const intensity = rand(0.24, 0.70); // 2x brighter lights
       lights.push({
         pos: [o.pos[0], o.pos[1], o.pos[2]], // host object centre; the shader orbits the light
         orbitRadius,

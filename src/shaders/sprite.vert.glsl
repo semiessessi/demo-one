@@ -39,7 +39,7 @@ void main() {
                  * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
 
   vec2 corner = position.xy;
-  float size = uSpriteSize * (0.6 + 0.2 * aLightRadius) * emission; // 0 emission -> 0 size -> no dot
+  float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot
   vec3 world = lightPos + size * (corner.x * right + corner.y * up);
 
   vCorner = corner;

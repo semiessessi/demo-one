@@ -93,6 +93,10 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   float morphSpeed = t3.y;
   vec3 center = t0.xyz;
   float scale = t0.w;
+  // Respect the spawn-in: an object that hasn't spawned casts no shadow / shows no
+  // reflection, and scales in as it spawns — matching the vertex (spawnReveal by rank).
+  float reveal = spawnReveal(float(oi), uSpawn);
+  if (reveal <= 1e-4) return false;
 
   float p = texelFetch(uMorphPTex, texel(oi, uMorphPTexW), 0).r;
   int seg = int(floor(p));
@@ -100,7 +104,7 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }
 
   vec4 q = qmul(quatAxisAngle(t2.xyz, uTime * t2.w), baseQ);
-  float S = scale * lookupNorm(p) * musicScale(oi, uScaleNotes); // match the vertex's music-scaled size
+  float S = scale * lookupNorm(p) * musicScale(oi, uScaleNotes) * reveal; // match the vertex's scale incl. spawn-in
 
   // Ray into the occluder's morph-local space (t parameter is preserved).
   vec3 roL = qrot(qconj(q), roW - center) / S;

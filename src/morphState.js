@@ -9,7 +9,7 @@
 import { NUM_SEGMENTS } from './journey.js';
 
 const STEP_DUR = 0.2;        // seconds per shape transition (fast)
-const STEP_FRACTION = 0.05;  // fraction of objects that step on each note
+const STEP_FRACTION = 0.0025; // fraction of objects that step on each note (calm, not epileptic)
 const FLIP_CHANCE = 0.25;    // chance a step also flips direction
 const MIDPOINT_STOP = 0.5;   // at a midpoint: stop here (true) vs skip to the next solid
 // Which integer stops are the non-Platonic intermediate shapes (rhombic dodeca @2,4;

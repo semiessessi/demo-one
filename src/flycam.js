@@ -13,7 +13,7 @@ const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
 const ORBIT_DUR = 40.0;   // seconds of slow, graceful orbit + pull-back before joining the fly
 const FLY_BLEND = 6.0;    // seconds easing the orbit into the Lissajous fly (smooth, not harsh)
 const FLY_SPEED = 0.4;    // Lissajous time scale
-const FLY_AMP = [9.0, 4.5, 9.0];     // fly extent per axis (x, y-up, z)
+const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
 
@@ -75,7 +75,7 @@ export function createFlyCam(domElement, introTarget) {
     if (mode === 'intro' || mode === 'hold') {
       if (mode === 'intro') introT += dt; // 'hold' freezes at the intro's start pose (introT = 0)
       // Orbit the focal object, pulling back + rising over ORBIT_DUR.
-      const oe = smooth(Math.min(introT, ORBIT_DUR) / ORBIT_DUR);
+      const oe = smooth(Math.pow(Math.min(introT, ORBIT_DUR) / ORBIT_DUR, 2.0)); // stay near the hero longer, then ease out
       const oang = introT * 0.35 + 1.0;
       const orad = 1.5 + (6.0 - 1.5) * oe; // start RIGHT near the hero, pull out only ~half as far
       const opx = introTarget[0] + Math.cos(oang) * orad;
@@ -160,7 +160,7 @@ export function cameraPathPoints(focal) {
   const ORBIT_N = 120, FLY_N = 180, FLY_UMAX = 30;
   for (let i = 0; i <= ORBIT_N; i++) {
     const introT = (i / ORBIT_N) * ORBIT_DUR;
-    const oe = smooth(introT / ORBIT_DUR);
+    const oe = smooth(Math.pow(introT / ORBIT_DUR, 2.0)); // keep in sync with update()
     const oang = introT * 0.35 + 1.0;
     const orad = 1.5 + (6.0 - 1.5) * oe; // keep in sync with update()'s orbit
     pts.push([focal[0] + Math.cos(oang) * orad, focal[1] + 1.0 + 2.0 * oe + Math.sin(oang * 0.8) * 5.0 * oe, focal[2] + Math.sin(oang) * orad]);

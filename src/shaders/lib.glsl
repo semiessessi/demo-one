@@ -67,7 +67,7 @@ float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC
 // Per-NOTE participation: each note writes a fresh seed to its slot (uBeatSeed), so a
 // different ~MUSIC_FRAC subset of the slot's lights flares each note (few, and never the
 // same set). Replaces the static musicLit gate for the flare. Sync with gpu/orbit.js.
-const float MUSIC_FRAC = 0.12;
+const float MUSIC_FRAC = 0.25; // fraction of a slot's lights that flare per note (more = livelier)
 float musicBeatLit(int idx, float seed) {
   return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
 }
@@ -75,10 +75,10 @@ float musicBeatLit(int idx, float seed) {
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
 // count), easing between random per-object scales in [0.2,1.0]. Sync with wgMusicScale.
 float musicScale(int i, float notes) {
-  float off = hashUnit(hash(uint(i) * 5u + 7u)) * 20.0; // NotesPerChange = 20
-  float prog = (notes + off) / 20.0;
+  float off = hashUnit(hash(uint(i) * 5u + 7u)) * 100.0; // NotesPerChange = 100 (5x less frequent)
+  float prog = (notes + off) / 100.0;
   float epoch = floor(prog);
-  float blend = smoothstep(0.0, 0.3, prog - epoch);
+  float blend = smoothstep(0.0, 0.9, prog - epoch); // 3x slower transition
   uint cs = uint(epoch);
   float prev = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ ((cs - 1u) * 2246822519u))));
   float cur  = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ (cs * 2246822519u))));
