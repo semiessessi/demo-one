@@ -166,15 +166,31 @@ export function generateScene(opts = {}) {
   // The closest object is the camera's opening hero — make it a strong chrome mirror.
   if (objects.length) { objects[0].rough = 0.04; objects[0].metal = 1.0; }
 
-  // Generate each object's orbiting lights, in sorted order (so light i belongs to
-  // object floor(i / lightsPerObject)).
+  // Generate each object's lights, in sorted order (light i still belongs to object
+  // floor(i / lightsPerObject) for spawn + indexing). ORBIT_FRACTION orbit their host object;
+  // the rest are "field" lights scattered evenly through a sphere around the centre, each
+  // orbiting its own random point — for a more even field of light, not just clusters on objects.
+  const ORBIT_FRACTION = 0.7;
+  const orbitCount = Math.round(lightsPerObject * ORBIT_FRACTION);
+  const fieldR = objects.reduce((m, o) => Math.max(m, Math.hypot(o.pos[0], o.pos[1], o.pos[2])), 0) * 0.9;
   for (const o of objects) {
     for (let k = 0; k < lightsPerObject; k++) {
-      const orbitRadius = o.radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
       const rgb = hslToRgb(rng(), 0.8, 0.55);
       const intensity = rand(0.18, 0.525); // 75% of the previous 0.24..0.70 (was a bit over-bright)
+      let pos, orbitRadius;
+      if (k < orbitCount) {
+        orbitRadius = o.radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
+        pos = [o.pos[0], o.pos[1], o.pos[2]]; // orbit the host object centre
+      } else {
+        // uniform random point in the field sphere; the light orbits that point
+        let ux, uy, uz, m2;
+        do { ux = rng() * 2 - 1; uy = rng() * 2 - 1; uz = rng() * 2 - 1; m2 = ux * ux + uy * uy + uz * uz; } while (m2 > 1 || m2 < 1e-6);
+        const inv = (fieldR * Math.cbrt(rng())) / Math.sqrt(m2);
+        pos = [ux * inv, uy * inv, uz * inv];
+        orbitRadius = 0.3 + rng() * 1.2;
+      }
       lights.push({
-        pos: [o.pos[0], o.pos[1], o.pos[2]], // host object centre; the shader orbits the light
+        pos,
         orbitRadius,
         color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],
         radius: LIGHT_RADIUS, // falloff radius
