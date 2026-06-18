@@ -79,10 +79,25 @@
         height: 1em;
         line-height: 1;
       }
+      #stats {
+        position: fixed;
+        top: 10px;
+        left: 12px;
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #7fd08a;
+        text-shadow: 0 0 2px #000;
+        white-space: pre;
+        pointer-events: none;
+        display: none;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <pre id="stats"></pre>
     <div id="controls">
       <div id="row">
         <button id="playToggle" title="Play / pause" aria-label="Play or pause">❚❚</button>

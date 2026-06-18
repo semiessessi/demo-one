@@ -98,6 +98,19 @@ playToggle.addEventListener('click', () => {
   playToggle.textContent = playing ? '❚❚' : '▶';
 });
 
+// --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
+const statsEl = document.getElementById('stats');
+let statsOn = false;
+let emaMs = 16.7;
+let lastNow = performance.now();
+let statsAcc = 0;
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    statsOn = !statsOn;
+    statsEl.style.display = statsOn ? 'block' : 'none';
+  }
+});
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -115,6 +128,19 @@ function frame() {
   }
   controls.update();
   composer.render();
+
+  // Measure real frame time (not the clamped animation dt).
+  const now = performance.now();
+  emaMs = emaMs * 0.9 + (now - lastNow) * 0.1;
+  lastNow = now;
+  if (statsOn) {
+    statsAcc += 1;
+    if (statsAcc >= 8) {
+      statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms`;
+      statsAcc = 0;
+    }
+  }
+
   requestAnimationFrame(frame);
 }
 frame();
