@@ -226,7 +226,10 @@ void main() {
   vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
 
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
-  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
+  // Shadows partly occlude the ambient too: one ray along the normal; if blocked, drop the
+  // environment term to 0.3 (near surfaces only, to bound the extra trace cost).
+  float ao = (lod < 0.5) ? traceShadow(vWorldPos + N * 0.02, N, 4.0) : 1.0;
+  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y) * mix(0.3, 1.0, ao);
 
   if (vRough < REFL_ROUGHNESS_MAX) {
     vec3 F0 = mix(vec3(0.04), vColor, vMetal);
