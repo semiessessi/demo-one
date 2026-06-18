@@ -102,9 +102,18 @@ function setPlaying(next) {
   playing = next;
   playToggle.textContent = next ? '❚❚' : '▶';
   if (next) {
-    spawnTime = 0; // restart the spawn-in intro (objects scale in, lights ignite) on play
+    // Restart the whole sequence from the top: every clock, the camera intro, the music.
+    morphTime = 0;
+    lightTime = 0;
+    spawnTime = 0;
+    musicClock = 0;
+    beatTime.fill(0);
+    beatStrength.fill(0);
+    scrub.value = '0';
+    backend.setTime(0);
+    backend.setLightTime(0);
     backend.startIntro(); // replay the orbit-and-pull-back camera intro
-    audio.play();
+    audio.restart(); // restart the music from the beginning
     if (firstPlay) {
       firstPlay = false;
       info.classList.remove('open');

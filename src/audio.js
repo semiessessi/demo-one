@@ -113,6 +113,28 @@ export function createAudioManager() {
     }
   }
 
+  // Restart the module from the very beginning (used when the demo sequence is
+  // restarted). On the first call this is just a normal start; afterwards it
+  // replays the module from row 0.
+  function restart() {
+    if (failed) return;
+    wantPlaying = true;
+    paused = false;
+    if (!started) { // first time: build the player (it plays from the top once ready)
+      started = true;
+      start();
+      return;
+    }
+    if (!player) return; // still initialising; onInitialized will honour wantPlaying
+    if (player.context.state === 'suspended') player.context.resume().catch(() => {});
+    prefetch().then((data) => {
+      if (!player || !wantPlaying) return;
+      if (data) player.play(data); // reload + play from the start
+      else player.load(MODULE_URL);
+      rampTo(muted ? 0 : volume, RAMP);
+    });
+  }
+
   function pause() {
     wantPlaying = false;
     if (!player || paused) return; // player may still be initialising
@@ -153,6 +175,7 @@ export function createAudioManager() {
   return {
     prefetch,
     play,
+    restart,
     pause,
     setVolume,
     setMuted,
