@@ -92,10 +92,13 @@ class MPT extends AudioWorkletProcessor {
 			this.lastRow = row
 			this.lastPattern = pattern
 			const notes = new Array(this.numChannels | 0)
+			const instruments = new Array(this.numChannels | 0)
 			for (let ch = 0; ch < notes.length; ch++) {
 				notes[ch] = libopenmpt._openmpt_module_get_pattern_row_channel_command(this.modulePtr, pattern, row, ch, 0)
+				instruments[ch] = libopenmpt._openmpt_module_get_pattern_row_channel_command(this.modulePtr, pattern, row, ch, 1) // command 1 = INSTRUMENT
 			}
 			msg.notes = notes
+			msg.instruments = instruments
 		}
 
 		this.port.postMessage( msg )

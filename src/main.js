@@ -63,6 +63,7 @@ function demoSpawnCount(t) {
 const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader arrays)
 const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
 const slotPitch = new Uint8Array(N_BANDS); // per-slot note pitch (1..120), consumed each frame
+const slotInst = new Uint8Array(N_BANDS);  // per-slot note instrument, consumed each frame
 const beatDecay = new Float32Array(N_BANDS).fill(1); // per-slot pulse-decay factor (1 = neutral)
 const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
@@ -78,19 +79,37 @@ let rippleHead = 0;
 let lastRippleTime = -1;
 const rippleR = objects.reduce((m, o) => Math.max(m, Math.abs(o.pos[0]), Math.abs(o.pos[2])), 0) * 0.6;
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
+// Real sample-length decay (off the main thread): a worker parses the .it's sample/instrument
+// tables for each instrument's C-5 sample length; once ready, each slot's decay eases from the
+// pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
+let instrumentDur = null;
+const DECAY_FADE_SECS = 30;
+try {
+  const sdWorker = new Worker(new URL('./sampleDurations.worker.js', import.meta.url), { type: 'module' });
+  sdWorker.onmessage = (e) => { instrumentDur = e.data; };
+} catch (e) { /* enhancement only — stays on the pitch proxy */ }
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
 // the shader then fades each light at its own rate. A light maps to a slot via idx % N_BANDS.
 function updateMusic(dt) {
   musicClock += dt;
-  audio.consumeNotes(slotNote, slotPitch);
+  audio.consumeNotes(slotNote, slotPitch, slotInst);
   let notes = 0;
   for (let b = 0; b < N_BANDS; b++) {
     if (slotNote[b]) {
       beatTime[b] = musicClock;
       beatStrength[b] = 2.5; // strong beat->brightness flare (was 1.3 — wasn't punching enough)
       beatSeed[b] = ++noteCounter; // fresh seed -> a different ~12% subset of this slot flares
-      beatDecay[b] = 0.3 + slotPitch[b] / 120.0 * 1.4; // low pitch (bass) -> slower decay (longer pulse)
+      let decay = 0.3 + slotPitch[b] / 120.0 * 1.4; // pitch proxy: low pitch (bass) -> slower decay
+      if (instrumentDur) {
+        const dur = instrumentDur[slotInst[b]] || 0; // this note's instrument's C-5 sample length (s)
+        if (dur > 0) {
+          const sampleDecay = 1.8 - Math.min(1, dur / 2.5) * 1.55; // long sample -> slower decay
+          const fadeIn = Math.min(1, musicClock / DECAY_FADE_SECS); // ease the effect in over ~30s
+          decay = decay * (1 - fadeIn) + sampleDecay * fadeIn;
+        }
+      }
+      beatDecay[b] = decay;
       notes++;
     }
   }
