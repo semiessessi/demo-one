@@ -4,8 +4,10 @@
 // never mix.
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { wgslFn, positionLocal, normalize, uniform } from 'three/tsl';
+import { wgslFn, positionLocal, normalize, uniform, pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { buildMorphMesh } from '../gpu/morphMaterial.js';
+import { buildLightSprites } from '../gpu/spriteMaterial.js';
 
 // pdx night environment (kept identical to shaders/lib.glsl / morph env).
 const envColor = wgslFn(`
@@ -60,6 +62,13 @@ export async function createWebGPUBackend(data) {
   // Morphing instances (storage-buffer driven, GGX direct lighting).
   const uTime = uniform(0);
   scene.add(buildMorphMesh(data, uTime));
+  scene.add(buildLightSprites(data.lights));
+
+  // Post: bloom + ACES tone map (matches the WebGL EffectComposer chain).
+  const postProcessing = new THREE.PostProcessing(renderer);
+  const scenePass = pass(scene, camera);
+  const bloomPass = bloom(scenePass, data.test ? 0.25 : 0.5, 0.5, 1.0);
+  postProcessing.outputNode = scenePass.add(bloomPass);
 
   return {
     name: 'webgpu',
@@ -75,11 +84,11 @@ export async function createWebGPUBackend(data) {
     setSize(w, h) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(w, h); // the scene pass tracks renderer size each frame
     },
     render() {
       controls.update();
-      renderer.render(scene, camera);
+      postProcessing.render();
     },
   };
 }

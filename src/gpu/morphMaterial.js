@@ -4,19 +4,14 @@
 // shaders/morph.vert.glsl + morph.frag.glsl. Shadows/reflections land in P4.
 import * as THREE from 'three/webgpu';
 import {
-  Fn, wgslFn, storage, attribute, instanceIndex, varying,
+  Fn, wgslFn, attribute, instanceIndex, varying,
   positionGeometry, positionWorld, cameraPosition,
-  Loop, float, int, vec3, vec4, mix, max, length, normalize,
+  Loop, float, int, vec3, mix, max, length, normalize,
 } from 'three/tsl';
 import { buildJourneySegments, NUM_SEGMENTS } from '../journey.js';
 import { buildNormScaleLUT } from '../normalize.js';
 import { packInstances, packLights } from './data.js';
-
-// --- read-only storage helpers (read-only is required for vertex-stage reads) ---
-const roVec4 = (data) =>
-  storage(new THREE.StorageBufferAttribute(data, 4), 'vec4', data.length / 4).toReadOnly();
-const roFloat = (data) =>
-  storage(new THREE.StorageBufferAttribute(data, 1), 'float', data.length).toReadOnly();
+import { roVec4, roFloat } from './storage.js';
 
 // --- WGSL math (no storage; pure functions ported from the GLSL) -------------
 const wgPhase = wgslFn(`
