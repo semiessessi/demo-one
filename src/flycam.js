@@ -2,16 +2,16 @@
 // .rotation only, so it works with either three instance (core 'three' or
 // 'three/webgpu') — no three import here, no cross-instance math objects.
 //
-// Free flight: WASD move, Q/Z up/down, Shift sprint, pointer-lock mouse look (click
-// the canvas to capture, Esc to release), non-inverted Y.
+// Free flight: WASD move, Q/Z up/down, Shift sprint, click-drag mouse look (cursor stays
+// visible — no pointer lock), non-inverted Y.
 // Intro: orbit `introTarget` while pulling back for INTRO_DUR seconds, then hand off to
 // free flight from that exact pose (no jump). Any movement/look input skips the intro.
 
 const SENS = 0.003;       // radians per pixel of drag
 const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
-const ORBIT_DUR = 22.0;   // seconds orbiting the focal object before the fly (slow pan-back)
-const FLY_BLEND = 8.0;    // seconds blending the orbit into the Lissajous fly
+const ORBIT_DUR = 45.0;   // seconds of slow, graceful orbit + pull-back before the fly
+const FLY_BLEND = 1.5;    // quick "boom" transition from the orbit into the Lissajous fly
 const FLY_SPEED = 0.4;    // Lissajous time scale
 const FLY_AMP = [9.0, 4.5, 9.0];     // fly extent per axis (x, y-up, z)
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
@@ -77,9 +77,9 @@ export function createFlyCam(domElement, introTarget) {
       // Orbit the focal object, pulling back + rising over ORBIT_DUR.
       const oe = smooth(Math.min(introT, ORBIT_DUR) / ORBIT_DUR);
       const oang = introT * 0.35 + 1.0;
-      const orad = 4.0 + (16.0 - 4.0) * oe;
+      const orad = 2.0 + (16.0 - 2.0) * oe; // start at half distance (twice as close to the hero)
       const opx = introTarget[0] + Math.cos(oang) * orad;
-      const opy = introTarget[1] + 2.0 + 7.0 * oe;
+      const opy = introTarget[1] + 1.0 + 8.0 * oe; // start lower/closer too, same wide end
       const opz = introTarget[2] + Math.sin(oang) * orad;
       const lookK = Math.min(1, introT / ORBIT_DUR); // pan from focal toward origin
       const otx = introTarget[0] * (1 - lookK);
