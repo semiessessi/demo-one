@@ -24,7 +24,7 @@ const MOVE_KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyZ'];
 export function createFlyCam(domElement, introTarget) {
   let px = 24, py = 17, pz = 31; // position (intro overrides immediately)
   let yaw = 0, pitch = 0;
-  let mode = introTarget ? 'intro' : 'free';
+  let mode = introTarget ? 'hold' : 'free'; // 'hold' = static at the orbit start pose until play
   let introT = 0;
   let dragging = false;
   let last = performance.now();
@@ -72,8 +72,8 @@ export function createFlyCam(domElement, introTarget) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
-    if (mode === 'intro') {
-      introT += dt;
+    if (mode === 'intro' || mode === 'hold') {
+      if (mode === 'intro') introT += dt; // 'hold' freezes at the intro's start pose (introT = 0)
       // Orbit the focal object, pulling back + rising over ORBIT_DUR.
       const oe = smooth(Math.min(introT, ORBIT_DUR) / ORBIT_DUR);
       const oang = introT * 0.35 + 1.0;

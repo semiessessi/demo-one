@@ -164,6 +164,16 @@ orbitToggle.addEventListener('click', () => setLightsMoving(!lightsMoving));
 // Reveal the controls pane shortly after load so it animates in.
 if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 
+// Auto-play the demo after ~1s of idling at the skybox (camera held at the start pose).
+// Any pointer/key/wheel input cancels it — the user is in control and can press play.
+if (!CAPTURE && !TEST) {
+  let idleHandled = false;
+  const cancelIdle = () => { idleHandled = true; };
+  ['pointerdown', 'keydown', 'wheel'].forEach((ev) =>
+    window.addEventListener(ev, cancelIdle, { once: true, passive: true }));
+  setTimeout(() => { if (!idleHandled && !playing) setPlaying(true); }, 1000);
+}
+
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
 const statsEl = document.getElementById('stats');
 let statsOn = false;
