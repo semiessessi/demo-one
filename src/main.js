@@ -19,6 +19,7 @@ import {
 import { buildLightSprites } from './lightSprites.js';
 import { buildNormScaleLUT } from './normalize.js';
 import { buildSky } from './sky.js';
+import { buildGeometryTexture, buildOccluderTransforms } from './occluderData.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -53,7 +54,12 @@ const { objects, lights, lightIndices, occluderIndices, reflectionIndices } =
 const lightTex = buildLightTextures(lights, lightIndices);
 const occTex = buildOccluderTextures(objects, occluderIndices);
 const reflTex = buildReflectionData(objects, reflectionIndices);
-if (TEST) camera.position.set(8, 4, 11);
+const geo = buildGeometryTexture();
+const occXf = buildOccluderTransforms(objects);
+if (TEST) {
+  camera.position.set(6, 2, 8);
+  controls.target.set(0, 0.3, 0);
+}
 
 const uniforms = {
   uTime: { value: TEST ? 3.0 : 0 }, // test scene sits on a cube
@@ -72,6 +78,12 @@ const uniforms = {
   uReflIndexW: { value: reflTex.reflIndexW },
   uInstanceTex: { value: reflTex.instanceTex },
   uInstanceTexW: { value: reflTex.instanceTexW },
+  uGeoTex: { value: geo.geoTex },
+  uGeoTexW: { value: geo.geoTexW },
+  uSegVertStart: { value: geo.segVertStart },
+  uSegTriCount: { value: geo.segTriCount },
+  uOccTransformTex: { value: occXf.transformTex },
+  uOccTransformTexW: { value: occXf.transformTexW },
 };
 const spriteUniforms = { uSpriteSize: { value: 0.16 } };
 

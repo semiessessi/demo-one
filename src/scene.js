@@ -116,7 +116,7 @@ export function generateScene() {
 // adding ?test to the URL.
 export function generateTestScene() {
   const objects = [];
-  const makeObj = (pos, scale, color) => ({
+  const makeObj = (pos, scale, color, rough, metal, phase = 3.0) => ({
     pos,
     quat: [0, 0, 0, 1],
     spinAxis: [0, 1, 0],
@@ -124,19 +124,22 @@ export function generateTestScene() {
     scale,
     radius: MAX_NORM_CIRCUMRADIUS * scale,
     proxyRadius: scale * R_PROXY,
-    phase: 3.0, // a cube (clear silhouette), static
+    phase, // 3.0 = cube, 6.0 = icosahedron (clear silhouettes), static
     color,
-    rough: 0.6,
-    metal: 0,
+    rough,
+    metal,
     lightOffset: 0, lightCount: 0,
     shadowOffset: 0, shadowCount: 0,
     reflOffset: 0, reflCount: 0,
   });
-  objects.push(makeObj([0, 0, 0], 1.6, [0.75, 0.75, 0.78])); // big occluder
-  objects.push(makeObj([-2.7, -1.5, -0.9], 0.7, [0.8, 0.78, 0.7])); // small receiver (in shadow)
+  // Shiny icosahedron at the centre: reflects the bright horizon + the lit cube,
+  // so its many flat faces show clearly faceted (non-spherical) reflections.
+  objects.push(makeObj([0, 0, 0], 2.0, [0.95, 0.95, 1.0], 0.02, 1, 6.0));
+  objects.push(makeObj([-3.3, 1.6, 1.4], 1.1, [0.82, 0.8, 0.76], 0.6, 0)); // lit cube (reflected + occluder)
+  objects.push(makeObj([-5.0, 0.6, -0.6], 0.65, [0.8, 0.78, 0.7], 0.6, 0)); // small: in the cube's shadow
 
-  // One bright light; small cube sits along the big cube's shadow direction.
-  const lights = [{ pos: [6, 3.3, 2], color: [22, 22, 22], radius: 40 }];
+  // One bright light up and to the side.
+  const lights = [{ pos: [4.5, 5.5, 3.5], color: [20, 20, 20], radius: 40 }];
 
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects);

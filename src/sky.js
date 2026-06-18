@@ -3,14 +3,20 @@ import * as THREE from 'three';
 // Dark "night" environment gradient (à la pdx-gfx): used both as the background
 // skydome and as the reflection fallback in the morph shader. Keep this in sync
 // with environment() in morph.frag.glsl.
+// pdx-gfx "Night" environment preset (Y-up; horizon glow band).
 const ENV_GLSL = `
 vec3 environment(vec3 d) {
-  float t = d.y * 0.5 + 0.5;
-  vec3 lower = vec3(0.008, 0.009, 0.013);
-  vec3 horizon = vec3(0.045, 0.050, 0.065);
-  vec3 upper = vec3(0.015, 0.022, 0.045);
-  return mix(mix(lower, horizon, smoothstep(0.0, 0.5, t)),
-             upper, smoothstep(0.5, 1.0, t));
+  vec3 Sky = vec3(0.008, 0.012, 0.035);
+  vec3 Horizon = vec3(0.06, 0.08, 0.14);
+  vec3 Glow = vec3(0.16, 0.20, 0.30);
+  vec3 GroundEdge = vec3(0.035, 0.035, 0.045);
+  vec3 Ground = vec3(0.02, 0.02, 0.028);
+  float Up = d.y;
+  vec3 Base;
+  if (Up >= 0.0) Base = mix(Horizon, Sky, pow(clamp(Up, 0.0, 1.0), 0.20));
+  else Base = mix(Horizon, mix(GroundEdge, Ground, clamp(-Up, 0.0, 1.0)), pow(clamp(-Up, 0.0, 1.0), 0.30));
+  float Band = pow(clamp(1.0 - abs(Up), 0.0, 1.0), 60.0);
+  return mix(Base, Glow, Band);
 }`;
 
 const vertexShader = `precision highp float;
