@@ -16,6 +16,7 @@ uniform float uBeatTime[32];     // per-slot last note-on time (uMusicTime units
 uniform float uBeatStrength[32]; // per-slot last note-on strength
 uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
 uniform float uMusicTime;       // music clock for the beat timestamps
+uniform vec4 uRipple[4];         // brightness ripples: (centre.xyz, startTime)
 
 out vec2 vCorner;
 out vec3 vColor;
@@ -37,6 +38,7 @@ void main() {
   float emission = step(hostSlot, uSpawn)
                  * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime)
                  * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
+  emission += step(hostSlot, uSpawn) * ripplePulse(lightPos, uRipple, uMusicTime); // ride the brightness wave
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot

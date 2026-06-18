@@ -158,11 +158,11 @@ float traceShadow(vec3 p, vec3 L, float distToLight) {
 }
 
 vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
-                 int lo, int lc, bool doShadow, int shadowCap) {
+                 int lo, int lc, bool doShadow, int shadowCap, int lightCap) {
   vec3 diffuseAlbedo = albedo * (1.0 - metal);
   vec3 F0 = mix(vec3(0.04), albedo, metal);
   vec3 lit = vec3(0.0);
-  for (int k = 0; k < lc; k++) {
+  for (int k = 0; k < lc && k < lightCap; k++) {
     int idx = int(texelFetch(uLightIndexTex, texel(lo + k, uIndexTexW), 0).r + 0.5);
     vec4 c0 = texelFetch(uLightsTex, texel(idx * 2, uLightsTexW), 0); // center.xyz, orbitRadius
     vec3 lightPos = c0.xyz + c0.w * animLightDir(idx, uLightTime); // orbit around the host centre
@@ -219,8 +219,9 @@ void main() {
   float lod = clamp((distance(vWorldPos, cameraPosition) - 8.0) / 40.0, 0.0, 1.0);
   int shadowCap = int(mix(float(SHADOW_LIGHTS), 2.0, lod));
   int reflCap = int(mix(float(vReflCount), 8.0, lod));
+  int lightCap = int(mix(float(vLightCount), 12.0, lod)); // far surfaces shade fewer (nearest) lights
 
-  vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap);
+  vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
 
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
   lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
@@ -237,7 +238,7 @@ void main() {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
-      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2);
+      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2, 6);
       refl += m0.rgb * environment(hN) * 0.3;
     } else {
       refl = environment(Rdir);

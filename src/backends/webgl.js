@@ -89,6 +89,7 @@ export function createWebGLBackend({
     uOccTransformTexW: { value: occXf.transformTexW },
     uMorphPTex: { value: morphPTex.tex },
     uMorphPTexW: { value: morphPTex.width },
+    uRipple: { value: new Float32Array(16) }, // 4 ripples x (centre.xyz, startTime)
   };
 
   const geometry = buildUnifiedGeometry();
@@ -108,6 +109,7 @@ export function createWebGLBackend({
     uBeatStrength: uniforms.uBeatStrength,
     uBeatSeed: uniforms.uBeatSeed,
     uMusicTime: uniforms.uMusicTime,
+    uRipple: uniforms.uRipple,
   }));
 
   const composer = new EffectComposer(renderer); // half-float render targets
@@ -134,6 +136,7 @@ export function createWebGLBackend({
     },
     setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
     setMusicLevel(level) { flycam?.setMusicLevel(level); },
+    setRipples(data) { uniforms.uRipple.value.set(data); },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose

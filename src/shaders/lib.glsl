@@ -85,6 +85,22 @@ float musicScale(int i, float notes) {
   return mix(prev, cur, blend);
 }
 
+// Brightness ripples: spherical waves of brightness expanding from random world points on
+// loud beats. uRipple[i] = (centre.xyz, startTime); a light brightens as the shell passes it.
+const int N_RIPPLES = 4;
+float ripplePulse(vec3 worldPos, vec4 ripples[N_RIPPLES], float now) {
+  float sum = 0.0;
+  for (int i = 0; i < N_RIPPLES; i++) {
+    float age = now - ripples[i].w;
+    if (age < 0.0 || age > 3.0) continue;                 // RIPPLE_LIFE = 3s
+    float radius = age * 18.0;                            // RIPPLE_SPEED = 18 u/s
+    float d = distance(worldPos, ripples[i].xyz);
+    float shell = exp(-pow((d - radius) / 4.0, 2.0));     // RIPPLE_WIDTH = 4
+    sum += shell * (1.0 - age / 3.0);                     // fade over the ripple's life
+  }
+  return sum * 2.5;                                       // RIPPLE_BRIGHT
+}
+
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash
 // (spawnIgnite) then settle to music-reactive. Keep in sync with gpu/orbit.js.

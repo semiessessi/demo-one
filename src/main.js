@@ -69,6 +69,12 @@ let noteCounter = 0; // ever-increasing; stamped into beatSeed[slot] on each not
 let scaleNotes = 0; // total note-ons; drives the pdx music-scale
 let scalePhase = 0; // exp-smoothed scaleNotes (NoteChase=12) -> uScaleNotes
 let musicLevel = 0; // 0..1 note-density "amplitude" driving the fly-camera speed
+// Brightness ripples: a few spherical waves emanate from random world points on loud beats.
+const N_RIPPLES = 4;
+const rippleData = new Float32Array(N_RIPPLES * 4); // (centre.xyz, startTime) per ripple
+let rippleHead = 0;
+let lastRippleTime = -1;
+const rippleR = objects.reduce((m, o) => Math.max(m, Math.abs(o.pos[0]), Math.abs(o.pos[2])), 0) * 0.6;
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -91,6 +97,16 @@ function updateMusic(dt) {
   backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase);
   musicLevel = Math.min(1, musicLevel * Math.exp(-dt / 0.4) + notes * 0.25); // busy = loud, calm ~ 0
   backend.setMusicLevel(musicLevel);
+  // Loud beat (high note density), throttled to ~the beat rate -> a new ripple. Off in calm patches.
+  if (musicLevel > 0.5 && notes > 0 && musicClock - lastRippleTime > 0.35) {
+    rippleData[rippleHead * 4 + 0] = (Math.random() * 2 - 1) * rippleR;
+    rippleData[rippleHead * 4 + 1] = (Math.random() * 2 - 1) * rippleR * 0.5;
+    rippleData[rippleHead * 4 + 2] = (Math.random() * 2 - 1) * rippleR;
+    rippleData[rippleHead * 4 + 3] = musicClock;
+    rippleHead = (rippleHead + 1) % N_RIPPLES;
+    lastRippleTime = musicClock;
+  }
+  backend.setRipples(rippleData);
 }
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
@@ -130,6 +146,8 @@ function setPlaying(next) {
     scaleNotes = 0;
     scalePhase = 0;
     musicLevel = 0;
+    rippleData.fill(0);
+    lastRippleTime = -1;
     morphState.reset();
     scrub.value = '0';
     backend.setTime(0);
