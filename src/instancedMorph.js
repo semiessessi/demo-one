@@ -1,7 +1,11 @@
 import * as THREE from 'three';
-import vertexShader from './shaders/morph.vert.glsl?raw';
-import fragmentShader from './shaders/morph.frag.glsl?raw';
+import lib from './shaders/lib.glsl?raw';
+import vertexShaderSrc from './shaders/morph.vert.glsl?raw';
+import fragmentShaderSrc from './shaders/morph.frag.glsl?raw';
 import { buildJourneySegments, NUM_SEGMENTS } from './journey.js';
+
+const vertexShader = `${lib}\n${vertexShaderSrc}`;
+const fragmentShader = `${lib}\n${fragmentShaderSrc}`;
 
 // One InstancedBufferGeometry holding every segment's triangles concatenated.
 // `position` = each vertex's start position, `aEnd` = its end position, and

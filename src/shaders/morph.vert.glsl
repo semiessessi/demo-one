@@ -1,4 +1,4 @@
-precision highp float;
+// (lib.glsl prepended: precision + qrot/qmul/quatAxisAngle/pingpong)
 
 // Per-vertex (shared across instances)
 in vec3 position;   // start position of this vertex's segment
@@ -30,22 +30,6 @@ flat out int vShadowOffset;
 flat out int vShadowCount;
 flat out int vReflOffset;
 flat out int vReflCount;
-
-vec3 qrot(vec4 q, vec3 v) {
-  return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-}
-vec4 quatAxisAngle(vec3 axis, float angle) {
-  float h = angle * 0.5;
-  return vec4(normalize(axis) * sin(h), cos(h));
-}
-vec4 qmul(vec4 a, vec4 b) {
-  return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz),
-              a.w * b.w - dot(a.xyz, b.xyz));
-}
-float pingpong(float x, float n) {
-  float m = mod(x, 2.0 * n);
-  return m <= n ? m : 2.0 * n - m;
-}
 
 void main() {
   float spinSpeed = aMisc.x;
