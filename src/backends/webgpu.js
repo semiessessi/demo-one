@@ -32,7 +32,7 @@ const envColor = wgslFn(`
 export async function createWebGPUBackend(data) {
   const params = new URLSearchParams(location.search);
   const renderer = new THREE.WebGPURenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(window.devicePixelRatio); // native resolution (no cap)
   renderer.setSize(window.innerWidth, window.innerHeight);
   // Tone map matches the WebGL path (post pass / bloom arrives in P5).
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
