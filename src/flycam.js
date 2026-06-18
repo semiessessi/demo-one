@@ -14,6 +14,7 @@ const ORBIT_DUR = 40.0;   // seconds of slow, graceful orbit + pull-back before 
 const FLY_BLEND = 6.0;    // seconds easing the orbit into the Lissajous fly (smooth, not harsh)
 const FLY_SPEED = 0.4;    // Lissajous time scale (full fly speed)
 const FLY_FULL_SECS = 7.0; // seconds at full speed before the speed follows the music amplitude
+const FLY_MIN_FRAC = 0.18; // floor on fly speed (fraction of FLY_SPEED) so it never fully stops
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
@@ -94,7 +95,7 @@ export function createFlyCam(domElement, introTarget) {
       // speed can vary over time.
       const flyTime = Math.max(0, introT - ORBIT_DUR);
       const k = smooth(clamp((flyTime - FLY_FULL_SECS) / 3.0, 0, 1)); // 0 = full speed, 1 = music-reactive
-      const targetSpeed = FLY_SPEED * (1.0 - k) + FLY_SPEED * 0.5 * musicLevel * k;
+      const targetSpeed = FLY_SPEED * (1.0 - k) + FLY_SPEED * (FLY_MIN_FRAC + (0.5 - FLY_MIN_FRAC) * musicLevel) * k;
       flySpeedSmooth += (targetSpeed - flySpeedSmooth) * (1.0 - Math.exp(-dt / 0.6)); // very smooth
       if (introT >= ORBIT_DUR) flyU += flySpeedSmooth * dt;
       const U = flyU;
