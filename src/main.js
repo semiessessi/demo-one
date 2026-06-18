@@ -4,8 +4,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { generateScene } from './scene.js';
-import { buildLightTextures, buildOccluderTextures } from './lightData.js';
+import { generateScene, generateTestScene } from './scene.js';
+import {
+  buildLightTextures,
+  buildOccluderTextures,
+  buildReflectionData,
+} from './lightData.js';
 import {
   buildUnifiedGeometry,
   setInstanceAttributes,
@@ -41,13 +45,17 @@ controls.minDistance = 5;
 controls.maxDistance = 120;
 
 // --- Generate the static volume -------------------------------------------
-const { objects, lights, lightIndices, occluderIndices } = generateScene();
+const TEST = new URLSearchParams(location.search).has('test');
+const { objects, lights, lightIndices, occluderIndices, reflectionIndices } =
+  TEST ? generateTestScene() : generateScene();
 const lightTex = buildLightTextures(lights, lightIndices);
 const occTex = buildOccluderTextures(objects, occluderIndices);
+const reflTex = buildReflectionData(objects, reflectionIndices);
+if (TEST) camera.position.set(8, 4, 11);
 
 const uniforms = {
-  uTime: { value: 0 },
-  uSpeed: { value: 0.5 },
+  uTime: { value: TEST ? 3.0 : 0 }, // test scene sits on a cube
+  uSpeed: { value: TEST ? 0 : 0.5 },
   uNumSegments: { value: NUM_SEGMENTS },
   uNormScale: { value: buildNormScaleLUT() },
   uLightsTex: { value: lightTex.lightsTex },
@@ -58,6 +66,10 @@ const uniforms = {
   uOccluderTexW: { value: occTex.occluderTexW },
   uShadowIndexTex: { value: occTex.shadowIndexTex },
   uShadowIndexW: { value: occTex.shadowIndexW },
+  uReflIndexTex: { value: reflTex.reflIndexTex },
+  uReflIndexW: { value: reflTex.reflIndexW },
+  uInstanceTex: { value: reflTex.instanceTex },
+  uInstanceTexW: { value: reflTex.instanceTexW },
 };
 const spriteUniforms = { uSpriteSize: { value: 0.16 } };
 
@@ -77,9 +89,9 @@ const composer = new EffectComposer(renderer); // half-float render targets
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.6, // strength
+  TEST ? 0.15 : 0.6, // strength (gentler in the shadow test)
   0.5, // radius
-  0.7, // luminance threshold (HDR)
+  TEST ? 0.9 : 0.7, // luminance threshold (HDR)
 );
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
@@ -89,7 +101,7 @@ const scrub = document.getElementById('scrub');
 const label = document.getElementById('label');
 const playToggle = document.getElementById('playToggle');
 let playing = true;
-const SCRUB_SPAN = (2 * NUM_SEGMENTS) / uniforms.uSpeed.value; // one ping-pong period (s)
+const SCRUB_SPAN = uniforms.uSpeed.value > 0 ? (2 * NUM_SEGMENTS) / uniforms.uSpeed.value : 1; // one ping-pong period (s)
 
 label.textContent = `${objects.length} objects · ${lights.length} lights`;
 

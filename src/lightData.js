@@ -64,3 +64,29 @@ export function buildOccluderTextures(objects, occluderIndices) {
     shadowIndexW: idxTex.width,
   };
 }
+
+// Reflection data: per-object material/light texture (so a reflection hit can be
+// shaded) plus the flat reflection-occluder index list.
+//   instance texel 0: [albedo.rgb, rough]
+//   instance texel 1: [lightOffset, lightCount, metal, 0]
+export function buildReflectionData(objects, reflectionIndices) {
+  const inst = new Float32Array(objects.length * 2 * 4);
+  objects.forEach((o, i) => {
+    const a = i * 8;
+    inst[a] = o.color[0];
+    inst[a + 1] = o.color[1];
+    inst[a + 2] = o.color[2];
+    inst[a + 3] = o.rough;
+    inst[a + 4] = o.lightOffset;
+    inst[a + 5] = o.lightCount;
+    inst[a + 6] = o.metal;
+  });
+  const instTex = dataTexture(inst, objects.length * 2, 4);
+  const reflIdxTex = dataTexture(reflectionIndices, reflectionIndices.length, 1);
+  return {
+    instanceTex: instTex.tex,
+    instanceTexW: instTex.width,
+    reflIndexTex: reflIdxTex.tex,
+    reflIndexW: reflIdxTex.width,
+  };
+}

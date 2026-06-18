@@ -15,6 +15,7 @@ const BUCKETS_PER_AXIS = 10;
 const R_PROXY = 1.0; // shadow/reflection sphere-proxy radius factor (× scale)
 const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
 const REFLECTION_CAP = 128; // max occluders per object for reflections
+const REFLECTION_REACH = 7.0; // how far reflection rays look for occluders
 const SEED = 0x1234abcd;
 
 // Small LCG (numerical-recipes constants) for reproducible randomness.
@@ -80,12 +81,14 @@ export function generateScene() {
       proxyRadius: scale * R_PROXY,
       phase: rand(0, 20),
       color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
-      rough: rand(0.25, 0.9),
+      rough: rand(0.12, 0.9), // some smooth enough to reflect
       metal: rng() < 0.25 ? 1.0 : 0.0,
       lightOffset: 0,
       lightCount: 0,
       shadowOffset: 0,
       shadowCount: 0,
+      reflOffset: 0,
+      reflCount: 0,
     });
 
     for (let k = 0; k < LIGHTS_PER_OBJECT; k++) {
@@ -103,14 +106,56 @@ export function generateScene() {
 
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects);
-  return { objects, lights, lightIndices, occluderIndices };
+  const reflectionIndices = buildNeighborLists(
+    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
+  return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
 }
 
-// Per-object nearby-occluder lists for shadows. An occluder can only matter if
-// it sits in the region between the object and its lights, so the reach is tied
-// to the light radius (keeps lists short). Objects are sphere proxies; nearest
-// SHADOW_CAP kept. Writes shadowOffset/shadowCount onto objects.
+// A minimal scene to verify shadows: one light and two objects (one big, one
+// small) positioned so the big one casts a shadow on the small one. Enabled by
+// adding ?test to the URL.
+export function generateTestScene() {
+  const objects = [];
+  const makeObj = (pos, scale, color) => ({
+    pos,
+    quat: [0, 0, 0, 1],
+    spinAxis: [0, 1, 0],
+    spinSpeed: 0,
+    scale,
+    radius: MAX_NORM_CIRCUMRADIUS * scale,
+    proxyRadius: scale * R_PROXY,
+    phase: 3.0, // a cube (clear silhouette), static
+    color,
+    rough: 0.6,
+    metal: 0,
+    lightOffset: 0, lightCount: 0,
+    shadowOffset: 0, shadowCount: 0,
+    reflOffset: 0, reflCount: 0,
+  });
+  objects.push(makeObj([0, 0, 0], 1.6, [0.75, 0.75, 0.78])); // big occluder
+  objects.push(makeObj([-2.7, -1.5, -0.9], 0.7, [0.8, 0.78, 0.7])); // small receiver (in shadow)
+
+  // One bright light; small cube sits along the big cube's shadow direction.
+  const lights = [{ pos: [6, 3.3, 2], color: [22, 22, 22], radius: 40 }];
+
+  const lightIndices = buildLightLists(objects, lights);
+  const occluderIndices = buildOccluderLists(objects);
+  const reflectionIndices = buildNeighborLists(
+    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
+  return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
+}
+
+// Shadow occluder lists: reach is tied to the light radius so lists stay short.
 function buildOccluderLists(objects) {
+  return buildNeighborLists(
+    objects, (o) => o.radius + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount');
+}
+
+// Generic per-object nearby-object lists via the bucket grid. An object j is
+// included for O when their separation is within reachFn(O) + j.proxyRadius;
+// nearest `cap` are kept. Writes O[offsetKey]/O[countKey] and returns the flat
+// index array. Objects are treated as sphere proxies.
+function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const o of objects)
@@ -125,37 +170,38 @@ function buildOccluderLists(objects) {
   const key = (x, y, z) => (x * B + y) * B + z;
 
   let maxProxy = 0;
-  objects.forEach((o, i) => { o._i = i; maxProxy = Math.max(maxProxy, o.proxyRadius); });
+  objects.forEach((o) => { maxProxy = Math.max(maxProxy, o.proxyRadius); });
   const buckets = Array.from({ length: B * B * B }, () => []);
   objects.forEach((o, i) => {
     buckets[key(coord(o.pos[0], 0), coord(o.pos[1], 1), coord(o.pos[2], 2))].push(i);
   });
 
   const indices = [];
-  for (const o of objects) {
-    const reach = o.radius + LIGHT_RADIUS + maxProxy;
+  objects.forEach((o, self) => {
+    const reach = reachFn(o);
+    const bucketReach = reach + maxProxy;
     const c = o.pos;
-    const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
-    const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
-    const z0 = coord(c[2] - reach, 2), z1 = coord(c[2] + reach, 2);
+    const x0 = coord(c[0] - bucketReach, 0), x1 = coord(c[0] + bucketReach, 0);
+    const y0 = coord(c[1] - bucketReach, 1), y1 = coord(c[1] + bucketReach, 1);
+    const z0 = coord(c[2] - bucketReach, 2), z1 = coord(c[2] + bucketReach, 2);
     const cands = [];
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++)
           for (const j of buckets[key(x, y, z)]) {
-            if (j === o._i) continue;
+            if (j === self) continue;
             const oc = objects[j];
             const dx = c[0] - oc.pos[0], dy = c[1] - oc.pos[1], dz = c[2] - oc.pos[2];
             const d2 = dx * dx + dy * dy + dz * dz;
-            const lim = o.radius + LIGHT_RADIUS + oc.proxyRadius;
+            const lim = reach + oc.proxyRadius;
             if (d2 <= lim * lim) cands.push({ j, d2 });
           }
     cands.sort((a, b) => a.d2 - b.d2);
-    o.shadowOffset = indices.length;
-    const count = Math.min(cands.length, SHADOW_CAP);
+    o[offsetKey] = indices.length;
+    const count = Math.min(cands.length, cap);
     for (let k = 0; k < count; k++) indices.push(cands[k].j);
-    o.shadowCount = count;
-  }
+    o[countKey] = count;
+  });
   return new Float32Array(indices);
 }
 

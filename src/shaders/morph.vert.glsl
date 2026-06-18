@@ -5,20 +5,14 @@ in vec3 position;   // start position of this vertex's segment
 in vec3 aEnd;       // end position of this vertex's segment
 in float aSegment;  // which journey segment this vertex belongs to
 
-// Per-instance
+// Per-instance (scalars packed into vec4s to stay under 16 attributes)
 in vec3 aInstancePos;
-in vec4 aQuat;       // base orientation (unit quaternion)
+in vec4 aQuat;        // base orientation (unit quaternion)
 in vec3 aSpinAxis;
-in float aSpinSpeed;
-in float aScale;
-in float aPhaseOffset;
+in vec4 aMisc;        // spinSpeed, scale, phaseOffset, _
 in vec3 aColor;
-in float aRough;
-in float aMetal;
-in float aLightOffset;
-in float aLightCount;
-in float aShadowOffset;
-in float aShadowCount;
+in vec4 aMaterial;    // rough, metal, lightOffset, lightCount
+in vec4 aLists;       // shadowOffset, shadowCount, reflOffset, reflCount
 
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
@@ -35,6 +29,8 @@ flat out int vLightOffset;
 flat out int vLightCount;
 flat out int vShadowOffset;
 flat out int vShadowCount;
+flat out int vReflOffset;
+flat out int vReflCount;
 
 vec3 qrot(vec4 q, vec3 v) {
   return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -47,20 +43,22 @@ vec4 qmul(vec4 a, vec4 b) {
   return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz),
               a.w * b.w - dot(a.xyz, b.xyz));
 }
-// Triangle wave on [0, n] with period 2n (ping-pong, no seam).
 float pingpong(float x, float n) {
   float m = mod(x, 2.0 * n);
   return m <= n ? m : 2.0 * n - m;
 }
 
 void main() {
-  float p = pingpong(uTime * uSpeed + aPhaseOffset, uNumSegments);
+  float spinSpeed = aMisc.x;
+  float scale = aMisc.y;
+  float phaseOffset = aMisc.z;
+
+  float p = pingpong(uTime * uSpeed + phaseOffset, uNumSegments);
   int seg = int(floor(p));
   float localT = fract(p);
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }
 
-  // Only the vertices of the object's current segment are positioned; the rest
-  // collapse to a point and are culled as degenerate triangles.
+  // Only the active segment's vertices are positioned; the rest collapse.
   vec3 local = (int(aSegment + 0.5) == seg) ? mix(position, aEnd, localT) : vec3(0.0);
 
   // Normalize each shape to a constant mean of in/circumradius (LUT by phase).
@@ -69,18 +67,20 @@ void main() {
   int i1 = min(i0 + 1, 127);
   local *= mix(uNormScale[i0], uNormScale[i1], fp - float(i0));
 
-  vec4 spin = quatAxisAngle(aSpinAxis, uTime * aSpinSpeed);
+  vec4 spin = quatAxisAngle(aSpinAxis, uTime * spinSpeed);
   vec4 q = qmul(spin, aQuat);
-  vec3 world = aInstancePos + qrot(q, local * aScale);
+  vec3 world = aInstancePos + qrot(q, local * scale);
 
   vWorldPos = world;
   vColor = aColor;
-  vRough = aRough;
-  vMetal = aMetal;
-  vLightOffset = int(aLightOffset + 0.5);
-  vLightCount = int(aLightCount + 0.5);
-  vShadowOffset = int(aShadowOffset + 0.5);
-  vShadowCount = int(aShadowCount + 0.5);
+  vRough = aMaterial.x;
+  vMetal = aMaterial.y;
+  vLightOffset = int(aMaterial.z + 0.5);
+  vLightCount = int(aMaterial.w + 0.5);
+  vShadowOffset = int(aLists.x + 0.5);
+  vShadowCount = int(aLists.y + 0.5);
+  vReflOffset = int(aLists.z + 0.5);
+  vReflCount = int(aLists.w + 0.5);
 
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
