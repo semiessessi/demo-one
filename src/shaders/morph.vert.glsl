@@ -19,6 +19,7 @@ uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform float uTime;
 uniform float uSpawn; // spawn-in intro clock: objects scale up as it sweeps past their slot
+uniform float uScaleNotes; // pdx music-scale note counter (smoothed); objects pulse in size
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 
@@ -37,7 +38,7 @@ void main() {
   float spinSpeed = aMisc.x;
   // spawn rank by stable object id (aOrigIndex), so the reveal order survives the
   // frustum compaction that makes gl_InstanceID the draw slot rather than the object.
-  float scale = aMisc.y * spawnReveal(float(aOrigIndex), uSpawn);
+  float scale = aMisc.y * spawnReveal(float(aOrigIndex), uSpawn) * musicScale(int(aOrigIndex), uScaleNotes);
   float phaseOffset = aMisc.z;
   float morphSpeed = aMisc.w;
 

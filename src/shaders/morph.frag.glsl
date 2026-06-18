@@ -22,6 +22,7 @@ uniform float uBeatTime[32];     // per-slot time (uMusicTime units) of the last
 uniform float uBeatStrength[32]; // per-slot note-on strength; light picks slot = idx % 32
 uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
 uniform float uMusicTime;       // music clock the beat timestamps are measured in
+uniform float uScaleNotes;      // pdx music-scale note counter (smoothed); objects pulse in size
 uniform float uNumSegments;
 uniform float uNormScale[128];
 uniform float uMaxCircumradius; // occluder bounding radius = scale * this (cull)
@@ -97,7 +98,7 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }
 
   vec4 q = qmul(quatAxisAngle(t2.xyz, uTime * t2.w), baseQ);
-  float S = scale * lookupNorm(p);
+  float S = scale * lookupNorm(p) * musicScale(oi, uScaleNotes); // match the vertex's music-scaled size
 
   // Ray into the occluder's morph-local space (t parameter is preserved).
   vec3 roL = qrot(qconj(q), roW - center) / S;

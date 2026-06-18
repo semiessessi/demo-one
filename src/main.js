@@ -62,6 +62,8 @@ const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's la
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
 const beatSeed = new Float32Array(N_BANDS); // per-slot note seed; re-rolled each note -> a fresh light subset
 let noteCounter = 0; // ever-increasing; stamped into beatSeed[slot] on each note-on
+let scaleNotes = 0; // total note-ons; drives the pdx music-scale
+let scalePhase = 0; // exp-smoothed scaleNotes (NoteChase=12) -> uScaleNotes
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -69,14 +71,18 @@ let musicClock = 0; // ever-increasing music clock; beat timestamps live in thes
 function updateMusic(dt) {
   musicClock += dt;
   audio.consumeNotes(slotNote);
+  let notes = 0;
   for (let b = 0; b < N_BANDS; b++) {
     if (slotNote[b]) {
       beatTime[b] = musicClock;
       beatStrength[b] = 1.3;
       beatSeed[b] = ++noteCounter; // fresh seed -> a different ~12% subset of this slot flares
+      notes++;
     }
   }
-  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed);
+  scaleNotes += notes;
+  scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
+  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase);
 }
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
@@ -114,6 +120,8 @@ function setPlaying(next) {
     beatStrength.fill(0);
     beatSeed.fill(0);
     noteCounter = 0;
+    scaleNotes = 0;
+    scalePhase = 0;
     scrub.value = '0';
     backend.setTime(0);
     backend.setLightTime(0);
@@ -208,7 +216,7 @@ if (CAPTURE) {
   beatStrength.fill(1.0); // age 0 (lit); the per-note subset (fixed seed 0) stays deterministic
   beatTime.fill(0.0);
   beatSeed.fill(0.0);
-  backend.setMusic(0, beatTime, beatStrength, beatSeed);
+  backend.setMusic(0, beatTime, beatStrength, beatSeed, 0); // scaleNotes=0 -> static per-object scale
   for (const id of ['controls', 'info', 'toast', 'stats']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';

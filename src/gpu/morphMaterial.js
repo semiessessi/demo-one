@@ -17,7 +17,7 @@ import {
   packOccluderTransforms, INSTANCE_STRIDE,
 } from './data.js';
 import { roVec4, roFloat } from './storage.js';
-import { wgAnimDir, wgLightEmission, wgSpawnScale } from './orbit.js';
+import { wgAnimDir, wgLightEmission, wgSpawnScale, wgMusicScale } from './orbit.js';
 
 const REFL_ROUGHNESS_MAX = 0.35;
 const SHADOW_LIGHTS = 16; // nearest N lights cast shadows
@@ -150,7 +150,7 @@ function buildGeometry() {
 // Builds the instanced morph mesh. `uTime` drives the morph clock; `uLightTime` is a
 // separate clock for the orbiting lights (toggleable); `uBeatTime`/`uBeatStrength` +
 // `uMusicTime` drive the beat flares; `uSpawn` is the spawn-in intro clock. TSL nodes.
-export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn) {
+export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn, uScaleNotes) {
   const { objects, lights, lightIndices, occluderIndices, reflectionIndices } = data;
   const LPO = lights.length / objects.length; // lights per object -> a light's host spawn rank
 
@@ -221,7 +221,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
     const segI = seg.toInt();
 
     const q = wgQmul(wgQuatAxisAngle(t2.xyz, uTime.mul(t2.w)), baseQ);
-    const S = scale.mul(lookupNorm(p));
+    const S = scale.mul(lookupNorm(p)).mul(wgMusicScale(float(oi), uScaleNotes));
     const roL = wgQrot(wgQconj(q), roW.sub(center)).div(S);
     const rdL = wgQrot(wgQconj(q), rdW).div(S);
 
@@ -376,7 +376,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
     const ns = lookupNorm(p);
     const world = wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
     // Scale the object in around its centre over the spawn intro.
-    return ps.xyz.add(world.sub(ps.xyz).mul(wgSpawnScale(float(gid), uSpawn)));
+    return ps.xyz.add(world.sub(ps.xyz).mul(wgSpawnScale(float(gid), uSpawn)).mul(wgMusicScale(float(gid), uScaleNotes)));
   })();
 
   // --- fragment: GGX direct + shadows + reflections ---

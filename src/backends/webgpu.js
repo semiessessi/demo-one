@@ -71,7 +71,8 @@ export async function createWebGPUBackend(data) {
   const beatSeedArr = new Float32Array(32); // per-slot note seed, set in setMusic
   const uBeatSeed = uniformArray(beatSeedArr, 'float');
   const uMusicTime = uniform(0);
-  const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn);
+  const uScaleNotes = uniform(0); // pdx music-scale note counter (smoothed)
+  const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn, uScaleNotes);
   scene.add(morph.mesh);
   scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn, data.lights.length / data.objects.length));
 
@@ -106,7 +107,7 @@ export async function createWebGPUBackend(data) {
     setTime(t) { uTime.value = t; },
     setLightTime(t) { uLightTime.value = t; },
     setSpawn(s) { uSpawn.value = s; },
-    setMusic(now, beatTime, strength, seed) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); beatSeedArr.set(seed); },
+    setMusic(now, beatTime, strength, seed, scaleNotes) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); beatSeedArr.set(seed); uScaleNotes.value = scaleNotes; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target);

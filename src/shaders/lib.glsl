@@ -72,6 +72,19 @@ float musicBeatLit(int idx, float seed) {
   return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
 }
 
+// pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
+// count), easing between random per-object scales in [0.2,1.0]. Sync with wgMusicScale.
+float musicScale(int i, float notes) {
+  float off = hashUnit(hash(uint(i) * 5u + 7u)) * 20.0; // NotesPerChange = 20
+  float prog = (notes + off) / 20.0;
+  float epoch = floor(prog);
+  float blend = smoothstep(0.0, 0.3, prog - epoch);
+  uint cs = uint(epoch);
+  float prev = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ ((cs - 1u) * 2246822519u))));
+  float cur  = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ (cs * 2246822519u))));
+  return mix(prev, cur, blend);
+}
+
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash
 // (spawnIgnite) then settle to music-reactive. Keep in sync with gpu/orbit.js.

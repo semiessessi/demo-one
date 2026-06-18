@@ -49,3 +49,21 @@ export const wgLightEmission = wgslFn(`
     return flare * part;
   }
 `);
+
+// pdx-gfx music-reactive object scale (size pulses with the music). Byte-identical to
+// musicScale in shaders/lib.glsl: steps every 20 notes, eases between per-object [0.2,1.0].
+export const wgMusicScale = wgslFn(`
+  fn wgMusicScale(idxF: f32, notes: f32) -> f32 {
+    var ho = (u32(idxF) * 5u + 7u) ^ 2747636419u; ho = ho * 2654435769u; ho = ho ^ (ho >> 16u); ho = ho * 2654435769u; ho = ho ^ (ho >> 16u); ho = ho * 2654435769u;
+    let off = (f32(ho & 0x00FFFFFFu) / 16777215.0) * 20.0;
+    let prog = (notes + off) / 20.0;
+    let epoch = floor(prog);
+    let blend = smoothstep(0.0, 0.3, prog - epoch);
+    let cs = u32(epoch);
+    var hp = (u32(idxF) ^ ((cs - 1u) * 2246822519u)) ^ 2747636419u; hp = hp * 2654435769u; hp = hp ^ (hp >> 16u); hp = hp * 2654435769u; hp = hp ^ (hp >> 16u); hp = hp * 2654435769u;
+    var hc = (u32(idxF) ^ (cs * 2246822519u)) ^ 2747636419u; hc = hc * 2654435769u; hc = hc ^ (hc >> 16u); hc = hc * 2654435769u; hc = hc ^ (hc >> 16u); hc = hc * 2654435769u;
+    let prev = mix(0.2, 1.0, f32(hp & 0x00FFFFFFu) / 16777215.0);
+    let cur = mix(0.2, 1.0, f32(hc & 0x00FFFFFFu) / 16777215.0);
+    return mix(prev, cur, blend);
+  }
+`);
