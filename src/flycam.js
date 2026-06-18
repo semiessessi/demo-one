@@ -10,8 +10,8 @@
 const SENS = 0.003;       // radians per pixel of drag
 const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
-const ORBIT_DUR = 45.0;   // seconds of slow, graceful orbit + pull-back before the fly
-const FLY_BLEND = 1.5;    // quick "boom" transition from the orbit into the Lissajous fly
+const ORBIT_DUR = 68.0;   // seconds of slow, graceful orbit + pull-back before the fly (1.5x)
+const FLY_BLEND = 6.0;    // seconds easing the orbit into the Lissajous fly (smooth, not harsh)
 const FLY_SPEED = 0.4;    // Lissajous time scale
 const FLY_AMP = [9.0, 4.5, 9.0];     // fly extent per axis (x, y-up, z)
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
@@ -77,9 +77,9 @@ export function createFlyCam(domElement, introTarget) {
       // Orbit the focal object, pulling back + rising over ORBIT_DUR.
       const oe = smooth(Math.min(introT, ORBIT_DUR) / ORBIT_DUR);
       const oang = introT * 0.35 + 1.0;
-      const orad = 2.0 + (16.0 - 2.0) * oe; // start at half distance (twice as close to the hero)
+      const orad = 2.0 + (12.0 - 2.0) * oe; // half-distance start, ~75% pull-back (less far)
       const opx = introTarget[0] + Math.cos(oang) * orad;
-      const opy = introTarget[1] + 1.0 + 8.0 * oe; // start lower/closer too, same wide end
+      const opy = introTarget[1] + 1.0 + 6.0 * oe; // start close, ~75% rise
       const opz = introTarget[2] + Math.sin(oang) * orad;
       const lookK = Math.min(1, introT / ORBIT_DUR); // pan from focal toward origin
       const otx = introTarget[0] * (1 - lookK);
@@ -162,8 +162,8 @@ export function cameraPathPoints(focal) {
     const introT = (i / ORBIT_N) * ORBIT_DUR;
     const oe = smooth(introT / ORBIT_DUR);
     const oang = introT * 0.35 + 1.0;
-    const orad = 2.0 + (16.0 - 2.0) * oe;
-    pts.push([focal[0] + Math.cos(oang) * orad, focal[1] + 1.0 + 8.0 * oe, focal[2] + Math.sin(oang) * orad]);
+    const orad = 2.0 + (12.0 - 2.0) * oe; // keep in sync with update()'s orbit
+    pts.push([focal[0] + Math.cos(oang) * orad, focal[1] + 1.0 + 6.0 * oe, focal[2] + Math.sin(oang) * orad]);
   }
   for (let i = 0; i <= FLY_N; i++) {
     const U = (i / FLY_N) * FLY_UMAX;
