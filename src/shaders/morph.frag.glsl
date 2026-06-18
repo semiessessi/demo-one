@@ -239,32 +239,37 @@ void main() {
 
     float ht; vec3 hN; int hObj;
     vec3 refl;
+    int reflLo = -1, reflLc = 0; // hit object's light list -> reflect its sprites as blobs
     if (traceReflection(vWorldPos + N * 0.02, Rdir, N, reflCap, ht, hN, hObj)) {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
       refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2, 6);
       refl += m0.rgb * environment(hN) * 0.3;
+      reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
       refl = environment(Rdir);
     }
-    // Reflect the light sprites: this object's orbiting lights that the reflection ray points
-    // at glow like their sprites, so reflective surfaces show the same blobs (esp. the hero).
-    vec3 rro = vWorldPos + N * 0.02;
-    for (int k = 0; k < vLightCount && k < lightCap; k++) {
-      int li = int(texelFetch(uLightIndexTex, texel(vLightOffset + k, uIndexTexW), 0).r + 0.5);
-      vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
-      vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
-      vec3 toL = lp - rro;
-      float tL = dot(toL, Rdir);
-      if (tL <= 0.02 || tL > ht) continue; // behind the camera ray, or behind the reflected hit
-      int lband = li % 32;
-      float lhost = floor(float(li) / uLightsPerObject);
-      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
-      if (e <= 1e-4) continue;
-      float perp = length(toL - Rdir * tL);
-      float r = perp / (0.15 + 0.3 * e); // blob world radius grows with brightness
-      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
+    // Reflect the sprites of the lights AROUND the reflected object: the reflection ray points
+    // outward at the hit object, so a mirror should show that object's glowing light blobs (the
+    // surface's own nearby lights are behind the ray, which is why they didn't show before).
+    if (reflLo >= 0) {
+      vec3 rro = vWorldPos + N * 0.02;
+      for (int k = 0; k < reflLc && k < 24; k++) {
+        int li = int(texelFetch(uLightIndexTex, texel(reflLo + k, uIndexTexW), 0).r + 0.5);
+        vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
+        vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
+        vec3 toL = lp - rro;
+        float tL = dot(toL, Rdir);
+        if (tL <= 0.5) continue; // in front of the surface
+        int lband = li % 32;
+        float lhost = floor(float(li) / uLightsPerObject);
+        float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+        if (e <= 1e-4) continue;
+        float perp = length(toL - Rdir * tL);
+        float r = perp / (0.3 + 0.5 * e); // bigger blob -> easier to see in the reflection
+        if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
+      }
     }
     lit += refl * envF;
   }
