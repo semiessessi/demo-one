@@ -238,15 +238,19 @@ function buildLightLists(objects, lights) {
     const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
     const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
     const z0 = coord(c[2] - reach, 2), z1 = coord(c[2] + reach, 2);
+    const found = [];
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++)
           for (const li of buckets[idx(x, y, z)]) {
             const l = lights[li];
             const dx = c[0] - l.pos[0], dy = c[1] - l.pos[1], dz = c[2] - l.pos[2];
-            if (dx * dx + dy * dy + dz * dz <= (o.radius + l.radius) ** 2) indices.push(li);
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 <= (o.radius + l.radius) ** 2) found.push({ li, d2 });
           }
-    o.lightCount = indices.length - o.lightOffset;
+    found.sort((a, b) => a.d2 - b.d2); // nearest first, so the shader shadows the closest
+    for (const f of found) indices.push(f.li);
+    o.lightCount = found.length;
   }
   return new Float32Array(indices);
 }

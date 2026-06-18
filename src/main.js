@@ -19,7 +19,7 @@ import {
 import { buildLightSprites } from './lightSprites.js';
 import { buildNormScaleLUT } from './normalize.js';
 import { buildSky } from './sky.js';
-import { buildGeometryTexture, buildOccluderTransforms } from './occluderData.js';
+import { buildPlaneTexture, buildOccluderTransforms } from './occluderData.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -54,7 +54,7 @@ const { objects, lights, lightIndices, occluderIndices, reflectionIndices } =
 const lightTex = buildLightTextures(lights, lightIndices);
 const occTex = buildOccluderTextures(objects, occluderIndices);
 const reflTex = buildReflectionData(objects, reflectionIndices);
-const geo = buildGeometryTexture();
+const geo = buildPlaneTexture();
 const occXf = buildOccluderTransforms(objects);
 if (TEST) {
   camera.position.set(6, 2, 8);
@@ -78,9 +78,9 @@ const uniforms = {
   uReflIndexW: { value: reflTex.reflIndexW },
   uInstanceTex: { value: reflTex.instanceTex },
   uInstanceTexW: { value: reflTex.instanceTexW },
-  uGeoTex: { value: geo.geoTex },
-  uGeoTexW: { value: geo.geoTexW },
-  uSegVertStart: { value: geo.segVertStart },
+  uPlaneTex: { value: geo.planeTex },
+  uPlaneTexW: { value: geo.planeTexW },
+  uSegTriStart: { value: geo.segTriStart },
   uSegTriCount: { value: geo.segTriCount },
   uOccTransformTex: { value: occXf.transformTex },
   uOccTransformTexW: { value: occXf.transformTexW },

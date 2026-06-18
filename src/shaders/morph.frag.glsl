@@ -29,14 +29,15 @@ uniform sampler2D uReflIndexTex;
 uniform int uReflIndexW;
 uniform sampler2D uInstanceTex;     // 2 texels/object: [albedo.rgb, rough], [lo, lc, metal, _]
 uniform int uInstanceTexW;
-uniform sampler2D uGeoTex;          // 2 texels/vertex: [start.xyz], [end.xyz]
-uniform int uGeoTexW;
+uniform sampler2D uPlaneTex;        // 2 texels/triangle: [n0.xyz, d0], [n1.xyz, d1]
+uniform int uPlaneTexW;
 uniform sampler2D uOccTransformTex; // 4 texels/object: pos+scale, quat, spinAxis+speed, phase
 uniform int uOccTransformTexW;
-uniform int uSegVertStart[16];
+uniform int uSegTriStart[16];
 uniform int uSegTriCount[16];
 
 const float REFL_ROUGHNESS_MAX = 0.35;
+const int SHADOW_LIGHTS = 8; // only the nearest few lights cast shadows
 
 ivec2 texel(int i, int w) { return ivec2(i % w, i / w); }
 
@@ -52,9 +53,6 @@ float lookupNorm(float p) {
   int i0 = int(floor(fp));
   return mix(uNormScale[i0], uNormScale[min(i0 + 1, 127)], fp - float(i0));
 }
-
-vec3 geoStart(int vi) { return texelFetch(uGeoTex, texel(vi * 2, uGeoTexW), 0).xyz; }
-vec3 geoEnd(int vi) { return texelFetch(uGeoTex, texel(vi * 2 + 1, uGeoTexW), 0).xyz; }
 
 float falloff(float dist, float radius) {
   float a = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
@@ -120,23 +118,20 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   vec3 roL = qrot(qconj(q), roW - center) / S;
   vec3 rdL = qrot(qconj(q), rdW) / S;
 
-  int vbase = uSegVertStart[seg];
+  int triBase = uSegTriStart[seg];
   int tcount = uSegTriCount[seg];
   float tEnter = -1e9;
   float tExit = 1e9;
   vec3 enterN = vec3(0.0);
   for (int t = 0; t < tcount; t++) {
-    int vi = vbase + t * 3;
-    vec3 a = mix(geoStart(vi), geoEnd(vi), localT);
-    vec3 bb = mix(geoStart(vi + 1), geoEnd(vi + 1), localT);
-    vec3 c = mix(geoStart(vi + 2), geoEnd(vi + 2), localT);
-    vec3 n = cross(bb - a, c - a);
-    float l2 = dot(n, n);
-    if (l2 < 1e-12) continue; // degenerate (collapsed) triangle
-    n *= inversesqrt(l2);
-    if (dot(n, a + bb + c) < 0.0) n = -n; // outward (hull centered at origin)
+    int gi = (triBase + t) * 2;
+    vec4 p0 = texelFetch(uPlaneTex, texel(gi, uPlaneTexW), 0);
+    if (dot(p0.xyz, p0.xyz) < 0.25) continue; // inactive (degenerate) triangle
+    vec4 p1 = texelFetch(uPlaneTex, texel(gi + 1, uPlaneTexW), 0);
+    vec3 n = normalize(mix(p0.xyz, p1.xyz, localT));
+    float d = mix(p0.w, p1.w, localT);
     float denom = dot(n, rdL);
-    float num = dot(n, a) - dot(n, roL);
+    float num = d - dot(n, roL);
     if (abs(denom) < 1e-9) {
       if (num < 0.0) return false; // parallel and outside this half-space
       continue;
@@ -174,7 +169,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     vec3 L = lightPos - p;
     float dist = length(L);
     L /= max(dist, 1e-4);
-    float shadow = doShadow ? traceShadow(p + N * 0.02, L, dist) : 1.0;
+    float shadow = (doShadow && k < SHADOW_LIGHTS) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
     lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * falloff(dist, colRad.w) * shadow;
   }
   return lit;
@@ -194,9 +189,9 @@ bool traceReflection(vec3 ro, vec3 rd, out float bestT, out vec3 bestN, out int 
 }
 
 void main() {
-  vec3 N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-  if (!gl_FrontFacing) N = -N;
   vec3 V = normalize(cameraPosition - vWorldPos);
+  vec3 N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+  if (dot(N, V) < 0.0) N = -N; // face the camera (winding-independent)
 
   vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true);
 

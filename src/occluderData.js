@@ -20,36 +20,54 @@ function rgbaTexture(data, texelCount) {
   return { tex, width: w };
 }
 
-// All segments' triangle vertices concatenated; 2 texels/vertex (start, end).
-// Also returns each segment's first-vertex offset and triangle count.
-export function buildGeometryTexture() {
+// Plane of a triangle (outward normal + offset), or null if degenerate. The
+// shapes are centred at the origin, so "outward" = same side as the centroid.
+function planeOf(p, ai, bi, ci) {
+  const ax = p[ai], ay = p[ai + 1], az = p[ai + 2];
+  const ux = p[bi] - ax, uy = p[bi + 1] - ay, uz = p[bi + 2] - az;
+  const vx = p[ci] - ax, vy = p[ci + 1] - ay, vz = p[ci + 2] - az;
+  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const len = Math.hypot(nx, ny, nz);
+  if (len < 1e-7) return null; // degenerate (collapsed) triangle
+  nx /= len; ny /= len; nz /= len;
+  const cx = (ax + p[bi] + p[ci]) / 3, cy = (ay + p[bi + 1] + p[ci + 1]) / 3, cz = (az + p[bi + 2] + p[ci + 2]) / 3;
+  if (nx * cx + ny * cy + nz * cz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+  return [nx, ny, nz, nx * ax + ny * ay + nz * az];
+}
+
+// Precompute every triangle's start-plane and end-plane (2 RGBA texels each:
+// [n.xyz, d]). The shader blends them by phase. A triangle degenerate at one end
+// reuses the valid end's plane; degenerate at both ends is marked inactive (n=0).
+export function buildPlaneTexture() {
   const segs = buildJourneySegments();
   let total = 0;
-  const segVertStart = [];
+  const segTriStart = [];
   const segTriCount = [];
   for (const s of segs) {
-    const vc = s.start.length / 3;
-    segVertStart.push(total);
-    segTriCount.push(vc / 3);
-    total += vc;
+    const tc = s.start.length / 9;
+    segTriStart.push(total);
+    segTriCount.push(tc);
+    total += tc;
   }
   const data = new Float32Array(total * 2 * 4);
-  let v = 0;
+  let tri = 0;
   for (const s of segs) {
-    const vc = s.start.length / 3;
-    for (let i = 0; i < vc; i++) {
-      const o = (v + i) * 8;
-      data[o] = s.start[i * 3];
-      data[o + 1] = s.start[i * 3 + 1];
-      data[o + 2] = s.start[i * 3 + 2];
-      data[o + 4] = s.end[i * 3];
-      data[o + 5] = s.end[i * 3 + 1];
-      data[o + 6] = s.end[i * 3 + 2];
+    const tc = s.start.length / 9;
+    for (let t = 0; t < tc; t++) {
+      const i = t * 9;
+      let ps = planeOf(s.start, i, i + 3, i + 6);
+      let pe = planeOf(s.end, i, i + 3, i + 6);
+      if (!ps && !pe) { tri++; continue; } // inactive: leave zeros
+      if (!ps) ps = pe;
+      if (!pe) pe = ps;
+      const o = tri * 8;
+      data[o] = ps[0]; data[o + 1] = ps[1]; data[o + 2] = ps[2]; data[o + 3] = ps[3];
+      data[o + 4] = pe[0]; data[o + 5] = pe[1]; data[o + 6] = pe[2]; data[o + 7] = pe[3];
+      tri++;
     }
-    v += vc;
   }
   const { tex, width } = rgbaTexture(data, total * 2);
-  return { geoTex: tex, geoTexW: width, segVertStart, segTriCount };
+  return { planeTex: tex, planeTexW: width, segTriStart, segTriCount };
 }
 
 // Per-object transform: [pos.xyz, scale], [quat], [spinAxis.xyz, spinSpeed], [phase,..].
