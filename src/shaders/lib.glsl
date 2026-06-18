@@ -36,11 +36,14 @@ uint hash(uint seed) {
 float hashUnit(uint h) { return float(h & 0x00FFFFFFu) / 16777215.0; }
 vec3 animLightDir(int idx, float t) {
   uint i = uint(idx);
-  float P = 1.0 + floor(hashUnit(hash(i * 3u + 0u)) * 3.0);
-  float Q = 1.0 + floor(hashUnit(hash(i * 3u + 1u)) * 4.0);
-  float R = 1.0 + floor(hashUnit(hash(i * 3u + 2u)) * 2.0);
+  // Wide integer-frequency ranges + a per-light speed so each light traces a unique closed
+  // Lissajous over its sphere (the old 3x4x2 = 24 combos made the movement look uniform).
+  float P = 1.0 + floor(hashUnit(hash(i * 3u + 0u)) * 6.0);  // 1..6
+  float Q = 1.0 + floor(hashUnit(hash(i * 3u + 1u)) * 7.0);  // 1..7
+  float R = 1.0 + floor(hashUnit(hash(i * 3u + 2u)) * 4.0);  // 1..4
   float phase = hashUnit(hash(i * 3u + 7u)) * 6.28318530718;
-  float A = t * 0.125 + phase; // 0.125 = ORBIT_SPEED
+  float speed = 0.07 + hashUnit(hash(i * 2654435761u + 99u)) * 0.13; // per-light orbit speed
+  float A = t * speed + phase;
   float th = P * A, ph = Q * A, ps = R * A;
   vec3 dir = vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
   dir.xy = vec2(dir.x * cos(ps) - dir.y * sin(ps), dir.x * sin(ps) + dir.y * cos(ps));

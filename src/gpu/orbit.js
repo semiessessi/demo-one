@@ -14,11 +14,13 @@ export const wgAnimDir = wgslFn(`
     var hq = (idx * 3u + 1u) ^ 2747636419u; hq = hq * 2654435769u; hq = hq ^ (hq >> 16u); hq = hq * 2654435769u; hq = hq ^ (hq >> 16u); hq = hq * 2654435769u;
     var hr = (idx * 3u + 2u) ^ 2747636419u; hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u;
     var hf = (idx * 3u + 7u) ^ 2747636419u; hf = hf * 2654435769u; hf = hf ^ (hf >> 16u); hf = hf * 2654435769u; hf = hf ^ (hf >> 16u); hf = hf * 2654435769u;
-    let P = 1.0 + floor(f32(hp & 0x00FFFFFFu) / 16777215.0 * 3.0);
-    let Q = 1.0 + floor(f32(hq & 0x00FFFFFFu) / 16777215.0 * 4.0);
-    let R = 1.0 + floor(f32(hr & 0x00FFFFFFu) / 16777215.0 * 2.0);
+    var hs = (idx * 2654435761u + 99u) ^ 2747636419u; hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u;
+    let P = 1.0 + floor(f32(hp & 0x00FFFFFFu) / 16777215.0 * 6.0);
+    let Q = 1.0 + floor(f32(hq & 0x00FFFFFFu) / 16777215.0 * 7.0);
+    let R = 1.0 + floor(f32(hr & 0x00FFFFFFu) / 16777215.0 * 4.0);
     let phase = f32(hf & 0x00FFFFFFu) / 16777215.0 * 6.28318530718;
-    let A = t * 0.125 + phase;
+    let speed = 0.07 + f32(hs & 0x00FFFFFFu) / 16777215.0 * 0.13;
+    let A = t * speed + phase;
     let th = P * A; let ph = Q * A; let ps = R * A;
     let dir = vec3<f32>(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
     return vec3<f32>(dir.x * cos(ps) - dir.y * sin(ps), dir.x * sin(ps) + dir.y * cos(ps), dir.z);
