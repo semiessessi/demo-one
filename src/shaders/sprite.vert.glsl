@@ -28,7 +28,7 @@ void main() {
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
 
   // Orbit the light around its host centre (matches morph.frag.glsl shadeDirect).
-  vec3 lightPos = aLightPos + aOrbitRadius * animLightDir(gl_InstanceID, uLightTime);
+  vec3 lightPos = aLightPos + aOrbitRadius * animLightDir(gl_InstanceID, uLightTime, lightKick(gl_InstanceID, uBeatTime[gl_InstanceID % 32], uBeatSeed[gl_InstanceID % 32], uMusicTime));
 
   // Spawn-in + beat flare (matches morph.frag.glsl). emission = one-shot ignite flash
   // plus the music flare once revealed, and is exactly 0 before reveal / between beats,

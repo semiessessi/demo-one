@@ -22,6 +22,7 @@ uniform float uBeatTime[32];     // per-slot time (uMusicTime units) of the last
 uniform float uBeatStrength[32]; // per-slot note-on strength; light picks slot = idx % 32
 uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
 uniform float uBeatDecay[32];    // per-slot pulse-decay factor (from note pitch; 1 = neutral)
+uniform vec4 uRipple[4];          // brightness ripples (centre.xyz, startTime) — reflected too
 uniform float uMusicTime;       // music clock the beat timestamps are measured in
 uniform float uScaleNotes;      // pdx music-scale note counter (smoothed); objects pulse in size
 uniform sampler2D uMorphPTex;   // per-object morph position (CPU note-stepped), indexed by object id
@@ -166,7 +167,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
   for (int k = 0; k < lc && k < lightCap; k++) {
     int idx = int(texelFetch(uLightIndexTex, texel(lo + k, uIndexTexW), 0).r + 0.5);
     vec4 c0 = texelFetch(uLightsTex, texel(idx * 2, uLightsTexW), 0); // center.xyz, orbitRadius
-    vec3 lightPos = c0.xyz + c0.w * animLightDir(idx, uLightTime); // orbit around the host centre
+    vec3 lightPos = c0.xyz + c0.w * animLightDir(idx, uLightTime, lightKick(idx, uBeatTime[idx % 32], uBeatSeed[idx % 32], uMusicTime)); // orbit + note-kick
     vec4 colRad = texelFetch(uLightsTex, texel(idx * 2 + 1, uLightsTexW), 0);
     vec3 L = lightPos - p;
     float dist = length(L);
@@ -243,6 +244,24 @@ void main() {
       refl += m0.rgb * environment(hN) * 0.3;
     } else {
       refl = environment(Rdir);
+    }
+    // Reflect the light sprites: this object's orbiting lights that the reflection ray points
+    // at glow like their sprites, so reflective surfaces show the same blobs (esp. the hero).
+    vec3 rro = vWorldPos + N * 0.02;
+    for (int k = 0; k < vLightCount && k < lightCap; k++) {
+      int li = int(texelFetch(uLightIndexTex, texel(vLightOffset + k, uIndexTexW), 0).r + 0.5);
+      vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
+      vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
+      vec3 toL = lp - rro;
+      float tL = dot(toL, Rdir);
+      if (tL <= 0.02 || tL > ht) continue; // behind the camera ray, or behind the reflected hit
+      int lband = li % 32;
+      float lhost = floor(float(li) / uLightsPerObject);
+      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+      if (e <= 1e-4) continue;
+      float perp = length(toL - Rdir * tL);
+      float r = perp / (0.15 + 0.3 * e); // blob world radius grows with brightness
+      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
     }
     lit += refl * envF;
   }

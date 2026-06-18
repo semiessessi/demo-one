@@ -34,7 +34,7 @@ uint hash(uint seed) {
   return seed;
 }
 float hashUnit(uint h) { return float(h & 0x00FFFFFFu) / 16777215.0; }
-vec3 animLightDir(int idx, float t) {
+vec3 animLightDir(int idx, float t, float kick) {
   uint i = uint(idx);
   // Wide integer-frequency ranges + a per-light speed so each light traces a unique closed
   // Lissajous over its sphere (the old 3x4x2 = 24 combos made the movement look uniform).
@@ -42,8 +42,9 @@ vec3 animLightDir(int idx, float t) {
   float Q = 1.0 + floor(hashUnit(hash(i * 3u + 1u)) * 7.0);  // 1..7
   float R = 1.0 + floor(hashUnit(hash(i * 3u + 2u)) * 4.0);  // 1..4
   float phase = hashUnit(hash(i * 3u + 7u)) * 6.28318530718;
-  float speed = 0.07 + hashUnit(hash(i * 2654435761u + 99u)) * 0.13; // per-light orbit speed
-  float A = t * speed + phase;
+  float speed = 0.019 + hashUnit(hash(i * 2654435761u + 99u)) * 0.031; // 1/16th: slow drift, notes kick it
+  float sgn = hashUnit(hash(i * 2654435761u + 777u)) < 0.5 ? 1.0 : -1.0; // ~half orbit the opposite way
+  float A = t * speed * sgn + phase + kick; // direction + per-note kick (see lightKick)
   float th = P * A, ph = Q * A, ps = R * A;
   vec3 dir = vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
   dir.xy = vec2(dir.x * cos(ps) - dir.y * sin(ps), dir.x * sin(ps) + dir.y * cos(ps));
@@ -56,7 +57,7 @@ vec3 animLightDir(int idx, float t) {
 // linger far longer than others. Returns the raw flare; the caller folds it into the
 // spawn emission below. Keep in sync with gpu/orbit.js (wgLightEmission).
 float lightFadeRate(int idx) {
-  return 0.5 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // ~0.5..5.7 /s -> ~2s..~0.18s
+  return 1.5 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // 3x faster: ~1.5..17 /s (less persistent)
 }
 float musicFlare(int idx, float beatTime, float strength, float now, float pitchFactor) {
   float age = now - beatTime;
@@ -74,6 +75,12 @@ float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC
 const float MUSIC_FRAC = 0.25; // fraction of a slot's lights that flare per note (more = livelier)
 float musicBeatLit(int idx, float seed) {
   return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
+}
+// Per-note orbit "kick": the same fresh subset that flares (musicBeatLit) also gets a decaying
+// boost to its orbit angle, so against the slow base drift the lights lurch on their notes.
+float lightKick(int idx, float beatTime, float seed, float now) {
+  float age = now - beatTime;
+  return age < 0.0 ? 0.0 : musicBeatLit(idx, seed) * 1.2 * exp(-age * 2.0);
 }
 
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note

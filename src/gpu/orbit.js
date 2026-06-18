@@ -19,7 +19,7 @@ export const wgAnimDir = wgslFn(`
     let Q = 1.0 + floor(f32(hq & 0x00FFFFFFu) / 16777215.0 * 7.0);
     let R = 1.0 + floor(f32(hr & 0x00FFFFFFu) / 16777215.0 * 4.0);
     let phase = f32(hf & 0x00FFFFFFu) / 16777215.0 * 6.28318530718;
-    let speed = 0.07 + f32(hs & 0x00FFFFFFu) / 16777215.0 * 0.13;
+    let speed = 0.019 + f32(hs & 0x00FFFFFFu) / 16777215.0 * 0.031;
     let A = t * speed + phase;
     let th = P * A; let ph = Q * A; let ps = R * A;
     let dir = vec3<f32>(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
@@ -43,7 +43,7 @@ export const wgLightEmission = wgslFn(`
   fn wgLightEmission(idxF: f32, hostSlot: f32, spawn: f32, beatTime: f32, strength: f32, seed: f32, now: f32) -> f32 {
     let a = spawn - hostSlot;
     var hr = u32(idxF) ^ 2747636419u; hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u;
-    let rate = 0.5 * pow(2.0, f32(hr % 8u) * 0.5);
+    let rate = 1.5 * pow(2.0, f32(hr % 8u) * 0.5);
     let age = now - beatTime;
     let flare = select(0.0, strength * exp(-age * rate), age >= 0.0) * select(0.0, 1.0, a > 0.0); // dark until host spawns
     var hl = (u32(idxF) ^ u32(seed)) ^ 2747636419u; hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u;

@@ -172,7 +172,7 @@ export function generateScene(opts = {}) {
     for (let k = 0; k < lightsPerObject; k++) {
       const orbitRadius = o.radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
       const rgb = hslToRgb(rng(), 0.8, 0.55);
-      const intensity = rand(0.24, 0.70); // 2x brighter lights
+      const intensity = rand(0.18, 0.525); // 75% of the previous 0.24..0.70 (was a bit over-bright)
       lights.push({
         pos: [o.pos[0], o.pos[1], o.pos[2]], // host object centre; the shader orbits the light
         orbitRadius,
