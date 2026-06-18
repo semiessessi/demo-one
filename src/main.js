@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { generateScene } from './scene.js';
 import { buildLightTextures } from './lightData.js';
 import {
@@ -17,6 +21,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x050505, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
+renderer.toneMappingExposure = 1.0;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -61,6 +67,18 @@ scene.add(mesh);
 const lightSprites = buildLightSprites(lights, spriteUniforms);
 scene.add(lightSprites);
 
+// --- HDR post-processing (half-float target -> bloom -> tone map) ----------
+const composer = new EffectComposer(renderer); // half-float render targets
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6, // strength
+  0.5, // radius
+  0.7, // luminance threshold (HDR)
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
 // --- UI -------------------------------------------------------------------
 const scrub = document.getElementById('scrub');
 const label = document.getElementById('label');
@@ -84,6 +102,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // --- Render loop ----------------------------------------------------------
@@ -95,7 +114,7 @@ function frame() {
     scrub.value = String(Math.round(((uniforms.uTime.value % SCRUB_SPAN) / SCRUB_SPAN) * 1000));
   }
   controls.update();
-  renderer.render(scene, camera);
+  composer.render();
   requestAnimationFrame(frame);
 }
 frame();

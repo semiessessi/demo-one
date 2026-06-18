@@ -75,8 +75,6 @@ void main() {
   float hemi = 0.5 + 0.5 * N.y;
   lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), hemi);
 
-  // ACES filmic tone map to tame the many-lights HDR accumulation.
-  vec3 c = lit;
-  c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
-  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+  // Output linear HDR; tone mapping happens once in the post pass.
+  fragColor = vec4(lit, 1.0);
 }
