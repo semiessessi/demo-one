@@ -44,7 +44,7 @@ vec3 animLightDir(int idx, float t, float kick) {
   float phase = hashUnit(hash(i * 3u + 7u)) * 6.28318530718;
   float speed = 0.019 + hashUnit(hash(i * 2654435761u + 99u)) * 0.031; // 1/16th: slow drift, notes kick it
   float sgn = hashUnit(hash(i * 2654435761u + 777u)) < 0.5 ? 1.0 : -1.0; // ~half orbit the opposite way
-  float A = t * speed * sgn + phase + kick; // direction + per-note kick (see lightKick)
+  float A = (t * speed + kick) * sgn + phase; // base drift + per-note kick, both in the light's direction
   float th = P * A, ph = Q * A, ps = R * A;
   vec3 dir = vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
   dir.xy = vec2(dir.x * cos(ps) - dir.y * sin(ps), dir.x * sin(ps) + dir.y * cos(ps));
@@ -80,7 +80,9 @@ float musicBeatLit(int idx, float seed) {
 // boost to its orbit angle, so against the slow base drift the lights lurch on their notes.
 float lightKick(int idx, float beatTime, float seed, float now) {
   float age = now - beatTime;
-  return age < 0.0 ? 0.0 : musicBeatLit(idx, seed) * 1.2 * exp(-age * 2.0);
+  if (age < 0.0) return 0.0;
+  float x = age * 2.5;
+  return musicBeatLit(idx, seed) * 0.35 * x * exp(1.0 - x); // smooth bump (no snap), peak ~0.35 rad at ~0.4s
 }
 
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
@@ -125,8 +127,8 @@ float spawnIgnite(float slot, float spawn) {
   return a <= 0.0 ? 0.0 : 3.0 * exp(-a / 0.25); // sharp bright flash-in (not a slow lerp)
 }
 // Lights reveal a touch later and slower than objects, via their own derived clock.
-const float LIGHT_SPAWN_DELAY = 0.2;
-const float LIGHT_SPAWN_SCALE = 0.7;
+const float LIGHT_SPAWN_DELAY = 2.0; // lights hold back ~2 objects' worth (one or two at first)
+const float LIGHT_SPAWN_SCALE = 0.5; // then trickle in at half the object rate
 float lightSpawnClock(float spawn) { return max(0.0, spawn - LIGHT_SPAWN_DELAY) * LIGHT_SPAWN_SCALE; }
 
 // pdx-gfx "Night" environment preset (Y-up; horizon glow band). Used as both the

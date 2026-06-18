@@ -51,7 +51,7 @@ let lightsMoving = true; // light orbit on by default; toggle with the ✦ butto
 // (5*2^(t-5)), fed to the shader as uSpawn — so the visible count doubles. Driven by the
 // NOTE count (scalePhase) so objects + their light clouds come in ON THE MUSIC, not a timer;
 // SPAWN_NOTE_SCALE tunes the fill rate (≈ full field by the end of the ~45s orbit).
-const SPAWN_NOTE_SCALE = 0.15;
+const SPAWN_NOTE_SCALE = 0.03; // 5x slower fill — objects + lights trickle in gradually
 function demoSpawnCount(t) {
   const D = 5.0, C = 5.0;
   return t < D ? C * Math.pow(t / D, 1.3) : C * Math.pow(2.0, (t - D) / 1.0);
