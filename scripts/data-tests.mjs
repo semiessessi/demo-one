@@ -43,18 +43,25 @@ check('scene: non-empty light/occluder/reflection lists',
 check('scene: per-object offsets in range',
   a.objects.every((o) => o.lightOffset + o.lightCount <= a.lightIndices.length));
 
-// Orbiting lights (animated in-shader) must stay outside their host object and
-// never sweep into a neighbour; light clouds of different objects may overlap.
+// 70% of each object's lights orbit it (animated in-shader) and must stay outside the host and
+// never sweep into a neighbour; the other 30% are "field" lights scattered through the central
+// sphere with their own random orbit point, exempt from the host-orbit invariants.
 const lpo = a.lights.length / a.objects.length;
+const orbitCount = Math.round(lpo * 0.7);
 const hostOf = (i) => a.objects[Math.floor(i / lpo)];
-check('scene: every light orbits outside its host',
-  a.lights.every((l, i) => l.orbitRadius > hostOf(i).radius));
-check('scene: no light orbit reaches into a non-host object',
+const orbiting = (i) => (i % lpo) < orbitCount;
+const fieldR = a.objects.reduce((m, o) => Math.max(m, Math.hypot(o.pos[0], o.pos[1], o.pos[2])), 0);
+check('scene: orbiting lights stay outside their host',
+  a.lights.every((l, i) => !orbiting(i) || l.orbitRadius > hostOf(i).radius));
+check('scene: orbiting lights never sweep into a non-host object',
   a.lights.every((l, i) => {
+    if (!orbiting(i)) return true;
     const h = hostOf(i);
     return a.objects.every((o) => o === h
       || Math.hypot(l.pos[0] - o.pos[0], l.pos[1] - o.pos[1], l.pos[2] - o.pos[2]) >= l.orbitRadius + o.radius);
   }));
+check('scene: field lights sit within the central sphere',
+  a.lights.every((l, i) => orbiting(i) || Math.hypot(l.pos[0], l.pos[1], l.pos[2]) <= fieldR));
 
 const t = generateTestScene();
 check('test scene: 3 objects, 1 light', t.objects.length === 3 && t.lights.length === 1);
