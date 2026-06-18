@@ -8,3 +8,4 @@ dist/
 
 # local verification screenshots (root-level only; src/ assets are kept)
 /*.png
+.verify
