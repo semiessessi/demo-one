@@ -19,9 +19,23 @@ const sceneData = TEST ? generateTestScene() : generateScene({
 });
 const { objects, lights } = sceneData;
 
+// Focus the intro camera on the object that spawns first (lowest spawn slot), so it's
+// on screen from the first frame of the orbit. Mirrors spawnSlot() in shaders/lib.glsl.
+const spawnSlot = (i) => {
+  let s = ((Math.imul(i, 2654435761) >>> 0) + 12345) >>> 0;
+  s = (s ^ 2747636419) >>> 0;
+  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
+  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
+  s = Math.imul(s, 2654435769) >>> 0;
+  return (s & 0x00ffffff) / 16777215;
+};
+let introIdx = 0;
+for (let i = 1; i < objects.length; i++) if (spawnSlot(i) < spawnSlot(introIdx)) introIdx = i;
+const introTarget = objects[introIdx].pos;
+
 // --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
 const app = document.getElementById('app');
-const backend = await createBackend({ ...sceneData, test: TEST });
+const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
 app.appendChild(backend.domElement);
 
 if (TEST) backend.setView({ position: [4, 3.5, 9], target: [0, -1, 0] });
@@ -102,6 +116,7 @@ function setPlaying(next) {
   playToggle.textContent = next ? '❚❚' : '▶';
   if (next) {
     spawnTime = 0; // restart the spawn-in intro (objects scale in, lights ignite) on play
+    backend.startIntro(); // replay the orbit-and-pull-back camera intro
     audio.play();
     if (firstPlay) {
       firstPlay = false;

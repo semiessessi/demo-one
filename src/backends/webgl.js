@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createFlyCam } from '../flycam.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -25,7 +25,7 @@ import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
 // behind the common backend interface: { name, domElement, camera, setTime,
 // setSize, render }.
 export function createWebGLBackend({
-  objects, lights, lightIndices, occluderIndices, reflectionIndices, test,
+  objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget,
 }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio); // native resolution (no cap)
@@ -41,13 +41,10 @@ export function createWebGLBackend({
   );
   camera.position.set(24, 17, 31);
 
-  // Each backend owns its OrbitControls (its own three instance) to avoid
-  // cross-module-instance issues between 'three' and 'three/webgpu'.
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.minDistance = 5;
-  controls.maxDistance = 120;
+  // Shared fly camera (three-instance-agnostic). Null in capture mode, where setView
+  // pins the camera for deterministic frames. Main scene runs the orbit intro; the
+  // test scene starts in free flight from its setView preset (introTarget = null).
+  const flycam = capture ? null : createFlyCam(renderer.domElement, test ? null : introTarget);
 
   const lightTex = buildLightTextures(lights, lightIndices);
   const occTex = buildOccluderTextures(objects, occluderIndices);
@@ -121,12 +118,15 @@ export function createWebGLBackend({
       uniforms.uBeatTime.value.set(beatTime);
       uniforms.uBeatStrength.value.set(strength);
     },
-    setView({ position, target, damping = true }) {
-      if (position) camera.position.set(...position);
-      if (target) controls.target.set(...target);
-      controls.enableDamping = damping;
-      controls.update();
+    setView({ position, target }) {
+      if (flycam) {
+        flycam.setPose(position, target); // start free flight from this pose
+      } else {
+        if (position) camera.position.set(...position);
+        if (target) camera.lookAt(...target);
+      }
     },
+    startIntro() { flycam?.startIntro(); },
     setSize(w, h) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -134,7 +134,7 @@ export function createWebGLBackend({
       composer.setSize(w, h);
     },
     render() {
-      controls.update();
+      if (flycam) flycam.update(camera);
       composer.render();
     },
   };

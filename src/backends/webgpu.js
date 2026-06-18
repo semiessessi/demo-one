@@ -3,7 +3,7 @@
 // instance from core 'three'); everything renderer-facing lives here so the two
 // never mix.
 import * as THREE from 'three/webgpu';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createFlyCam } from '../flycam.js';
 import { wgslFn, positionLocal, normalize, uniform, uniformArray, pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { buildMorphMesh } from '../gpu/morphMaterial.js';
@@ -45,11 +45,9 @@ export async function createWebGPUBackend(data) {
   );
   camera.position.set(24, 17, 31);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.minDistance = 5;
-  controls.maxDistance = 120;
+  // Shared fly camera (three-instance-agnostic). Null in capture mode; main scene runs
+  // the orbit intro; test scene starts in free flight from its setView preset.
+  const flycam = data.capture ? null : createFlyCam(renderer.domElement, data.test ? null : data.introTarget);
 
   // Skydome.
   const skyMat = new THREE.MeshBasicNodeMaterial();
@@ -91,19 +89,22 @@ export async function createWebGPUBackend(data) {
     setLightTime(t) { uLightTime.value = t; },
     setSpawn(s) { uSpawn.value = s; },
     setMusic(now, beatTime, strength) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); },
-    setView({ position, target, damping = true }) {
-      if (position) camera.position.set(...position);
-      if (target) controls.target.set(...target);
-      controls.enableDamping = damping;
-      controls.update();
+    setView({ position, target }) {
+      if (flycam) {
+        flycam.setPose(position, target);
+      } else {
+        if (position) camera.position.set(...position);
+        if (target) camera.lookAt(...target);
+      }
     },
+    startIntro() { flycam?.startIntro(); },
     setSize(w, h) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h); // the scene pass tracks renderer size each frame
     },
     render() {
-      controls.update();
+      if (flycam) flycam.update(camera);
       postProcessing.render();
     },
   };
