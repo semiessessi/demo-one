@@ -1,13 +1,13 @@
-// Picks the rendering backend. The WebGPU path is still being built, so during
-// development it is OPT-IN via ?webgpu; the default and ?force-webgl use the
-// proven WebGL2 path. (At parity this flips to WebGPU-by-default with WebGL
-// fallback.) Both implement the same interface:
+// Picks the rendering backend: WebGPU when available (storage-buffer driven,
+// the primary path), else the WebGL2 fallback (broad reach + the comparison
+// baseline). Force WebGL with ?force-webgl to A/B the two. Both implement the
+// same interface:
 //   { name, domElement, camera, setTime(s), setView(v), setSize(w,h), render() }.
 export async function createBackend(data) {
   const params = new URLSearchParams(location.search);
-  const wantsWebGPU = params.has('webgpu') && !params.has('force-webgl');
+  const useWebGPU = !params.has('force-webgl');
 
-  if (wantsWebGPU && typeof navigator !== 'undefined' && navigator.gpu) {
+  if (useWebGPU && typeof navigator !== 'undefined' && navigator.gpu) {
     try {
       const { createWebGPUBackend } = await import('./webgpu.js');
       const backend = await createWebGPUBackend(data);
