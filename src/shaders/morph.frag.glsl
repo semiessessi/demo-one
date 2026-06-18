@@ -36,7 +36,7 @@ uniform int uSegTriStart[16];
 uniform int uSegTriCount[16];
 
 const float REFL_ROUGHNESS_MAX = 0.35;
-const int SHADOW_LIGHTS = 8; // only the nearest few lights cast shadows
+const int SHADOW_LIGHTS = 16; // nearest N lights cast shadows (planes merged, so affordable)
 
 ivec2 texel(int i, int w) { return ivec2(i % w, i / w); }
 
