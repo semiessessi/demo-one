@@ -137,8 +137,9 @@ export function generateTestScene() {
   // Big flat receiver below: a large static cube whose top catches the shadows.
   objects.push(makeObj([0, -3.6, 0], 4.0, [0.7, 0.7, 0.72], 0.75, 0, 3.0, 0.0));
   // Morphing object above the floor: casts a clear, shape-changing shadow onto
-  // the floor and shows a bright reflection in the icosahedron.
-  objects.push(makeObj([-1.6, 1.2, 0.4], 1.2, [0.82, 0.8, 0.76], 0.55, 0, 3.0, 0.3));
+  // the floor and shows a bright reflection in the icosahedron. Starts at the
+  // tetrahedron (phase 0) and ping-pongs through every shape.
+  objects.push(makeObj([-1.6, 1.2, 0.4], 1.2, [0.82, 0.8, 0.76], 0.55, 0, 0.0, 0.4));
   // Shiny static icosahedron: reflects the morphing object + casts its own shadow.
   objects.push(makeObj([1.7, 1.0, 0.6], 1.1, [0.95, 0.95, 1.0], 0.02, 1, 6.0, 0.0));
 

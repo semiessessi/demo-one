@@ -35,9 +35,24 @@ function planeOf(p, ai, bi, ci) {
   return [nx, ny, nz, nx * ax + ny * ay + nz * az];
 }
 
+// True if plane (n,d) is a supporting plane of the vertex set (all verts on the
+// inner side). Non-supporting triangles are interior/folded — they must not clip
+// the convex hull.
+function supporting(pl, verts) {
+  const eps = 3e-3;
+  for (let k = 0; k < verts.length; k += 3) {
+    if (pl[0] * verts[k] + pl[1] * verts[k + 1] + pl[2] * verts[k + 2] > pl[3] + eps) return false;
+  }
+  return true;
+}
+
+const INACTIVE_D = 1e4; // huge offset => the half-space never constrains the hull
+
 // Precompute every triangle's start-plane and end-plane (2 RGBA texels each:
 // [n.xyz, d]). The shader blends them by phase. A triangle degenerate at one end
 // reuses the valid end's plane; degenerate at both ends is marked inactive (n=0).
+// A plane that isn't a supporting plane at an endpoint is disabled there (d set
+// huge) so interior/folded triangles in collapsed shapes don't clip the hull.
 export function buildPlaneTexture() {
   const segs = buildJourneySegments();
   let total = 0;
@@ -58,8 +73,10 @@ export function buildPlaneTexture() {
       let ps = planeOf(s.start, i, i + 3, i + 6);
       let pe = planeOf(s.end, i, i + 3, i + 6);
       if (!ps && !pe) { tri++; continue; } // inactive: leave zeros
-      if (!ps) ps = pe;
-      if (!pe) pe = ps;
+      if (ps && !supporting(ps, s.start)) ps[3] = INACTIVE_D; // disable at start
+      if (pe && !supporting(pe, s.end)) pe[3] = INACTIVE_D; // disable at end
+      if (!ps) ps = pe.slice();
+      if (!pe) pe = ps.slice();
       const o = tri * 8;
       data[o] = ps[0]; data[o + 1] = ps[1]; data[o + 2] = ps[2]; data[o + 3] = ps[3];
       data[o + 4] = pe[0]; data[o + 5] = pe[1]; data[o + 6] = pe[2]; data[o + 7] = pe[3];
