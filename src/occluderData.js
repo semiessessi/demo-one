@@ -1,25 +1,10 @@
-import * as THREE from 'three';
 import { buildJourneySegments } from './journey.js';
 import { planeOf, supporting } from './hull.js';
+import { floatTexture } from './textures.js';
 
 // Data textures for convex-hull occluder tracing. The shader rebuilds any
-// occluder's current hull from: the shared morph geometry (every segment's
-// triangle verts) + the occluder's transform + its phase.
-
-const MAX_W = 2048;
-
-function rgbaTexture(data, texelCount) {
-  const w = Math.min(MAX_W, texelCount);
-  const h = Math.ceil(texelCount / w);
-  const buf = new Float32Array(w * h * 4);
-  buf.set(data);
-  const tex = new THREE.DataTexture(buf, w, h, THREE.RGBAFormat, THREE.FloatType);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.needsUpdate = true;
-  return { tex, width: w };
-}
+// occluder's current hull from the per-segment face planes + the occluder's
+// transform + its phase.
 
 // Offset that puts a face plane outside the shape so it doesn't constrain the
 // hull (used for faces that fade in/out across a segment). Must exceed the
@@ -90,7 +75,7 @@ export function buildPlaneTexture() {
       f++;
     }
   }
-  const { tex, width } = rgbaTexture(data, total * 2);
+  const { tex, width } = floatTexture(data, total * 2, 4);
   return { planeTex: tex, planeTexW: width, segTriStart, segTriCount };
 }
 
@@ -104,6 +89,6 @@ export function buildOccluderTransforms(objects) {
     data[b + 8] = o.spinAxis[0]; data[b + 9] = o.spinAxis[1]; data[b + 10] = o.spinAxis[2]; data[b + 11] = o.spinSpeed;
     data[b + 12] = o.phase; data[b + 13] = o.morphSpeed;
   });
-  const { tex, width } = rgbaTexture(data, objects.length * 4);
+  const { tex, width } = floatTexture(data, objects.length * 4, 4);
   return { transformTex: tex, transformTexW: width };
 }

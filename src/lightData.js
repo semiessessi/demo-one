@@ -1,21 +1,6 @@
-import * as THREE from 'three';
+import { floatTexture } from './textures.js';
 
-const MAX_W = 2048; // safe texture width (WebGL2 guarantees >= 2048)
-
-function dataTexture(data, texelCount, channels) {
-  const w = Math.min(MAX_W, texelCount);
-  const h = Math.ceil(texelCount / w);
-  const format = channels === 1 ? THREE.RedFormat : THREE.RGBAFormat;
-  const stride = channels === 1 ? 1 : 4;
-  const buf = new Float32Array(w * h * stride);
-  buf.set(data);
-  const tex = new THREE.DataTexture(buf, w, h, format, THREE.FloatType);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.needsUpdate = true;
-  return { tex, width: w };
-}
+const dataTexture = floatTexture;
 
 // Pack lights into an RGBA32F texture, 2 texels per light:
 //   texel 0: position.xyz, _
