@@ -8,6 +8,7 @@ import {
   buildMorphMaterial,
   NUM_SEGMENTS,
 } from './instancedMorph.js';
+import { buildLightSprites } from './lightSprites.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -45,6 +46,7 @@ const uniforms = {
   uLightIndexTex: { value: lightTex.lightIndexTex },
   uIndexTexW: { value: lightTex.indexTexW },
 };
+const spriteUniforms = { uSpriteSize: { value: 0.16 } };
 
 const geometry = buildUnifiedGeometry();
 setInstanceAttributes(geometry, objects);
@@ -53,23 +55,9 @@ const mesh = new THREE.Mesh(geometry, material);
 mesh.frustumCulled = false; // instances span the whole volume
 scene.add(mesh);
 
-// --- Light placeholders (plain points; replaced by sprites in step 3) ------
-const lightPosArr = new Float32Array(lights.length * 3);
-const lightColArr = new Float32Array(lights.length * 3);
-lights.forEach((l, i) => {
-  lightPosArr.set(l.pos, i * 3);
-  const m = Math.max(l.color[0], l.color[1], l.color[2], 1e-3);
-  lightColArr.set([l.color[0] / m, l.color[1] / m, l.color[2] / m], i * 3);
-});
-const lightGeo = new THREE.BufferGeometry();
-lightGeo.setAttribute('position', new THREE.BufferAttribute(lightPosArr, 3));
-lightGeo.setAttribute('color', new THREE.BufferAttribute(lightColArr, 3));
-const lightPoints = new THREE.Points(
-  lightGeo,
-  new THREE.PointsMaterial({ size: 0.12, vertexColors: true, sizeAttenuation: true }),
-);
-lightPoints.frustumCulled = false;
-scene.add(lightPoints);
+// --- Light sprites (glowing billboards) ------------------------------------
+const lightSprites = buildLightSprites(lights, spriteUniforms);
+scene.add(lightSprites);
 
 // --- UI -------------------------------------------------------------------
 const scrub = document.getElementById('scrub');
