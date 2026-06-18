@@ -66,7 +66,7 @@ export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, 
   const lp = lpr.xyz.add(wgAnimDir(float(instanceIndex), uLightTime).mul(c.w));
   // Beat-driven flare: band envelope gated by a per-beat random subset (band = index % 8).
   const band = float(instanceIndex).div(8).fract().mul(8).add(0.5).floor().toInt();
-  const ls = uSpawn.sub(0.2).max(0).mul(0.7); // lights lag + slower than objects (LIGHT_SPAWN_*)
+  const ls = uSpawn; // lights reveal with the spawn doubling
   const emission = wgLightEmission(float(instanceIndex), ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
   const vCorner = varying(positionGeometry.xy);
   const vColor = varying(c.xyz.mul(emission));

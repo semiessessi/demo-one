@@ -46,7 +46,7 @@ export const wgLightEmission = wgslFn(`
     var hs = (u32(idxF) * 2654435761u + 12345u) ^ 2747636419u; hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u;
     let slot = f32(hs & 0x00FFFFFFu) / 16777215.0;
     let a = spawn - slot;
-    let reveal = select(0.0, smoothstep(0.0, 0.25, a), a > 0.0);
+    let reveal = select(0.0, smoothstep(0.0, 0.01, a), a > 0.0);
     let ignite = select(0.0, 1.5 * exp(-a / 0.3), a > 0.0);
     var hr = u32(idxF) ^ 2747636419u; hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u;
     let rate = 0.5 * pow(2.0, f32(hr % 8u) * 0.5);

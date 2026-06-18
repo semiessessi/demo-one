@@ -167,7 +167,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     if (dot(N, L) <= 0.0 || fall <= 1e-6 || lum <= 0.0) continue;
     int band = idx % 8;
     float slot = spawnSlot(idx);
-    float ls = lightSpawnClock(uSpawn);
+    float ls = uSpawn; // lights reveal with the spawn doubling
     float emission = (spawnIgnite(slot, ls)
                    + spawnReveal(slot, ls) * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime))
                    * musicLit(idx);

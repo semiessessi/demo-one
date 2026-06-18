@@ -10,7 +10,12 @@
 const SENS = 0.003;       // radians per pixel of drag
 const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
-const INTRO_DUR = 8.0;    // seconds of orbit-and-pull-back before free flight
+const ORBIT_DUR = 8.0;    // seconds orbiting the focal object before the fly
+const FLY_BLEND = 4.0;    // seconds blending the orbit into the Lissajous fly
+const FLY_SPEED = 0.4;    // Lissajous time scale
+const FLY_AMP = [9.0, 4.5, 9.0];     // fly extent per axis (x, y-up, z)
+const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
+const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -69,18 +74,37 @@ export function createFlyCam(domElement, introTarget) {
 
     if (mode === 'intro') {
       introT += dt;
-      const u = introT / INTRO_DUR;
-      if (u >= 1) {
-        mode = 'free'; // pos/yaw/pitch carry over from the last intro frame
-      } else {
-        const e = smooth(u);
-        const ang = introT * 0.45 + 2.0;          // slow orbit
-        const r = 3.5 + (17.0 - 3.5) * e;          // pull back
-        px = introTarget[0] + Math.cos(ang) * r;
-        py = introTarget[1] + 1.5 + (9.0 - 1.5) * e; // rise as it pulls back
-        pz = introTarget[2] + Math.sin(ang) * r;
-        aim(introTarget[0], introTarget[1], introTarget[2]);
-      }
+      // Orbit the focal object, pulling back + rising over ORBIT_DUR.
+      const oe = smooth(Math.min(introT, ORBIT_DUR) / ORBIT_DUR);
+      const oang = introT * 0.35 + 1.0;
+      const orad = 4.0 + (16.0 - 4.0) * oe;
+      const opx = introTarget[0] + Math.cos(oang) * orad;
+      const opy = introTarget[1] + 2.0 + 7.0 * oe;
+      const opz = introTarget[2] + Math.sin(oang) * orad;
+      const lookK = Math.min(1, introT / ORBIT_DUR); // pan from focal toward origin
+      const otx = introTarget[0] * (1 - lookK);
+      const oty = introTarget[1] * (1 - lookK);
+      const otz = introTarget[2] * (1 - lookK);
+      // Lissajous fly (auto), looking along velocity with a slight inward pull.
+      const U = Math.max(0, introT - ORBIT_DUR) * FLY_SPEED;
+      const fpx = FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]);
+      const fpy = FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]);
+      const fpz = FLY_AMP[2] * Math.sin(FLY_FREQ[2] * U + FLY_PHASE[2]);
+      const vx = FLY_AMP[0] * FLY_FREQ[0] * Math.cos(FLY_FREQ[0] * U + FLY_PHASE[0]);
+      const vy = FLY_AMP[1] * FLY_FREQ[1] * Math.cos(FLY_FREQ[1] * U + FLY_PHASE[1]);
+      const vz = FLY_AMP[2] * FLY_FREQ[2] * Math.cos(FLY_FREQ[2] * U + FLY_PHASE[2]);
+      const vl = Math.hypot(vx, vy, vz) || 1;
+      const cl = Math.hypot(fpx, fpy, fpz) || 1;
+      const ftx = fpx + (vx / vl) * 0.85 - (fpx / cl) * 0.15;
+      const fty = fpy + (vy / vl) * 0.85 - (fpy / cl) * 0.15;
+      const ftz = fpz + (vz / vl) * 0.85 - (fpz / cl) * 0.15;
+      // Blend orbit -> fly; then keep flying until the user takes over (input -> 'free').
+      let blend = clamp((introT - ORBIT_DUR) / FLY_BLEND, 0, 1);
+      blend = smooth(blend);
+      px = opx + (fpx - opx) * blend;
+      py = opy + (fpy - opy) * blend;
+      pz = opz + (fpz - opz) * blend;
+      aim(otx + (ftx - otx) * blend, oty + (fty - oty) * blend, otz + (ftz - otz) * blend);
     }
     if (mode === 'free') {
       const cp = Math.cos(pitch), sp = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);

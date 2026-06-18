@@ -318,7 +318,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
           shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
         });
         const band = liF.div(8).fract().mul(8).add(0.5).floor().toInt(); // li % 8
-        const ls = uSpawn.sub(0.2).max(0).mul(0.7); // lights lag + slower than objects (LIGHT_SPAWN_*)
+        const ls = uSpawn; // lights reveal with the spawn doubling
         const emission = wgLightEmission(liF, ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
         lit.addAssign(
           wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow).mul(emission),

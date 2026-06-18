@@ -71,7 +71,7 @@ float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC
 float spawnSlot(int i) { return hashUnit(hash(uint(i) * 2654435761u + 12345u)); }
 float spawnReveal(float slot, float spawn) {
   float a = spawn - slot;
-  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.25, a);
+  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.01, a); // crisp pop so the doubling reads
 }
 float spawnIgnite(float slot, float spawn) {
   float a = spawn - slot;

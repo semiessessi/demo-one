@@ -31,7 +31,7 @@ void main() {
   // so the sprite has zero size + zero brightness (no dot) when not emitting.
   int band = gl_InstanceID % 8;
   float slot = spawnSlot(gl_InstanceID);
-  float ls = lightSpawnClock(uSpawn);
+  float ls = uSpawn; // lights reveal with the spawn doubling
   float emission = (spawnIgnite(slot, ls)
                  + spawnReveal(slot, ls) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime))
                  * musicLit(gl_InstanceID);

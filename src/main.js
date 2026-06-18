@@ -54,36 +54,45 @@ let morphTime = 0;
 let lightTime = 0; // separate clock for the orbiting lights (advances when lightsMoving)
 let lightsMoving = true; // light orbit on by default; toggle with the ✦ button or L
 let spawnTime = 0; // intro clock (real time): objects scale in + lights ignite over it
-const SPAWN_RATE = 0.15; // spawn-clock units/s (objects in over ~8 s; lights lag + slower)
+// pdx-gfx spawn-count curve: a slow intro (5*(t/5)^1.3) then exponential DOUBLING
+// (5*2^(t-5)), normalised by object count and fed to the shader as uSpawn — so the number
+// of visible objects doubles over time. Driven by spawnTime (real seconds; resets on play).
+const SPAWN_TIMESCALE = 0.55;
+function demoSpawnCount(t) {
+  const D = 5.0, C = 5.0;
+  return t < D ? C * Math.pow(t / D, 1.3) : C * Math.pow(2.0, (t - D) / 1.0);
+}
 // Music-reactive light flares: sample the spectrum, detect a beat per band (spectral
 // flux clearly above a running average), flare that band's envelope and re-roll its
 // subset seed, then decay the envelope toward zero so the lights blink with the music
 // and go dark when it's silent.
 const N_BANDS = 8;
 const bandLevel = new Float32Array(N_BANDS); // raw FFT energy per band
-const bandPrev = new Float32Array(N_BANDS); // previous level (for flux)
-const bandAvg = new Float32Array(N_BANDS); // slow running average
-const beatGap = new Float32Array(N_BANDS); // seconds since last beat (refractory)
+const bandPeak = new Float32Array(N_BANDS); // decaying peak follower per band
+const armed = new Uint8Array(N_BANDS).fill(1); // hysteresis: ready to fire the next beat
+const beatGap = new Float32Array(N_BANDS); // seconds since last beat (short refractory)
 const beatTime = new Float32Array(N_BANDS); // musicClock time of each band's last beat
 const beatStrength = new Float32Array(N_BANDS); // strength of each band's last beat
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
-// A beat in a band re-triggers ALL of its lights at beatStrength; the shader then fades
-// each light at its own (1-of-8) rate, so they linger by different amounts. Detection is
-// per-band spectral flux relative to that band's OWN running average, so every band fires
-// regardless of absolute loudness -> every light (idx % 8) is reached over the track.
+// Per-band beat detection via a peak follower + hysteresis: fire when a band rises past
+// 55% of its (slowly decaying) recent peak, then re-arm once it drops below 30%. Unlike a
+// running-average flux test, this keeps firing on a *steady* repetitive beat (an average
+// just adapts to it and goes quiet) and catches notes across the bands -> "flash flash
+// flash". Each beat re-fires that band's lights; the shader fades each at its own rate.
 function updateMusic(dt) {
   musicClock += dt;
   audio.sampleBands(bandLevel);
   for (let b = 0; b < N_BANDS; b++) {
     const e = bandLevel[b];
-    const flux = Math.max(0, e - bandPrev[b]);
-    bandPrev[b] = e;
-    bandAvg[b] += (e - bandAvg[b]) * 0.1;
+    bandPeak[b] = Math.max(e, bandPeak[b] * Math.exp(-dt / 0.6));
     beatGap[b] += dt;
-    if (flux > 0.012 && e > bandAvg[b] * 1.2 + 0.006 && beatGap[b] > 0.07) {
+    if (armed[b] && beatGap[b] > 0.06 && e >= Math.max(0.04, bandPeak[b] * 0.55)) {
       beatTime[b] = musicClock;
-      beatStrength[b] = Math.min(2.5, 0.9 + e * 3.5); // flare scales with the onset's loudness
+      beatStrength[b] = Math.min(2.5, 0.8 + e * 3.0); // flare scales with the beat's loudness
+      armed[b] = 0;
       beatGap[b] = 0;
+    } else if (e <= bandPeak[b] * 0.30) {
+      armed[b] = 1; // dropped back down -> ready for the next hit
     }
   }
   backend.setMusic(musicClock, beatTime, beatStrength);
@@ -228,7 +237,7 @@ function frame() {
   spawnTime += dt;
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
-  if (!CAPTURE) backend.setSpawn(spawnTime * SPAWN_RATE);
+  if (!CAPTURE) backend.setSpawn(Math.min(1.1, demoSpawnCount(spawnTime * SPAWN_TIMESCALE) / objects.length));
   backend.render();
 
   // Measure real frame time.
