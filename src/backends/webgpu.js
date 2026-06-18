@@ -4,7 +4,8 @@
 // never mix.
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { wgslFn, positionLocal, normalize } from 'three/tsl';
+import { wgslFn, positionLocal, normalize, uniform } from 'three/tsl';
+import { buildMorphMesh } from '../gpu/morphMaterial.js';
 
 // pdx night environment (kept identical to shaders/lib.glsl / morph env).
 const envColor = wgslFn(`
@@ -26,10 +27,13 @@ const envColor = wgslFn(`
   }
 `);
 
-export async function createWebGPUBackend(/* data */) {
+export async function createWebGPUBackend(data) {
   const renderer = new THREE.WebGPURenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // Tone map matches the WebGL path (post pass / bloom arrives in P5).
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.85;
   await renderer.init();
 
   const scene = new THREE.Scene();
@@ -53,11 +57,15 @@ export async function createWebGPUBackend(/* data */) {
   sky.frustumCulled = false;
   scene.add(sky);
 
+  // Morphing instances (storage-buffer driven, GGX direct lighting).
+  const uTime = uniform(0);
+  scene.add(buildMorphMesh(data, uTime));
+
   return {
     name: 'webgpu',
     domElement: renderer.domElement,
     camera,
-    setTime() {},
+    setTime(t) { uTime.value = t; },
     setView({ position, target, damping = true }) {
       if (position) camera.position.set(...position);
       if (target) controls.target.set(...target);
