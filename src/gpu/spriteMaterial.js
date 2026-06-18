@@ -35,7 +35,7 @@ const wgSpriteColor = wgslFn(`
     let hue = color / max(bright, 1e-3);
     let whiteHot = core * clamp(0.4 + 0.8 * bright, 0.0, 1.0);
     let col = mix(hue, vec3<f32>(1.0), whiteHot) * intensity;
-    return col * 2.5;
+    return col * 5.0; // keep in sync with sprite.frag.glsl (boosted for small punchy dots)
   }
 `);
 
@@ -59,7 +59,7 @@ export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, 
   g.setAttribute('position', new THREE.BufferAttribute(corners, 3));
   g.instanceCount = n;
 
-  const SIZE = float(0.16);
+  const SIZE = float(0.04); // 25% of the old 0.16 (matches webgl uSpriteSize)
   const lpr = uPosRad.element(instanceIndex); // center.xyz, falloff radius
   const c = uColor.element(instanceIndex);    // color.rgb, orbitRadius
   // Orbit the light around its host centre (matches morph.frag / morphMaterial shadeDirect).

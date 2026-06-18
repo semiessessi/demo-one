@@ -35,8 +35,8 @@ const a = generateScene();
 const b = generateScene();
 const posHash = (s) => s.objects.map((o) => o.pos.map((x) => x.toFixed(3)).join()).join('|');
 check('scene: deterministic placement', posHash(a) === posHash(b));
-check('scene: lights = 20 per object',
-  a.lights.length === a.objects.length * 20, `${a.objects.length} obj, ${a.lights.length} lights`);
+check('scene: lights = 40 per object',
+  a.lights.length === a.objects.length * 40, `${a.objects.length} obj, ${a.lights.length} lights`);
 check('scene: non-empty light/occluder/reflection lists',
   a.lightIndices.length > 0 && a.occluderIndices.length > 0 && a.reflectionIndices.length > 0,
   `light=${a.lightIndices.length} occ=${a.occluderIndices.length} refl=${a.reflectionIndices.length}`);

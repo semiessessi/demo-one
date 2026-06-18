@@ -5,9 +5,9 @@
 // bucket grid (ported from pdx-gfx), conservatively sized for the orbit.
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 
-const TARGET_OBJECTS = 200;
-const VOLUME = 22; // cube side (grown from 16 to give orbiting lights clearance)
-const LIGHTS_PER_OBJECT = 20;
+const TARGET_OBJECTS = 8000;
+const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
+const LIGHTS_PER_OBJECT = 40;
 const LIGHT_RADIUS = 3.0; // light falloff radius (raised from 2.0 for the orbit distance)
 const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;
@@ -41,7 +41,7 @@ function makeRng(seed) {
 export function generateScene(opts = {}) {
   const targetObjects = opts.targetObjects ?? TARGET_OBJECTS;
   const lightsPerObject = opts.lightsPerObject ?? LIGHTS_PER_OBJECT;
-  const volume = VOLUME * Math.cbrt(targetObjects / TARGET_OBJECTS);
+  const volume = VOLUME * Math.cbrt(targetObjects / 200); // VOLUME (22) was tuned at 200 objects
 
   const rng = makeRng(SEED);
   const rand = (a, b) => a + rng() * (b - a);
@@ -70,6 +70,15 @@ export function generateScene(opts = {}) {
   const lights = [];
   const half = volume / 2;
 
+  // Spatial hash so placement overlap checks stay O(1): the cell side is >= the largest
+  // rejection distance, so only a candidate's 3x3x3 cell neighbourhood can overlap it
+  // (without this, 8000 objects is O(N^2) and scene-gen takes ~12 s). The geometric test
+  // is unchanged, so placement stays deterministic and identical to the brute-force result.
+  const cell = 2 * MAX_NORM_CIRCUMRADIUS * SCALE_MAX + PACK_MARGIN + 1e-3;
+  const grid = new Map();
+  const gkey = (x, y, z) => x + ',' + y + ',' + z;
+  const gco = (p) => Math.floor(p / cell);
+
   let attempts = 0;
   const maxAttempts = targetObjects * 400;
   while (objects.length < targetObjects && attempts < maxAttempts) {
@@ -77,16 +86,23 @@ export function generateScene(opts = {}) {
     const scale = rand(SCALE_MIN, SCALE_MAX);
     const radius = MAX_NORM_CIRCUMRADIUS * scale;
     const pos = [rand(-half, half), rand(-half, half), rand(-half, half)];
+    const cx = gco(pos[0]), cy = gco(pos[1]), cz = gco(pos[2]);
 
     let ok = true;
-    for (const o of objects) {
-      const dx = pos[0] - o.pos[0], dy = pos[1] - o.pos[1], dz = pos[2] - o.pos[2];
-      const minD = radius + o.radius + PACK_MARGIN;
-      if (dx * dx + dy * dy + dz * dz < minD * minD) { ok = false; break; }
-    }
+    for (let x = cx - 1; x <= cx + 1 && ok; x++)
+      for (let y = cy - 1; y <= cy + 1 && ok; y++)
+        for (let z = cz - 1; z <= cz + 1 && ok; z++) {
+          const bucket = grid.get(gkey(x, y, z));
+          if (!bucket) continue;
+          for (const o of bucket) {
+            const dx = pos[0] - o.pos[0], dy = pos[1] - o.pos[1], dz = pos[2] - o.pos[2];
+            const minD = radius + o.radius + PACK_MARGIN;
+            if (dx * dx + dy * dy + dz * dz < minD * minD) { ok = false; break; }
+          }
+        }
     if (!ok) continue;
 
-    objects.push({
+    const obj = {
       pos,
       quat: randQuat(),
       spinAxis: randUnitVec(),
@@ -97,7 +113,7 @@ export function generateScene(opts = {}) {
       phase: rand(0, 20),
       morphSpeed: rand(0.35, 0.65),
       color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
-      rough: rand(0.12, 0.9), // some smooth enough to reflect
+      rough: rand(0.12, 0.7), // narrowed so ~40% fall under REFL_ROUGHNESS_MAX (0.35) -> reflective
       metal: rng() < 0.25 ? 1.0 : 0.0,
       lightOffset: 0,
       lightCount: 0,
@@ -105,7 +121,12 @@ export function generateScene(opts = {}) {
       shadowCount: 0,
       reflOffset: 0,
       reflCount: 0,
-    });
+    };
+    objects.push(obj);
+    const gk = gkey(cx, cy, cz);
+    let b = grid.get(gk);
+    if (!b) grid.set(gk, b = []);
+    b.push(obj);
   }
 
   // Sort objects by distance from the origin (closest first) so the instance index is
@@ -113,6 +134,9 @@ export function generateScene(opts = {}) {
   // the scene then fills outward as the visible count doubles.
   objects.sort((a, b) =>
     (a.pos[0] ** 2 + a.pos[1] ** 2 + a.pos[2] ** 2) - (b.pos[0] ** 2 + b.pos[1] ** 2 + b.pos[2] ** 2));
+
+  // The closest object is the camera's opening hero — make it a strong chrome mirror.
+  if (objects.length) { objects[0].rough = 0.04; objects[0].metal = 1.0; }
 
   // Generate each object's orbiting lights, in sorted order (so light i belongs to
   // object floor(i / lightsPerObject)).
