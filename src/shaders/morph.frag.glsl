@@ -23,6 +23,8 @@ uniform float uBeatStrength[32]; // per-slot note-on strength; light picks slot 
 uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
 uniform float uMusicTime;       // music clock the beat timestamps are measured in
 uniform float uScaleNotes;      // pdx music-scale note counter (smoothed); objects pulse in size
+uniform sampler2D uMorphPTex;   // per-object morph position (CPU note-stepped), indexed by object id
+uniform int uMorphPTexW;
 uniform float uNumSegments;
 uniform float uNormScale[128];
 uniform float uMaxCircumradius; // occluder bounding radius = scale * this (cull)
@@ -92,7 +94,7 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   vec3 center = t0.xyz;
   float scale = t0.w;
 
-  float p = pingpong(uTime * morphSpeed + phaseOff, uNumSegments);
+  float p = texelFetch(uMorphPTex, texel(oi, uMorphPTexW), 0).r;
   int seg = int(floor(p));
   float localT = fract(p);
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }

@@ -20,6 +20,7 @@ import { buildLightSprites } from '../lightSprites.js';
 import { buildNormScaleLUT } from '../normalize.js';
 import { MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
+import { floatTexture } from '../textures.js';
 import { createInstanceCuller } from '../cpuCull.js';
 
 // The original WebGL2 path (RawShaderMaterials + DataTextures + EffectComposer),
@@ -52,6 +53,8 @@ export function createWebGLBackend({
   const reflTex = buildReflectionData(objects, reflectionIndices);
   const geo = buildPlaneTexture();
   const occXf = buildOccluderTransforms(objects);
+  // Per-object morph position (CPU note-stepped), uploaded each frame via setMorph.
+  const morphPTex = floatTexture(new Float32Array(objects.length), objects.length, 1);
 
   const uniforms = {
     uTime: { value: 0 },
@@ -84,6 +87,8 @@ export function createWebGLBackend({
     uSegTriCount: { value: geo.segTriCount },
     uOccTransformTex: { value: occXf.transformTex },
     uOccTransformTexW: { value: occXf.transformTexW },
+    uMorphPTex: { value: morphPTex.tex },
+    uMorphPTexW: { value: morphPTex.width },
   };
 
   const geometry = buildUnifiedGeometry();
@@ -127,6 +132,7 @@ export function createWebGLBackend({
       uniforms.uBeatSeed.value.set(seed);
       uniforms.uScaleNotes.value = scaleNotes;
     },
+    setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose

@@ -2,6 +2,7 @@ import { generateScene, generateTestScene } from './scene.js';
 import { NUM_SEGMENTS } from './journey.js';
 import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
+import { createMorphState } from './morphState.js';
 
 // --- Generate the static volume -------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -18,6 +19,9 @@ const sceneData = TEST ? generateTestScene() : generateScene({
   lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : undefined,
 });
 const { objects, lights } = sceneData;
+// Note-stepped morph: per-object position walks the journey sequence on the music (CPU
+// state); the current p per object is uploaded to the shaders each frame via setMorph.
+const morphState = createMorphState(objects.length);
 
 // Objects are distance-sorted (closest to the origin first), so the instance index is
 // the spawn rank: index 0 spawns first and is the intro camera's focal object.
@@ -82,6 +86,7 @@ function updateMusic(dt) {
   }
   scaleNotes += notes;
   scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
+  for (let n = 0; n < notes; n++) morphState.onNote(musicClock); // each note steps ~5% of shapes
   backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase);
 }
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
@@ -121,6 +126,7 @@ function setPlaying(next) {
     noteCounter = 0;
     scaleNotes = 0;
     scalePhase = 0;
+    morphState.reset();
     scrub.value = '0';
     backend.setTime(0);
     backend.setLightTime(0);
@@ -244,6 +250,7 @@ function frame() {
   }
   if (lightsMoving) lightTime += dt;
   if (!CAPTURE) updateMusic(dt); // advances scalePhase (note count) used by the spawn below
+  backend.setMorph(morphState.step(musicClock)); // CPU note-stepped morph -> per-object p
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));

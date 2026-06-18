@@ -168,6 +168,11 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
   for (let i = 0; i < objects.length; i++) orderArr[i] = i;
   const orderAttr = new THREE.StorageBufferAttribute(orderArr, 1);
   const gid = storage(orderAttr, 'uint', objects.length).toReadOnly().element(instanceIndex);
+  // CPU note-stepped morph position per object, uploaded each frame; indexed by the ORIGINAL
+  // object id (gid in the vertex, the occluder index in traceHull).
+  const morphPArr = new Float32Array(objects.length);
+  const morphPAttr = new THREE.StorageBufferAttribute(morphPArr, 1);
+  const morphP = storage(morphPAttr, 'float', objects.length).toReadOnly();
   const instSlot = (k) => uInst.element(gid.mul(ST).add(k));
 
   // Index lists (light / shadow / reflection) merged into one buffer + bases.
@@ -211,7 +216,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
     const center = t0.xyz;
     const scale = t0.w;
 
-    const p = wgPhase(uTime, t3.y, t3.x, N_SEG);
+    const p = morphP.element(oi);
     const localT = p.fract().toVar();
     const seg = p.floor().toVar();
     If(seg.greaterThanEqual(N_SEG.sub(0.5)), () => {
@@ -372,7 +377,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
     const end = attribute('aEnd', 'vec3');
     const segId = attribute('aSegment', 'float');
 
-    const p = wgPhase(uTime, tm.y, tm.x, N_SEG);
+    const p = morphP.element(gid);
     const ns = lookupNorm(p);
     const world = wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
     // Scale the object in around its centre over the spawn intro.
@@ -453,5 +458,5 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
-  return { mesh, geometry, orderArr, orderAttr };
+  return { mesh, geometry, orderArr, orderAttr, morphPArr, morphPAttr };
 }

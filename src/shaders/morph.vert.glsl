@@ -20,6 +20,8 @@ uniform mat4 projectionMatrix;
 uniform float uTime;
 uniform float uSpawn; // spawn-in intro clock: objects scale up as it sweeps past their slot
 uniform float uScaleNotes; // pdx music-scale note counter (smoothed); objects pulse in size
+uniform sampler2D uMorphPTex; // per-object morph position (CPU note-stepped), indexed by aOrigIndex
+uniform int uMorphPTexW;
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 
@@ -39,10 +41,9 @@ void main() {
   // spawn rank by stable object id (aOrigIndex), so the reveal order survives the
   // frustum compaction that makes gl_InstanceID the draw slot rather than the object.
   float scale = aMisc.y * spawnReveal(float(aOrigIndex), uSpawn) * musicScale(int(aOrigIndex), uScaleNotes);
-  float phaseOffset = aMisc.z;
-  float morphSpeed = aMisc.w;
-
-  float p = pingpong(uTime * morphSpeed + phaseOffset, uNumSegments);
+  // Morph position is CPU-driven (note-stepped) and uploaded per object, indexed by the
+  // stable original id so it survives the frustum compaction.
+  float p = texelFetch(uMorphPTex, texel(int(aOrigIndex), uMorphPTexW), 0).r;
   int seg = int(floor(p));
   float localT = fract(p);
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }

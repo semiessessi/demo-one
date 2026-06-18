@@ -108,6 +108,7 @@ export async function createWebGPUBackend(data) {
     setLightTime(t) { uLightTime.value = t; },
     setSpawn(s) { uSpawn.value = s; },
     setMusic(now, beatTime, strength, seed, scaleNotes) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); beatSeedArr.set(seed); uScaleNotes.value = scaleNotes; },
+    setMorph(p) { morph.morphPArr.set(p); morph.morphPAttr.needsUpdate = true; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target);
