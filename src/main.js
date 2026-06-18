@@ -1,4 +1,3 @@
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { generateScene, generateTestScene } from './scene.js';
 import { NUM_SEGMENTS } from './journey.js';
 import { createBackend } from './backends/index.js';
@@ -17,18 +16,9 @@ const { objects, lights } = sceneData;
 // --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
 const app = document.getElementById('app');
 const backend = await createBackend({ ...sceneData, test: TEST });
-const camera = backend.camera;
 app.appendChild(backend.domElement);
 
-const controls = new OrbitControls(camera, backend.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 5;
-controls.maxDistance = 120;
-if (TEST) {
-  camera.position.set(4, 3.5, 9);
-  controls.target.set(0, -1, 0);
-}
+if (TEST) backend.setView({ position: [4, 3.5, 9], target: [0, -1, 0] });
 
 // --- UI -------------------------------------------------------------------
 const scrub = document.getElementById('scrub');
@@ -132,10 +122,7 @@ if (CAPTURE) {
     test: [[4, 3.5, 9], [0, -1, 0]],
   };
   const preset = camPresets[params.get('cam')] || (TEST ? camPresets.test : camPresets['main-overview']);
-  camera.position.set(...preset[0]);
-  controls.target.set(...preset[1]);
-  controls.enableDamping = false;
-  controls.update();
+  backend.setView({ position: preset[0], target: preset[1], damping: false });
   morphTime = parseFloat(params.get('t') || '0');
   backend.setTime(morphTime);
   playing = false;
@@ -156,7 +143,6 @@ function frame() {
     scrub.value = String(Math.round(((morphTime % SCRUB_SPAN) / SCRUB_SPAN) * 1000));
   }
   backend.setTime(morphTime);
-  controls.update();
   backend.render();
 
   // Measure real frame time.

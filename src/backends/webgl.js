@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -38,6 +39,14 @@ export function createWebGLBackend({
     50, window.innerWidth / window.innerHeight, 0.1, 300,
   );
   camera.position.set(24, 17, 31);
+
+  // Each backend owns its OrbitControls (its own three instance) to avoid
+  // cross-module-instance issues between 'three' and 'three/webgpu'.
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 5;
+  controls.maxDistance = 120;
 
   const lightTex = buildLightTextures(lights, lightIndices);
   const occTex = buildOccluderTextures(objects, occluderIndices);
@@ -89,12 +98,21 @@ export function createWebGLBackend({
     domElement: renderer.domElement,
     camera,
     setTime(t) { uniforms.uTime.value = t; },
+    setView({ position, target, damping = true }) {
+      if (position) camera.position.set(...position);
+      if (target) controls.target.set(...target);
+      controls.enableDamping = damping;
+      controls.update();
+    },
     setSize(w, h) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       composer.setSize(w, h);
     },
-    render() { composer.render(); },
+    render() {
+      controls.update();
+      composer.render();
+    },
   };
 }
