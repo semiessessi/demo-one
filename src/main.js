@@ -43,11 +43,11 @@ let playing = false; // demo loads paused, with the controls pane open
 let morphTime = 0;
 let lightTime = 0; // separate clock for the orbiting lights (advances when lightsMoving)
 let lightsMoving = true; // light orbit on by default; toggle with the ✦ button or L
-let spawnTime = 0; // intro clock (real time): objects scale in + lights ignite over it
 // pdx-gfx spawn-count curve: a slow intro (5*(t/5)^1.3) then exponential DOUBLING
-// (5*2^(t-5)), normalised by object count and fed to the shader as uSpawn — so the number
-// of visible objects doubles over time. Driven by spawnTime (real seconds; resets on play).
-const SPAWN_TIMESCALE = 0.5;
+// (5*2^(t-5)), fed to the shader as uSpawn — so the visible count doubles. Driven by the
+// NOTE count (scalePhase) so objects + their light clouds come in ON THE MUSIC, not a timer;
+// SPAWN_NOTE_SCALE tunes the fill rate (≈ full field by the end of the ~45s orbit).
+const SPAWN_NOTE_SCALE = 0.08;
 function demoSpawnCount(t) {
   const D = 5.0, C = 5.0;
   return t < D ? C * Math.pow(t / D, 1.3) : C * Math.pow(2.0, (t - D) / 1.0);
@@ -114,7 +114,6 @@ function setPlaying(next) {
     // Restart the whole sequence from the top: every clock, the camera intro, the music.
     morphTime = 0;
     lightTime = 0;
-    spawnTime = 0;
     musicClock = 0;
     beatTime.fill(0);
     beatStrength.fill(0);
@@ -244,11 +243,10 @@ function frame() {
     scrub.value = String(Math.round(((morphTime % SCRUB_SPAN) / SCRUB_SPAN) * 1000));
   }
   if (lightsMoving) lightTime += dt;
-  if (!CAPTURE) updateMusic(dt);
-  spawnTime += dt;
+  if (!CAPTURE) updateMusic(dt); // advances scalePhase (note count) used by the spawn below
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
-  if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(spawnTime * SPAWN_TIMESCALE)));
+  if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
   backend.render();
 
   // Measure real frame time.
