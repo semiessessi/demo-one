@@ -4,7 +4,7 @@
 // leaf math is raw WGSL (wgslFn). Ported ~1:1 from shaders/morph.vert/frag.glsl.
 import * as THREE from 'three/webgpu';
 import {
-  Fn, wgslFn, attribute, instanceIndex, varying,
+  Fn, wgslFn, attribute, instanceIndex, varying, storage,
   positionGeometry, positionWorld, cameraPosition,
   Loop, If, Break, and,
   float, int, vec3, vec4, mix, max, length, normalize, dot, abs, pow, reflect,
@@ -160,7 +160,14 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
   // Per-instance: one interleaved buffer (vertex stage; fragment reads via varyings).
   const uInst = roVec4(packInstanceBuffer(objects));
   const ST = INSTANCE_STRIDE;
-  const instSlot = (k) => uInst.element(instanceIndex.mul(ST).add(k));
+  // Frustum-cull order buffer: maps each draw slot -> global object index. The CPU
+  // culler (backends/webgpu.js) rewrites it + shrinks instanceCount each frame;
+  // identity by default so an un-culled draw still renders everything.
+  const orderArr = new Uint32Array(objects.length);
+  for (let i = 0; i < objects.length; i++) orderArr[i] = i;
+  const orderAttr = new THREE.StorageBufferAttribute(orderArr, 1);
+  const gid = storage(orderAttr, 'uint', objects.length).toReadOnly().element(instanceIndex);
+  const instSlot = (k) => uInst.element(gid.mul(ST).add(k));
 
   // Index lists (light / shadow / reflection) merged into one buffer + bases.
   const idx = packIndices(lightIndices, occluderIndices, reflectionIndices);
@@ -368,7 +375,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
     const ns = lookupNorm(p);
     const world = wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
     // Scale the object in around its centre over the spawn intro.
-    return ps.xyz.add(world.sub(ps.xyz).mul(wgSpawnScale(float(instanceIndex), uSpawn)));
+    return ps.xyz.add(world.sub(ps.xyz).mul(wgSpawnScale(float(gid), uSpawn)));
   })();
 
   // --- fragment: GGX direct + shadows + reflections ---
@@ -445,5 +452,5 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
-  return mesh;
+  return { mesh, geometry, orderArr, orderAttr };
 }

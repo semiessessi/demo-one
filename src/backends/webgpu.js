@@ -8,6 +8,7 @@ import { wgslFn, positionLocal, normalize, uniform, uniformArray, pass } from 't
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { buildMorphMesh } from '../gpu/morphMaterial.js';
 import { buildLightSprites } from '../gpu/spriteMaterial.js';
+import { createOrderCuller } from '../gpu/orderCull.js';
 
 // pdx night environment (kept identical to shaders/lib.glsl / morph env).
 const envColor = wgslFn(`
@@ -67,12 +68,16 @@ export async function createWebGPUBackend(data) {
   const uBeatTime = uniformArray(beatTimeArr, 'float');   // auto-uploads each render
   const uBeatStrength = uniformArray(beatStrengthArr, 'float');
   const uMusicTime = uniform(0);
-  const morphMesh = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
-  scene.add(morphMesh);
+  const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
+  scene.add(morph.mesh);
   scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn));
 
+  // Per-frame frustum cull + near→far compaction (rewrites the order buffer + shrinks
+  // instanceCount the morph vertex shader draws).
+  const culler = createOrderCuller(data.objects, morph.orderArr, morph.orderAttr, morph.geometry);
+
   if (params.has('debug')) {
-    window.__wgpu = { renderer, scene, camera, morphMesh };
+    window.__wgpu = { renderer, scene, camera, morphMesh: morph.mesh, culler };
   }
 
   // Post: bloom + ACES tone map (matches the WebGL EffectComposer chain).
@@ -105,6 +110,7 @@ export async function createWebGPUBackend(data) {
     },
     render() {
       if (flycam) flycam.update(camera);
+      culler.cull(camera); // frustum-cull + compact the instances for this view
       postProcessing.render();
     },
   };
