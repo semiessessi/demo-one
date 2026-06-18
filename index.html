@@ -50,7 +50,8 @@
         align-items: center;
         gap: 14px;
       }
-      #playToggle {
+      #playToggle,
+      #muteToggle {
         flex: none;
         width: 38px;
         height: 38px;
@@ -63,11 +64,18 @@
         cursor: pointer;
         transition: background 0.15s ease;
       }
-      #playToggle:hover {
+      #playToggle:hover,
+      #muteToggle:hover {
         background: rgba(255, 255, 255, 0.1);
       }
       #scrub {
         flex: 1 1 auto;
+        accent-color: #9a9a9a;
+        cursor: pointer;
+      }
+      #volume {
+        flex: none;
+        width: 84px;
         accent-color: #9a9a9a;
         cursor: pointer;
       }
@@ -94,6 +102,105 @@
         pointer-events: none;
         display: none;
       }
+
+      /* Info / controls pane (toggle with Tab; shown on load) */
+      #info {
+        position: fixed;
+        top: 50%;
+        right: 24px;
+        transform: translate(calc(100% + 28px), -50%);
+        width: min(330px, calc(100vw - 40px));
+        max-height: calc(100vh - 48px);
+        overflow: auto;
+        padding: 20px 22px;
+        background: rgba(20, 20, 20, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 22px;
+        backdrop-filter: blur(8px);
+        color: #9a9a9a;
+        font-size: 13px;
+        line-height: 1.5;
+        user-select: none;
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 0.34s ease;
+      }
+      #info.open {
+        transform: translate(0, -50%);
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #info h2 {
+        margin: 0 0 14px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #d0d0d0;
+      }
+      #info dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 7px 14px;
+        margin: 0;
+      }
+      #info dt {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: #e6e6e6;
+        white-space: nowrap;
+      }
+      #info dd {
+        margin: 0;
+      }
+      #info .credit {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      #info .credit a {
+        color: #9ec7ff;
+        text-decoration: none;
+      }
+      #info .credit a:hover {
+        text-decoration: underline;
+      }
+
+      /* Top toast — slides down to hint the Tab pane, then retracts */
+      #toast {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        transform: translate(-50%, -160%);
+        padding: 9px 16px;
+        background: rgba(20, 20, 20, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        backdrop-filter: blur(8px);
+        color: #cfcfcf;
+        font-size: 12.5px;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        user-select: none;
+        pointer-events: none;
+        transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      #toast.show {
+        transform: translate(-50%, 0);
+      }
+      #toast kbd {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
     </style>
   </head>
   <body>
@@ -101,11 +208,40 @@
     <pre id="stats"></pre>
     <div id="controls">
       <div id="row">
-        <button id="playToggle" title="Play / pause" aria-label="Play or pause">❚❚</button>
+        <button id="playToggle" title="Play / pause (P)" aria-label="Play or pause">▶</button>
         <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Scrub morph" />
+        <button id="muteToggle" title="Mute / unmute" aria-label="Mute or unmute">🔊</button>
+        <input id="volume" type="range" min="0" max="100" value="70" step="1" aria-label="Volume" />
       </div>
       <span id="label">tetrahedron</span>
     </div>
+    <aside id="info" aria-label="Controls and credits">
+      <h2>Controls</h2>
+      <dl>
+        <dt>P</dt>
+        <dd>play / pause</dd>
+        <dt>Tab</dt>
+        <dd>show / hide this panel</dd>
+        <dt>F</dt>
+        <dd>fps overlay</dd>
+        <dt>T</dt>
+        <dd>test scene</dd>
+        <dt>Drag</dt>
+        <dd>orbit camera</dd>
+        <dt>Scroll</dt>
+        <dd>zoom</dd>
+      </dl>
+      <div class="credit">
+        &#9834; <strong>&ldquo;Engage&rdquo;</strong> by djduck<br />
+        <a
+          href="https://modarchive.org/index.php?request=view_by_moduleid&amp;query=62017"
+          target="_blank"
+          rel="noopener"
+          >The Mod Archive &#8599;</a
+        >
+      </div>
+    </aside>
+    <div id="toast"><span>Press <kbd>Tab</kbd> for controls</span></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

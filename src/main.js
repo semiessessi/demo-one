@@ -20,6 +20,7 @@ import { buildLightSprites } from './lightSprites.js';
 import { buildNormScaleLUT } from './normalize.js';
 import { buildSky } from './sky.js';
 import { buildPlaneTexture, buildOccluderTransforms } from './occluderData.js';
+import { createAudioManager } from './audio.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -113,20 +114,63 @@ composer.addPass(new OutputPass());
 const scrub = document.getElementById('scrub');
 const label = document.getElementById('label');
 const playToggle = document.getElementById('playToggle');
-let playing = true;
+const muteToggle = document.getElementById('muteToggle');
+const volume = document.getElementById('volume');
+const info = document.getElementById('info');
+const toast = document.getElementById('toast');
+let playing = false; // demo loads paused, with the controls pane open
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
 label.textContent = `${objects.length} objects · ${lights.length} lights`;
 
+// Background music. The module is fetched now (while the controls pane is on
+// screen) so the first play starts without a download wait; audio can only
+// begin inside the user gesture that calls audio.play() (autoplay policy).
+const audio = createAudioManager();
+audio.prefetch();
+audio.setVolume(volume.value / 100);
+
+const togglePane = () => info.classList.toggle('open');
+let firstPlay = true;
+let toastTimer = 0;
+function showControlsToast() {
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 6000);
+}
+
+// Single entry point for play/pause (used by the button and the P key). The
+// first time the demo starts, the pane slides away and a toast reminds the
+// user that Tab brings it back.
+function setPlaying(next) {
+  playing = next;
+  playToggle.textContent = next ? '❚❚' : '▶';
+  if (next) {
+    audio.play();
+    if (firstPlay) {
+      firstPlay = false;
+      info.classList.remove('open');
+      showControlsToast();
+    }
+  } else {
+    audio.pause();
+  }
+}
+
 scrub.addEventListener('input', () => {
+  // Scrubbing nudges the morph clock only; the music keeps looping.
   playing = false;
   playToggle.textContent = '▶';
   uniforms.uTime.value = (scrub.value / 1000) * SCRUB_SPAN;
 });
-playToggle.addEventListener('click', () => {
-  playing = !playing;
-  playToggle.textContent = playing ? '❚❚' : '▶';
+playToggle.addEventListener('click', () => setPlaying(!playing));
+muteToggle.addEventListener('click', () => {
+  muteToggle.textContent = audio.toggleMute() ? '🔇' : '🔊';
 });
+volume.addEventListener('input', () => audio.setVolume(volume.value / 100));
+
+// Reveal the controls pane shortly after load so it animates in.
+setTimeout(() => info.classList.add('open'), 80);
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
 const statsEl = document.getElementById('stats');
@@ -135,6 +179,13 @@ let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'p' || e.key === 'P') {
+    setPlaying(!playing);
+  }
+  if (e.key === 'Tab') {
+    e.preventDefault(); // don't shift focus between the on-screen controls
+    togglePane();
+  }
   if (e.key === 'f' || e.key === 'F') {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
