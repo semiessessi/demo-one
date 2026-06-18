@@ -11,6 +11,7 @@ uniform mat4 projectionMatrix;
 uniform float uSpriteSize;
 uniform float uLightTime;
 uniform float uSpawn;        // spawn-in intro clock (light reveal/ignite)
+uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
 uniform float uBeatTime[8];     // per-band last-beat time (uMusicTime units)
 uniform float uBeatStrength[8]; // per-band last-beat strength
 uniform float uMusicTime;       // music clock for the beat timestamps
@@ -30,10 +31,9 @@ void main() {
   // plus the music flare once revealed, and is exactly 0 before reveal / between beats,
   // so the sprite has zero size + zero brightness (no dot) when not emitting.
   int band = gl_InstanceID % 8;
-  float slot = spawnSlot(gl_InstanceID);
-  float ls = uSpawn; // lights reveal with the spawn doubling
-  float emission = (spawnIgnite(slot, ls)
-                 + spawnReveal(slot, ls) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime))
+  float hostSlot = floor(float(gl_InstanceID) / uLightsPerObject); // this light's host object rank
+  float emission = (spawnIgnite(hostSlot, uSpawn) // sharp flash-in when the host spawns
+                 + step(hostSlot, uSpawn) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime))
                  * musicLit(gl_InstanceID);
 
   vec2 corner = position.xy;

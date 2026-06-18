@@ -19,19 +19,9 @@ const sceneData = TEST ? generateTestScene() : generateScene({
 });
 const { objects, lights } = sceneData;
 
-// Focus the intro camera on the object that spawns first (lowest spawn slot), so it's
-// on screen from the first frame of the orbit. Mirrors spawnSlot() in shaders/lib.glsl.
-const spawnSlot = (i) => {
-  let s = ((Math.imul(i, 2654435761) >>> 0) + 12345) >>> 0;
-  s = (s ^ 2747636419) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0;
-  return (s & 0x00ffffff) / 16777215;
-};
-let introIdx = 0;
-for (let i = 1; i < objects.length; i++) if (spawnSlot(i) < spawnSlot(introIdx)) introIdx = i;
-const introTarget = objects[introIdx].pos;
+// Objects are distance-sorted (closest to the origin first), so the instance index is
+// the spawn rank: index 0 spawns first and is the intro camera's focal object.
+const introTarget = objects[0].pos;
 
 // --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
 const app = document.getElementById('app');
@@ -57,7 +47,7 @@ let spawnTime = 0; // intro clock (real time): objects scale in + lights ignite 
 // pdx-gfx spawn-count curve: a slow intro (5*(t/5)^1.3) then exponential DOUBLING
 // (5*2^(t-5)), normalised by object count and fed to the shader as uSpawn — so the number
 // of visible objects doubles over time. Driven by spawnTime (real seconds; resets on play).
-const SPAWN_TIMESCALE = 0.55;
+const SPAWN_TIMESCALE = 0.5;
 function demoSpawnCount(t) {
   const D = 5.0, C = 5.0;
   return t < D ? C * Math.pow(t / D, 1.3) : C * Math.pow(2.0, (t - D) / 1.0);
@@ -86,12 +76,12 @@ function updateMusic(dt) {
     const e = bandLevel[b];
     bandPeak[b] = Math.max(e, bandPeak[b] * Math.exp(-dt / 0.6));
     beatGap[b] += dt;
-    if (armed[b] && beatGap[b] > 0.06 && e >= Math.max(0.04, bandPeak[b] * 0.55)) {
+    if (armed[b] && beatGap[b] > 0.05 && e >= Math.max(0.03, bandPeak[b] * 0.45)) {
       beatTime[b] = musicClock;
-      beatStrength[b] = Math.min(2.5, 0.8 + e * 3.0); // flare scales with the beat's loudness
+      beatStrength[b] = Math.min(1.4, 0.4 + e * 1.6); // dimmer per beat now that ALL lights flare
       armed[b] = 0;
       beatGap[b] = 0;
-    } else if (e <= bandPeak[b] * 0.30) {
+    } else if (e <= bandPeak[b] * 0.25) {
       armed[b] = 1; // dropped back down -> ready for the next hit
     }
   }
@@ -212,7 +202,7 @@ if (CAPTURE) {
   backend.setLightTime(lightTime);
   playing = false;
   lightsMoving = false; // freeze the orbit so captures stay reproducible
-  backend.setSpawn(100); // fully spawned-in for deterministic captures
+  backend.setSpawn(objects.length + 5); // fully spawned-in for deterministic captures
   beatStrength.fill(1.0); // all lights fully lit (age 0) for deterministic captures
   beatTime.fill(0.0);
   backend.setMusic(0, beatTime, beatStrength);
@@ -237,7 +227,7 @@ function frame() {
   spawnTime += dt;
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
-  if (!CAPTURE) backend.setSpawn(Math.min(1.1, demoSpawnCount(spawnTime * SPAWN_TIMESCALE) / objects.length));
+  if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(spawnTime * SPAWN_TIMESCALE)));
   backend.render();
 
   // Measure real frame time.

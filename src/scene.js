@@ -106,13 +106,23 @@ export function generateScene(opts = {}) {
       reflOffset: 0,
       reflCount: 0,
     });
+  }
 
+  // Sort objects by distance from the origin (closest first) so the instance index is
+  // the spawn rank: object 0 = closest = spawns first = the intro camera's focus, and
+  // the scene then fills outward as the visible count doubles.
+  objects.sort((a, b) =>
+    (a.pos[0] ** 2 + a.pos[1] ** 2 + a.pos[2] ** 2) - (b.pos[0] ** 2 + b.pos[1] ** 2 + b.pos[2] ** 2));
+
+  // Generate each object's orbiting lights, in sorted order (so light i belongs to
+  // object floor(i / lightsPerObject)).
+  for (const o of objects) {
     for (let k = 0; k < lightsPerObject; k++) {
-      const orbitRadius = radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
+      const orbitRadius = o.radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
       const rgb = hslToRgb(rng(), 0.8, 0.55);
       const intensity = rand(0.12, 0.35);
       lights.push({
-        pos: [pos[0], pos[1], pos[2]], // host object centre; the shader orbits the light around it
+        pos: [o.pos[0], o.pos[1], o.pos[2]], // host object centre; the shader orbits the light
         orbitRadius,
         color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],
         radius: LIGHT_RADIUS, // falloff radius

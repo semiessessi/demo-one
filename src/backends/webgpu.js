@@ -69,7 +69,7 @@ export async function createWebGPUBackend(data) {
   const uMusicTime = uniform(0);
   const morphMesh = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
   scene.add(morphMesh);
-  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn));
+  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn, data.lights.length / data.objects.length));
 
   if (params.has('debug')) {
     window.__wgpu = { renderer, scene, camera, morphMesh };

@@ -28,32 +28,25 @@ export const wgAnimDir = wgslFn(`
 // Object spawn-in scale (0 before the object's slot, →1 after) — WGSL port of
 // spawnReveal(spawnSlot(i)) in shaders/lib.glsl. Hash inlined for byte-identical parity.
 export const wgSpawnScale = wgslFn(`
-  fn wgSpawnScale(idxF: f32, spawn: f32) -> f32 {
-    var h = (u32(idxF) * 2654435761u + 12345u) ^ 2747636419u; h = h * 2654435769u; h = h ^ (h >> 16u); h = h * 2654435769u; h = h ^ (h >> 16u); h = h * 2654435769u;
-    let slot = f32(h & 0x00FFFFFFu) / 16777215.0;
+  fn wgSpawnScale(slot: f32, spawn: f32) -> f32 {
     let a = spawn - slot;
-    return select(0.0, smoothstep(0.0, 0.25, a), a > 0.0);
+    return select(0.0, smoothstep(0.0, 0.6, a), a > 0.0);
   }
 `);
 
-// Light emission — WGSL port of the spawn + beat-flare combo in shaders/lib.glsl /
-// morph.frag. `spawn` is the lights' (lagged) clock. A one-shot ignite flash as the
-// light reveals, plus the music flare: the band's last beat (beatTime/strength) re-fires
-// the light, which then fades at one of 8 pseudo-random per-light rates. Exactly 0 before
-// reveal. Both inlined hashes MUST stay byte-identical to the GLSL (spawnSlot, lightFadeRate).
+// Light emission: a sharp flash-in when the light's host object (rank `hostSlot`)
+// spawns, plus the music flare (gated to after the host reveals); each light fades at
+// one of 8 per-light rates. Matches morph.frag / lib.glsl. hostSlot/idx hashes inlined.
 export const wgLightEmission = wgslFn(`
-  fn wgLightEmission(idxF: f32, spawn: f32, beatTime: f32, strength: f32, now: f32) -> f32 {
-    var hs = (u32(idxF) * 2654435761u + 12345u) ^ 2747636419u; hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u; hs = hs ^ (hs >> 16u); hs = hs * 2654435769u;
-    let slot = f32(hs & 0x00FFFFFFu) / 16777215.0;
-    let a = spawn - slot;
-    let reveal = select(0.0, smoothstep(0.0, 0.01, a), a > 0.0);
-    let ignite = select(0.0, 1.5 * exp(-a / 0.3), a > 0.0);
+  fn wgLightEmission(idxF: f32, hostSlot: f32, spawn: f32, beatTime: f32, strength: f32, now: f32) -> f32 {
+    let a = spawn - hostSlot;
+    let ignite = select(0.0, 3.0 * exp(-a / 0.25), a > 0.0); // sharp flash-in
     var hr = u32(idxF) ^ 2747636419u; hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u; hr = hr ^ (hr >> 16u); hr = hr * 2654435769u;
     let rate = 0.5 * pow(2.0, f32(hr % 8u) * 0.5);
     let age = now - beatTime;
-    let flare = select(0.0, strength * exp(-age * rate), age >= 0.0);
+    let flare = select(0.0, strength * exp(-age * rate), age >= 0.0) * select(0.0, 1.0, a > 0.0); // gated to host reveal
     var hl = (u32(idxF) * 2246822519u) ^ 2747636419u; hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u;
-    let lit = select(0.0, 1.0, f32(hl & 0x00FFFFFFu) / 16777215.0 < 0.4); // MUSIC_LIT — keep in sync with lib.glsl
-    return (ignite + reveal * flare) * lit;
+    let lit = select(0.0, 1.0, f32(hl & 0x00FFFFFFu) / 16777215.0 < 1.0); // MUSIC_LIT (1.0 = all) — sync with lib.glsl
+    return (ignite + flare) * lit;
   }
 `);

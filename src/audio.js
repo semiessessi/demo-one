@@ -65,7 +65,7 @@ export function createAudioManager() {
       try {
         analyser = player.context.createAnalyser();
         analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.7; // time-smooths the spectrum
+        analyser.smoothingTimeConstant = 0.1; // keep transients sharp so beats are detectable
         player.gain.connect(analyser);
       } catch (_) {
         analyser = null;
@@ -147,7 +147,7 @@ export function createAudioManager() {
     const n = out.length;
     if (!analyser || paused || muted) { out.fill(0); return out; }
     analyser.getByteFrequencyData(freqBins);
-    const usable = freqBins.length >> 2; // lower quarter ≈ 0–5.5 kHz (where the chip energy sits)
+    const usable = freqBins.length >> 1; // lower half ≈ 0–11 kHz (covers more of the notes)
     const per = Math.max(1, Math.floor(usable / n));
     for (let b = 0; b < n; b++) {
       let s = 0;

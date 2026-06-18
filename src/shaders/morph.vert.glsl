@@ -34,7 +34,7 @@ flat out int vReflCount;
 
 void main() {
   float spinSpeed = aMisc.x;
-  float scale = aMisc.y * spawnReveal(spawnSlot(gl_InstanceID), uSpawn); // scale in over the intro
+  float scale = aMisc.y * spawnReveal(float(gl_InstanceID), uSpawn); // scale in by spawn rank
   float phaseOffset = aMisc.z;
   float morphSpeed = aMisc.w;
 

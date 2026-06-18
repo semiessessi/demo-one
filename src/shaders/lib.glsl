@@ -62,7 +62,7 @@ float musicFlare(int idx, float beatTime, float strength, float now) {
 // Only a fraction of lights react to the music (so loud beats don't over-brighten the
 // scene); the rest never flare. Static per-light, independent of the band/rate/slot
 // hashes. Keep MUSIC_LIT in sync with gpu/orbit.js.
-const float MUSIC_LIT = 0.4;
+const float MUSIC_LIT = 1.0; // fraction of lights that react (1.0 = all of them)
 float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC_LIT ? 1.0 : 0.0; }
 
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
@@ -71,11 +71,11 @@ float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC
 float spawnSlot(int i) { return hashUnit(hash(uint(i) * 2654435761u + 12345u)); }
 float spawnReveal(float slot, float spawn) {
   float a = spawn - slot;
-  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.01, a); // crisp pop so the doubling reads
+  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.6, a); // object scales in over ~0.6 of a spawn count
 }
 float spawnIgnite(float slot, float spawn) {
   float a = spawn - slot;
-  return a <= 0.0 ? 0.0 : 1.5 * exp(-a / 0.3);
+  return a <= 0.0 ? 0.0 : 3.0 * exp(-a / 0.25); // sharp bright flash-in (not a slow lerp)
 }
 // Lights reveal a touch later and slower than objects, via their own derived clock.
 const float LIGHT_SPAWN_DELAY = 0.2;

@@ -10,8 +10,8 @@
 const SENS = 0.003;       // radians per pixel of drag
 const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
-const ORBIT_DUR = 8.0;    // seconds orbiting the focal object before the fly
-const FLY_BLEND = 4.0;    // seconds blending the orbit into the Lissajous fly
+const ORBIT_DUR = 22.0;   // seconds orbiting the focal object before the fly (slow pan-back)
+const FLY_BLEND = 8.0;    // seconds blending the orbit into the Lissajous fly
 const FLY_SPEED = 0.4;    // Lissajous time scale
 const FLY_AMP = [9.0, 4.5, 9.0];     // fly extent per axis (x, y-up, z)
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)

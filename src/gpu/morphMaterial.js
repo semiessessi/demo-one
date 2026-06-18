@@ -152,6 +152,7 @@ function buildGeometry() {
 // `uMusicTime` drive the beat flares; `uSpawn` is the spawn-in intro clock. TSL nodes.
 export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn) {
   const { objects, lights, lightIndices, occluderIndices, reflectionIndices } = data;
+  const LPO = lights.length / objects.length; // lights per object -> a light's host spawn rank
 
   const geometry = buildGeometry();
   geometry.instanceCount = objects.length;
@@ -318,8 +319,8 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
           shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
         });
         const band = liF.div(8).fract().mul(8).add(0.5).floor().toInt(); // li % 8
-        const ls = uSpawn; // lights reveal with the spawn doubling
-        const emission = wgLightEmission(liF, ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
+        const hostSlot = liF.div(LPO).floor(); // light's host object spawn rank
+        const emission = wgLightEmission(liF, hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
         lit.addAssign(
           wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow).mul(emission),
         );
