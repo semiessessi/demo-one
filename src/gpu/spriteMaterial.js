@@ -39,7 +39,7 @@ const wgSpriteColor = wgslFn(`
   }
 `);
 
-export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn, lpo) {
+export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn, lpo) {
   const n = lights.length;
   const corners = new Float32Array([
     -1, -1, 0, 1, -1, 0, 1, 1, 0,
@@ -67,7 +67,7 @@ export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, 
   // Light's music slot for the note-on flare (light picks slot = index % 32).
   const band = float(instanceIndex).div(32).fract().mul(32).add(0.5).floor().toInt();
   const hostSlot = float(instanceIndex).div(lpo).floor(); // host object spawn rank
-  const emission = wgLightEmission(float(instanceIndex), hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
+  const emission = wgLightEmission(float(instanceIndex), hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uBeatSeed.element(band), uMusicTime);
   const vCorner = varying(positionGeometry.xy);
   const vColor = varying(c.xyz.mul(emission));
 

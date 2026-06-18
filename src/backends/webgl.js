@@ -60,6 +60,7 @@ export function createWebGLBackend({
     uLightsPerObject: { value: lights.length / objects.length },
     uBeatTime: { value: new Float32Array(32) },
     uBeatStrength: { value: new Float32Array(32) },
+    uBeatSeed: { value: new Float32Array(32) },
     uMusicTime: { value: 0 },
     uNumSegments: { value: NUM_SEGMENTS },
     uNormScale: { value: buildNormScaleLUT() },
@@ -99,6 +100,7 @@ export function createWebGLBackend({
     uLightsPerObject: uniforms.uLightsPerObject,
     uBeatTime: uniforms.uBeatTime,
     uBeatStrength: uniforms.uBeatStrength,
+    uBeatSeed: uniforms.uBeatSeed,
     uMusicTime: uniforms.uMusicTime,
   }));
 
@@ -117,10 +119,11 @@ export function createWebGLBackend({
     setTime(t) { uniforms.uTime.value = t; },
     setLightTime(t) { uniforms.uLightTime.value = t; },
     setSpawn(s) { uniforms.uSpawn.value = s; },
-    setMusic(now, beatTime, strength) {
+    setMusic(now, beatTime, strength, seed) {
       uniforms.uMusicTime.value = now;
       uniforms.uBeatTime.value.set(beatTime);
       uniforms.uBeatStrength.value.set(strength);
+      uniforms.uBeatSeed.value.set(seed);
     },
     setView({ position, target }) {
       if (flycam) {

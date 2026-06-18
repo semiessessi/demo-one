@@ -14,6 +14,7 @@ uniform float uSpawn;        // spawn-in intro clock (light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
 uniform float uBeatTime[32];     // per-slot last note-on time (uMusicTime units)
 uniform float uBeatStrength[32]; // per-slot last note-on strength
+uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
 uniform float uMusicTime;       // music clock for the beat timestamps
 
 out vec2 vCorner;
@@ -32,9 +33,10 @@ void main() {
   // so the sprite has zero size + zero brightness (no dot) when not emitting.
   int band = gl_InstanceID % 32;
   float hostSlot = floor(float(gl_InstanceID) / uLightsPerObject); // this light's host object rank
-  float emission = (spawnIgnite(hostSlot, uSpawn) // sharp flash-in when the host spawns
-                 + step(hostSlot, uSpawn) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime))
-                 * musicLit(gl_InstanceID);
+  // Dark until the host spawns, then flash only on notes — fresh ~MUSIC_FRAC subset per note.
+  float emission = step(hostSlot, uSpawn)
+                 * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime)
+                 * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
 
   vec2 corner = position.xy;
   float size = uSpriteSize * (0.6 + 0.2 * aLightRadius) * emission; // 0 emission -> 0 size -> no dot

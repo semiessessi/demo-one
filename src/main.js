@@ -60,6 +60,8 @@ const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader 
 const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
 const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
+const beatSeed = new Float32Array(N_BANDS); // per-slot note seed; re-rolled each note -> a fresh light subset
+let noteCounter = 0; // ever-increasing; stamped into beatSeed[slot] on each note-on
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -71,9 +73,10 @@ function updateMusic(dt) {
     if (slotNote[b]) {
       beatTime[b] = musicClock;
       beatStrength[b] = 1.3;
+      beatSeed[b] = ++noteCounter; // fresh seed -> a different ~12% subset of this slot flares
     }
   }
-  backend.setMusic(musicClock, beatTime, beatStrength);
+  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed);
 }
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
@@ -109,6 +112,8 @@ function setPlaying(next) {
     musicClock = 0;
     beatTime.fill(0);
     beatStrength.fill(0);
+    beatSeed.fill(0);
+    noteCounter = 0;
     scrub.value = '0';
     backend.setTime(0);
     backend.setLightTime(0);
@@ -200,9 +205,10 @@ if (CAPTURE) {
   playing = false;
   lightsMoving = false; // freeze the orbit so captures stay reproducible
   backend.setSpawn(objects.length + 5); // fully spawned-in for deterministic captures
-  beatStrength.fill(1.0); // all lights fully lit (age 0) for deterministic captures
+  beatStrength.fill(1.0); // age 0 (lit); the per-note subset (fixed seed 0) stays deterministic
   beatTime.fill(0.0);
-  backend.setMusic(0, beatTime, beatStrength);
+  beatSeed.fill(0.0);
+  backend.setMusic(0, beatTime, beatStrength, beatSeed);
   for (const id of ['controls', 'info', 'toast', 'stats']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';

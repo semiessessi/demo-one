@@ -68,10 +68,12 @@ export async function createWebGPUBackend(data) {
   const beatStrengthArr = new Float32Array(32); // per-slot last note-on strength, set in setMusic
   const uBeatTime = uniformArray(beatTimeArr, 'float');   // auto-uploads each render
   const uBeatStrength = uniformArray(beatStrengthArr, 'float');
+  const beatSeedArr = new Float32Array(32); // per-slot note seed, set in setMusic
+  const uBeatSeed = uniformArray(beatSeedArr, 'float');
   const uMusicTime = uniform(0);
-  const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
+  const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn);
   scene.add(morph.mesh);
-  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn, data.lights.length / data.objects.length));
+  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn, data.lights.length / data.objects.length));
 
   // Per-frame frustum cull. Default: CPU order-buffer culler (reliable; same result
   // + same perf as compute at these scales). ?computecull opts into the WIP fully
@@ -104,7 +106,7 @@ export async function createWebGPUBackend(data) {
     setTime(t) { uTime.value = t; },
     setLightTime(t) { uLightTime.value = t; },
     setSpawn(s) { uSpawn.value = s; },
-    setMusic(now, beatTime, strength) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); },
+    setMusic(now, beatTime, strength, seed) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); beatSeedArr.set(seed); },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target);

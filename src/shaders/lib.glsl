@@ -64,6 +64,13 @@ float musicFlare(int idx, float beatTime, float strength, float now) {
 // hashes. Keep MUSIC_LIT in sync with gpu/orbit.js.
 const float MUSIC_LIT = 1.0; // fraction of lights that react (1.0 = all of them)
 float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC_LIT ? 1.0 : 0.0; }
+// Per-NOTE participation: each note writes a fresh seed to its slot (uBeatSeed), so a
+// different ~MUSIC_FRAC subset of the slot's lights flares each note (few, and never the
+// same set). Replaces the static musicLit gate for the flare. Sync with gpu/orbit.js.
+const float MUSIC_FRAC = 0.12;
+float musicBeatLit(int idx, float seed) {
+  return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
+}
 
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash

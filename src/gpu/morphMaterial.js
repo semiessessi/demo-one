@@ -150,7 +150,7 @@ function buildGeometry() {
 // Builds the instanced morph mesh. `uTime` drives the morph clock; `uLightTime` is a
 // separate clock for the orbiting lights (toggleable); `uBeatTime`/`uBeatStrength` +
 // `uMusicTime` drive the beat flares; `uSpawn` is the spawn-in intro clock. TSL nodes.
-export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn) {
+export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uBeatSeed, uMusicTime, uSpawn) {
   const { objects, lights, lightIndices, occluderIndices, reflectionIndices } = data;
   const LPO = lights.length / objects.length; // lights per object -> a light's host spawn rank
 
@@ -327,7 +327,7 @@ export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength
         });
         const band = liF.div(32).fract().mul(32).add(0.5).floor().toInt(); // li % 32 (light's slot)
         const hostSlot = liF.div(LPO).floor(); // light's host object spawn rank
-        const emission = wgLightEmission(liF, hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
+        const emission = wgLightEmission(liF, hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uBeatSeed.element(band), uMusicTime);
         lit.addAssign(
           wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow).mul(emission),
         );
