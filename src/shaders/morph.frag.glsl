@@ -168,8 +168,9 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     int band = idx % 8;
     float slot = spawnSlot(idx);
     float ls = lightSpawnClock(uSpawn);
-    float emission = spawnIgnite(slot, ls)
-                   + spawnReveal(slot, ls) * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime);
+    float emission = (spawnIgnite(slot, ls)
+                   + spawnReveal(slot, ls) * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime))
+                   * musicLit(idx);
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < SHADOW_LIGHTS) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
     lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow * emission;

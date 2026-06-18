@@ -59,6 +59,11 @@ float musicFlare(int idx, float beatTime, float strength, float now) {
   float age = now - beatTime;
   return age < 0.0 ? 0.0 : strength * exp(-age * lightFadeRate(idx));
 }
+// Only a fraction of lights react to the music (so loud beats don't over-brighten the
+// scene); the rest never flare. Static per-light, independent of the band/rate/slot
+// hashes. Keep MUSIC_LIT in sync with gpu/orbit.js.
+const float MUSIC_LIT = 0.4;
+float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC_LIT ? 1.0 : 0.0; }
 
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash

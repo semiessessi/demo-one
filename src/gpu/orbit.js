@@ -52,6 +52,8 @@ export const wgLightEmission = wgslFn(`
     let rate = 0.5 * pow(2.0, f32(hr % 8u) * 0.5);
     let age = now - beatTime;
     let flare = select(0.0, strength * exp(-age * rate), age >= 0.0);
-    return ignite + reveal * flare;
+    var hl = (u32(idxF) * 2246822519u) ^ 2747636419u; hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u; hl = hl ^ (hl >> 16u); hl = hl * 2654435769u;
+    let lit = select(0.0, 1.0, f32(hl & 0x00FFFFFFu) / 16777215.0 < 0.4); // MUSIC_LIT — keep in sync with lib.glsl
+    return (ignite + reveal * flare) * lit;
   }
 `);

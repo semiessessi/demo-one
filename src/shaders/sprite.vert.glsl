@@ -32,8 +32,9 @@ void main() {
   int band = gl_InstanceID % 8;
   float slot = spawnSlot(gl_InstanceID);
   float ls = lightSpawnClock(uSpawn);
-  float emission = spawnIgnite(slot, ls)
-                 + spawnReveal(slot, ls) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime);
+  float emission = (spawnIgnite(slot, ls)
+                 + spawnReveal(slot, ls) * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime))
+                 * musicLit(gl_InstanceID);
 
   vec2 corner = position.xy;
   float size = uSpriteSize * (0.6 + 0.2 * aLightRadius) * emission; // 0 emission -> 0 size -> no dot

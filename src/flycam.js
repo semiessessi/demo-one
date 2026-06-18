@@ -7,7 +7,7 @@
 // Intro: orbit `introTarget` while pulling back for INTRO_DUR seconds, then hand off to
 // free flight from that exact pose (no jump). Any movement/look input skips the intro.
 
-const SENS = 0.0022;      // radians per pixel of mouse movement
+const SENS = 0.003;       // radians per pixel of drag
 const SPEED = 16;         // units / second (Shift = x3)
 const PITCH_LIMIT = 1.5;  // ~86°, so you can't flip over the poles
 const INTRO_DUR = 8.0;    // seconds of orbit-and-pull-back before free flight
@@ -21,7 +21,7 @@ export function createFlyCam(domElement, introTarget) {
   let yaw = 0, pitch = 0;
   let mode = introTarget ? 'intro' : 'free';
   let introT = 0;
-  let locked = false;
+  let dragging = false;
   let last = performance.now();
   const keys = new Set();
 
@@ -39,21 +39,28 @@ export function createFlyCam(domElement, introTarget) {
     if (MOVE_KEYS.includes(e.code)) mode = 'free'; // moving skips the intro
   };
   const onKeyUp = (e) => keys.delete(e.code);
-  const onBlur = () => keys.clear(); // avoid stuck keys when focus leaves the window
-  const onClick = () => { if (!locked) domElement.requestPointerLock?.(); };
-  const onLockChange = () => { locked = document.pointerLockElement === domElement; };
-  const onMouseMove = (e) => {
-    if (!locked) return;
-    yaw -= e.movementX * SENS;                                       // mouse right -> look right
-    pitch = clamp(pitch - e.movementY * SENS, -PITCH_LIMIT, PITCH_LIMIT); // mouse up -> look up
+  const onBlur = () => { keys.clear(); dragging = false; }; // avoid stuck keys/drag on focus loss
+  // Click-drag to look — the cursor stays visible (no pointer lock).
+  const onMouseDown = (e) => {
+    if (e.button !== 0) return; // left button
+    dragging = true;
     mode = 'free'; // looking skips the intro
+    domElement.style.cursor = 'grabbing';
+    e.preventDefault();
   };
+  const onMouseUp = () => { dragging = false; domElement.style.cursor = 'grab'; };
+  const onMouseMove = (e) => {
+    if (!dragging) return;
+    yaw -= e.movementX * SENS;                                       // drag right -> look right
+    pitch = clamp(pitch - e.movementY * SENS, -PITCH_LIMIT, PITCH_LIMIT); // drag up -> look up
+  };
+  domElement.style.cursor = 'grab'; // hint: drag to look
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
-  domElement.addEventListener('click', onClick);
-  document.addEventListener('pointerlockchange', onLockChange);
-  document.addEventListener('mousemove', onMouseMove);
+  domElement.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('mousemove', onMouseMove);
 
   function update(camera) {
     const now = performance.now();
@@ -112,9 +119,9 @@ export function createFlyCam(domElement, introTarget) {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
-    domElement.removeEventListener('click', onClick);
-    document.removeEventListener('pointerlockchange', onLockChange);
-    document.removeEventListener('mousemove', onMouseMove);
+    domElement.removeEventListener('mousedown', onMouseDown);
+    window.removeEventListener('mouseup', onMouseUp);
+    window.removeEventListener('mousemove', onMouseMove);
   }
 
   return { update, setPose, startIntro, dispose };
