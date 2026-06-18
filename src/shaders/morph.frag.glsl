@@ -15,7 +15,6 @@ out vec4 fragColor;
 
 uniform vec3 cameraPosition;
 uniform float uTime;
-uniform float uSpeed;
 uniform float uNumSegments;
 uniform float uNormScale[128];
 
@@ -102,11 +101,13 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   vec4 t0 = texelFetch(uOccTransformTex, texel(b, uOccTransformTexW), 0);
   vec4 baseQ = texelFetch(uOccTransformTex, texel(b + 1, uOccTransformTexW), 0);
   vec4 t2 = texelFetch(uOccTransformTex, texel(b + 2, uOccTransformTexW), 0);
-  float phaseOff = texelFetch(uOccTransformTex, texel(b + 3, uOccTransformTexW), 0).x;
+  vec4 t3 = texelFetch(uOccTransformTex, texel(b + 3, uOccTransformTexW), 0);
+  float phaseOff = t3.x;
+  float morphSpeed = t3.y;
   vec3 center = t0.xyz;
   float scale = t0.w;
 
-  float p = pingpong(uTime * uSpeed + phaseOff, uNumSegments);
+  float p = pingpong(uTime * morphSpeed + phaseOff, uNumSegments);
   int seg = int(floor(p));
   float localT = fract(p);
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }

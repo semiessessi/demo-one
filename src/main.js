@@ -57,13 +57,12 @@ const reflTex = buildReflectionData(objects, reflectionIndices);
 const geo = buildPlaneTexture();
 const occXf = buildOccluderTransforms(objects);
 if (TEST) {
-  camera.position.set(6, 2, 8);
-  controls.target.set(0, 0.3, 0);
+  camera.position.set(4, 3.5, 9);
+  controls.target.set(0, -1, 0);
 }
 
 const uniforms = {
-  uTime: { value: TEST ? 3.0 : 0 }, // test scene sits on a cube
-  uSpeed: { value: TEST ? 0 : 0.5 },
+  uTime: { value: 0 },
   uNumSegments: { value: NUM_SEGMENTS },
   uNormScale: { value: buildNormScaleLUT() },
   uLightsTex: { value: lightTex.lightsTex },
@@ -115,7 +114,7 @@ const scrub = document.getElementById('scrub');
 const label = document.getElementById('label');
 const playToggle = document.getElementById('playToggle');
 let playing = true;
-const SCRUB_SPAN = uniforms.uSpeed.value > 0 ? (2 * NUM_SEGMENTS) / uniforms.uSpeed.value : 1; // one ping-pong period (s)
+const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
 label.textContent = `${objects.length} objects · ${lights.length} lights`;
 

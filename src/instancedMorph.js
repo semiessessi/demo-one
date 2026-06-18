@@ -48,7 +48,7 @@ export function setInstanceAttributes(geometry, objects) {
     pos.set(o.pos, i * 3);
     quat.set(o.quat, i * 4);
     spinAxis.set(o.spinAxis, i * 3);
-    misc.set([o.spinSpeed, o.scale, o.phase, 0], i * 4);
+    misc.set([o.spinSpeed, o.scale, o.phase, o.morphSpeed], i * 4);
     color.set(o.color, i * 3);
     material.set([o.rough, o.metal, o.lightOffset, o.lightCount], i * 4);
     lists.set([o.shadowOffset, o.shadowCount, o.reflOffset, o.reflCount], i * 4);

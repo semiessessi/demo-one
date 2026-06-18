@@ -17,7 +17,6 @@ in vec4 aLists;       // shadowOffset, shadowCount, reflOffset, reflCount
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform float uTime;
-uniform float uSpeed;
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 
@@ -52,8 +51,9 @@ void main() {
   float spinSpeed = aMisc.x;
   float scale = aMisc.y;
   float phaseOffset = aMisc.z;
+  float morphSpeed = aMisc.w;
 
-  float p = pingpong(uTime * uSpeed + phaseOffset, uNumSegments);
+  float p = pingpong(uTime * morphSpeed + phaseOffset, uNumSegments);
   int seg = int(floor(p));
   float localT = fract(p);
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }

@@ -80,6 +80,7 @@ export function generateScene() {
       radius,
       proxyRadius: scale * R_PROXY,
       phase: rand(0, 20),
+      morphSpeed: rand(0.35, 0.65),
       color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
       rough: rand(0.12, 0.9), // some smooth enough to reflect
       metal: rng() < 0.25 ? 1.0 : 0.0,
@@ -116,7 +117,7 @@ export function generateScene() {
 // adding ?test to the URL.
 export function generateTestScene() {
   const objects = [];
-  const makeObj = (pos, scale, color, rough, metal, phase = 3.0) => ({
+  const makeObj = (pos, scale, color, rough, metal, phase = 3.0, morphSpeed = 0) => ({
     pos,
     quat: [0, 0, 0, 1],
     spinAxis: [0, 1, 0],
@@ -124,7 +125,8 @@ export function generateTestScene() {
     scale,
     radius: MAX_NORM_CIRCUMRADIUS * scale,
     proxyRadius: scale * R_PROXY,
-    phase, // 3.0 = cube, 6.0 = icosahedron (clear silhouettes), static
+    phase, // 3.0 = cube, 6.0 = icosahedron
+    morphSpeed, // 0 = static
     color,
     rough,
     metal,
@@ -132,14 +134,16 @@ export function generateTestScene() {
     shadowOffset: 0, shadowCount: 0,
     reflOffset: 0, reflCount: 0,
   });
-  // Shiny icosahedron at the centre: reflects the bright horizon + the lit cube,
-  // so its many flat faces show clearly faceted (non-spherical) reflections.
-  objects.push(makeObj([0, 0, 0], 2.0, [0.95, 0.95, 1.0], 0.02, 1, 6.0));
-  objects.push(makeObj([-3.3, 1.6, 1.4], 1.1, [0.82, 0.8, 0.76], 0.6, 0)); // lit cube (reflected + occluder)
-  objects.push(makeObj([-5.0, 0.6, -0.6], 0.65, [0.8, 0.78, 0.7], 0.6, 0)); // small: in the cube's shadow
+  // Big flat receiver below: a large static cube whose top catches the shadows.
+  objects.push(makeObj([0, -3.6, 0], 4.0, [0.7, 0.7, 0.72], 0.75, 0, 3.0, 0.0));
+  // Morphing object above the floor: casts a clear, shape-changing shadow onto
+  // the floor and shows a bright reflection in the icosahedron.
+  objects.push(makeObj([-1.6, 1.2, 0.4], 1.2, [0.82, 0.8, 0.76], 0.55, 0, 3.0, 0.3));
+  // Shiny static icosahedron: reflects the morphing object + casts its own shadow.
+  objects.push(makeObj([1.7, 1.0, 0.6], 1.1, [0.95, 0.95, 1.0], 0.02, 1, 6.0, 0.0));
 
-  // One bright light up and to the side.
-  const lights = [{ pos: [4.5, 5.5, 3.5], color: [20, 20, 20], radius: 40 }];
+  // One bright light above so both objects drop shadows onto the floor.
+  const lights = [{ pos: [1.5, 8.0, 2.5], color: [22, 22, 22], radius: 40 }];
 
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects);

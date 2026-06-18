@@ -78,7 +78,7 @@ export function buildOccluderTransforms(objects) {
     data[b] = o.pos[0]; data[b + 1] = o.pos[1]; data[b + 2] = o.pos[2]; data[b + 3] = o.scale;
     data[b + 4] = o.quat[0]; data[b + 5] = o.quat[1]; data[b + 6] = o.quat[2]; data[b + 7] = o.quat[3];
     data[b + 8] = o.spinAxis[0]; data[b + 9] = o.spinAxis[1]; data[b + 10] = o.spinAxis[2]; data[b + 11] = o.spinSpeed;
-    data[b + 12] = o.phase;
+    data[b + 12] = o.phase; data[b + 13] = o.morphSpeed;
   });
   const { tex, width } = rgbaTexture(data, objects.length * 4);
   return { transformTex: tex, transformTexW: width };
