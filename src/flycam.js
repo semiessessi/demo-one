@@ -15,6 +15,12 @@ const FLY_BLEND = 6.0;    // seconds easing the orbit into the Lissajous fly (sm
 const FLY_SPEED = 0.4;    // Lissajous time scale (full fly speed)
 const FLY_FULL_SECS = 7.0; // seconds at full speed before the speed follows the music amplitude
 const FLY_MIN_FRAC = 0.18; // floor on fly speed (fraction of FLY_SPEED) so it never fully stops
+// Climax choreography (seconds since play, ~= music time): go faster + harder with spinning
+// barrel rolls between CLIMAX_START and CLIMAX_END, then decelerate to a level stop.
+const CLIMAX_START = 58.0;
+const CLIMAX_END = 85.0;
+const CLIMAX_SPEED_MULT = 3.0; // peak fly-speed multiplier during the climax
+const ROLL_SPEED = 1.2;        // peak barrel-roll rate (rad/s) -> a few full rolls over the climax
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
@@ -33,6 +39,9 @@ export function createFlyCam(domElement, introTarget) {
   const keys = new Set();
   let flyU = 0;                   // accumulated Lissajous phase (so the speed can vary)
   let flySpeedSmooth = FLY_SPEED; // smoothed fly speed
+  let speedMultSmooth = 1;        // smoothed climax speed multiplier (eases the stop)
+  let climaxRoll = 0;             // accumulated barrel-roll angle during the climax
+  let rollSmooth = 0;             // smoothed camera roll (3rd euler)
   let musicLevel = 0;             // 0..1 music amplitude (note density), set by setMusicLevel
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
@@ -97,7 +106,19 @@ export function createFlyCam(domElement, introTarget) {
       const k = smooth(clamp((flyTime - FLY_FULL_SECS) / 3.0, 0, 1)); // 0 = full speed, 1 = music-reactive
       const targetSpeed = FLY_SPEED * (1.0 - k) + FLY_SPEED * (FLY_MIN_FRAC + (0.5 - FLY_MIN_FRAC) * musicLevel) * k;
       flySpeedSmooth += (targetSpeed - flySpeedSmooth) * (1.0 - Math.exp(-dt / 0.6)); // very smooth
-      if (introT >= ORBIT_DUR) flyU += flySpeedSmooth * dt;
+      // Climax: faster/harder + spinning rolls between CLIMAX_START/END, then stop (level).
+      let speedMultTarget, rollVel;
+      if (introT < CLIMAX_START) { speedMultTarget = 1.0; rollVel = 0.0; }
+      else if (introT < CLIMAX_END) {
+        const env = Math.sin(((introT - CLIMAX_START) / (CLIMAX_END - CLIMAX_START)) * Math.PI); // 0->1->0
+        speedMultTarget = 1.0 + (CLIMAX_SPEED_MULT - 1.0) * env;
+        rollVel = ROLL_SPEED * env;
+      } else { speedMultTarget = 0.0; rollVel = 0.0; } // stop after the climax
+      speedMultSmooth += (speedMultTarget - speedMultSmooth) * (1.0 - Math.exp(-dt / 1.2)); // ease (incl. the stop)
+      climaxRoll += rollVel * dt;
+      const rollTarget = introT >= CLIMAX_END ? Math.round(climaxRoll / (2.0 * Math.PI)) * (2.0 * Math.PI) : climaxRoll;
+      rollSmooth += (rollTarget - rollSmooth) * (1.0 - Math.exp(-dt / 0.6)); // finish the roll, settle level
+      if (introT >= ORBIT_DUR) flyU += flySpeedSmooth * speedMultSmooth * dt;
       const U = flyU;
       const fpx = FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]);
       const fpy = FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]);
@@ -133,10 +154,11 @@ export function createFlyCam(domElement, introTarget) {
       px += (fx * mz + rx * mx) * v;
       py += (fy * mz + my) * v;
       pz += (fz * mz + rz * mx) * v;
+      rollSmooth *= Math.exp(-dt / 0.3); // level out if the user takes over mid-roll
     }
 
     camera.position.set(px, py, pz);
-    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    camera.rotation.set(pitch, yaw, rollSmooth, 'YXZ');
   }
 
   // Jump to a fixed pose and enter free flight (used by the test-scene preset).
@@ -151,6 +173,9 @@ export function createFlyCam(domElement, introTarget) {
     introT = 0;
     flyU = 0;
     flySpeedSmooth = FLY_SPEED;
+    speedMultSmooth = 1;
+    climaxRoll = 0;
+    rollSmooth = 0;
     mode = 'intro';
   }
   function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }
