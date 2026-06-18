@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "project": { "id": "demo-one" },
+  "repos": [
+    {
+      "name": "main",
+      "primary": true,
+      "url": "git@github.com:semiessessi/demo-one.git",
+      "defaultBranch": "main"
+    }
+  ],
+  "buildProducts": [
+    {
+      "name": "site",
+      "rules": [
+        {
+          "name": "build-and-deploy",
+          "command": {
+            "windows": { "interpreter": "ps1", "script": "deploy/build.ps1" },
+            "linux":   { "interpreter": "sh",  "script": "deploy/build.sh" }
+          },
+          "handoff": [
+            { "type": "cloudflare", "command": "deploy", "credentialRef": "cloudflare" }
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    { "type": "poll", "branches": ["main"], "intervalSeconds": 120, "product": "site" }
+  ]
+}
