@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildJourneySegments } from './journey.js';
+import { planeOf, supporting } from './hull.js';
 
 // Data textures for convex-hull occluder tracing. The shader rebuilds any
 // occluder's current hull from: the shared morph geometry (every segment's
@@ -18,32 +19,6 @@ function rgbaTexture(data, texelCount) {
   tex.generateMipmaps = false;
   tex.needsUpdate = true;
   return { tex, width: w };
-}
-
-// Plane of a triangle (outward normal + offset), or null if degenerate. The
-// shapes are centred at the origin, so "outward" = same side as the centroid.
-function planeOf(p, ai, bi, ci) {
-  const ax = p[ai], ay = p[ai + 1], az = p[ai + 2];
-  const ux = p[bi] - ax, uy = p[bi + 1] - ay, uz = p[bi + 2] - az;
-  const vx = p[ci] - ax, vy = p[ci + 1] - ay, vz = p[ci + 2] - az;
-  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-  const len = Math.hypot(nx, ny, nz);
-  if (len < 1e-7) return null; // degenerate (collapsed) triangle
-  nx /= len; ny /= len; nz /= len;
-  const cx = (ax + p[bi] + p[ci]) / 3, cy = (ay + p[bi + 1] + p[ci + 1]) / 3, cz = (az + p[bi + 2] + p[ci + 2]) / 3;
-  if (nx * cx + ny * cy + nz * cz < 0) { nx = -nx; ny = -ny; nz = -nz; }
-  return [nx, ny, nz, nx * ax + ny * ay + nz * az];
-}
-
-// True if plane (n,d) is a supporting plane of the vertex set (all verts on the
-// inner side). Non-supporting triangles are interior/folded — they must not clip
-// the convex hull.
-function supporting(pl, verts) {
-  const eps = 3e-3;
-  for (let k = 0; k < verts.length; k += 3) {
-    if (pl[0] * verts[k] + pl[1] * verts[k + 1] + pl[2] * verts[k + 2] > pl[3] + eps) return false;
-  }
-  return true;
 }
 
 // Offset that puts a face plane outside the shape so it doesn't constrain the
