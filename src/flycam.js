@@ -150,3 +150,28 @@ export function createFlyCam(domElement, introTarget) {
 
   return { update, setPose, startIntro, dispose };
 }
+
+// Sample the intro camera trajectory — the orbit spiral around `focal` (introT 0..ORBIT_DUR)
+// plus the start of the Lissajous fly — into points, so scene generation can keep objects
+// off the path (a thin keep-out tube). Pure math (no DOM), so it's safe to import in node.
+// FLY_UMAX bounds the fly sample to ~the first 75s (a thin tube, not the whole dense curve).
+export function cameraPathPoints(focal) {
+  const pts = [];
+  const ORBIT_N = 120, FLY_N = 180, FLY_UMAX = 30;
+  for (let i = 0; i <= ORBIT_N; i++) {
+    const introT = (i / ORBIT_N) * ORBIT_DUR;
+    const oe = smooth(introT / ORBIT_DUR);
+    const oang = introT * 0.35 + 1.0;
+    const orad = 2.0 + (16.0 - 2.0) * oe;
+    pts.push([focal[0] + Math.cos(oang) * orad, focal[1] + 1.0 + 8.0 * oe, focal[2] + Math.sin(oang) * orad]);
+  }
+  for (let i = 0; i <= FLY_N; i++) {
+    const U = (i / FLY_N) * FLY_UMAX;
+    pts.push([
+      FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]),
+      FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]),
+      FLY_AMP[2] * Math.sin(FLY_FREQ[2] * U + FLY_PHASE[2]),
+    ]);
+  }
+  return pts;
+}

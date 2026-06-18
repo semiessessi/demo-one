@@ -4,6 +4,7 @@
 // in-shader). Per-object nearby-light lists are built once with a uniform 3D
 // bucket grid (ported from pdx-gfx), conservatively sized for the orbit.
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
+import { cameraPathPoints } from './flycam.js';
 
 const TARGET_OBJECTS = 8000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
@@ -25,6 +26,7 @@ const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
 const REFLECTION_CAP = 128; // max occluders per object for reflections
 const REFLECTION_REACH = 7.0; // how far reflection rays look for occluders
 const SEED = 0x1234abcd;
+const CAM_CLEARANCE = 2.5; // keep objects this far (+ their own radius) off the camera's intro path
 
 // Small LCG (numerical-recipes constants) for reproducible randomness.
 function makeRng(seed) {
@@ -79,6 +81,24 @@ export function generateScene(opts = {}) {
   const gkey = (x, y, z) => x + ',' + y + ',' + z;
   const gco = (p) => Math.floor(p / cell);
 
+  // The camera's hero object: placed first at the origin so it's guaranteed objects[0]
+  // (closest) and the intro orbit + path are deterministic. Exempt from path culling.
+  {
+    const hs = rand(SCALE_MIN, SCALE_MAX);
+    const hero = {
+      pos: [0, 0, 0], quat: randQuat(), spinAxis: randUnitVec(), spinSpeed: rand(-0.4, 0.4),
+      scale: hs, radius: MAX_NORM_CIRCUMRADIUS * hs, proxyRadius: hs * R_PROXY,
+      phase: rand(0, 20), morphSpeed: rand(0.35, 0.65),
+      color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
+      rough: rand(0.12, 0.7), metal: rng() < 0.25 ? 1.0 : 0.0,
+      lightOffset: 0, lightCount: 0, shadowOffset: 0, shadowCount: 0, reflOffset: 0, reflCount: 0,
+    };
+    objects.push(hero);
+    grid.set(gkey(gco(0), gco(0), gco(0)), [hero]);
+  }
+  // Sample the camera trajectory once; candidates within CAM_CLEARANCE of it are rejected.
+  const pathPoints = cameraPathPoints([0, 0, 0]);
+
   let attempts = 0;
   const maxAttempts = targetObjects * 400;
   while (objects.length < targetObjects && attempts < maxAttempts) {
@@ -100,6 +120,14 @@ export function generateScene(opts = {}) {
             if (dx * dx + dy * dy + dz * dz < minD * minD) { ok = false; break; }
           }
         }
+    // Keep the candidate off the camera's intro path (a thin tube around the orbit spiral +
+    // the start of the Lissajous fly), so the camera never flies through an object.
+    if (ok) for (let pi = 0; pi < pathPoints.length; pi++) {
+      const pp = pathPoints[pi];
+      const dx = pos[0] - pp[0], dy = pos[1] - pp[1], dz = pos[2] - pp[2];
+      const clr = radius + CAM_CLEARANCE;
+      if (dx * dx + dy * dy + dz * dz < clr * clr) { ok = false; break; }
+    }
     if (!ok) continue;
 
     const obj = {
