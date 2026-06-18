@@ -102,7 +102,61 @@ export function generateScene() {
   }
 
   const lightIndices = buildLightLists(objects, lights);
-  return { objects, lights, lightIndices };
+  const occluderIndices = buildOccluderLists(objects);
+  return { objects, lights, lightIndices, occluderIndices };
+}
+
+// Per-object nearby-occluder lists for shadows. An occluder can only matter if
+// it sits in the region between the object and its lights, so the reach is tied
+// to the light radius (keeps lists short). Objects are sphere proxies; nearest
+// SHADOW_CAP kept. Writes shadowOffset/shadowCount onto objects.
+function buildOccluderLists(objects) {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const o of objects)
+    for (let a = 0; a < 3; a++) {
+      lo[a] = Math.min(lo[a], o.pos[a]);
+      hi[a] = Math.max(hi[a], o.pos[a]);
+    }
+  const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3;
+  const bucketSize = extent / BUCKETS_PER_AXIS;
+  const B = BUCKETS_PER_AXIS;
+  const coord = (p, a) => Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
+  const key = (x, y, z) => (x * B + y) * B + z;
+
+  let maxProxy = 0;
+  objects.forEach((o, i) => { o._i = i; maxProxy = Math.max(maxProxy, o.proxyRadius); });
+  const buckets = Array.from({ length: B * B * B }, () => []);
+  objects.forEach((o, i) => {
+    buckets[key(coord(o.pos[0], 0), coord(o.pos[1], 1), coord(o.pos[2], 2))].push(i);
+  });
+
+  const indices = [];
+  for (const o of objects) {
+    const reach = o.radius + LIGHT_RADIUS + maxProxy;
+    const c = o.pos;
+    const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
+    const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
+    const z0 = coord(c[2] - reach, 2), z1 = coord(c[2] + reach, 2);
+    const cands = [];
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        for (let z = z0; z <= z1; z++)
+          for (const j of buckets[key(x, y, z)]) {
+            if (j === o._i) continue;
+            const oc = objects[j];
+            const dx = c[0] - oc.pos[0], dy = c[1] - oc.pos[1], dz = c[2] - oc.pos[2];
+            const d2 = dx * dx + dy * dy + dz * dz;
+            const lim = o.radius + LIGHT_RADIUS + oc.proxyRadius;
+            if (d2 <= lim * lim) cands.push({ j, d2 });
+          }
+    cands.sort((a, b) => a.d2 - b.d2);
+    o.shadowOffset = indices.length;
+    const count = Math.min(cands.length, SHADOW_CAP);
+    for (let k = 0; k < count; k++) indices.push(cands[k].j);
+    o.shadowCount = count;
+  }
+  return new Float32Array(indices);
 }
 
 // pdx-gfx-style bucket grid: bin lights into a uniform 3D grid, then for each

@@ -46,6 +46,8 @@ export function setInstanceAttributes(geometry, objects) {
   const metal = new Float32Array(n);
   const lightOffset = new Float32Array(n);
   const lightCount = new Float32Array(n);
+  const shadowOffset = new Float32Array(n);
+  const shadowCount = new Float32Array(n);
 
   objects.forEach((o, i) => {
     pos.set(o.pos, i * 3);
@@ -59,6 +61,8 @@ export function setInstanceAttributes(geometry, objects) {
     metal[i] = o.metal;
     lightOffset[i] = o.lightOffset;
     lightCount[i] = o.lightCount;
+    shadowOffset[i] = o.shadowOffset;
+    shadowCount[i] = o.shadowCount;
   });
 
   const ia = (arr, size) => new THREE.InstancedBufferAttribute(arr, size);
@@ -73,6 +77,8 @@ export function setInstanceAttributes(geometry, objects) {
   geometry.setAttribute('aMetal', ia(metal, 1));
   geometry.setAttribute('aLightOffset', ia(lightOffset, 1));
   geometry.setAttribute('aLightCount', ia(lightCount, 1));
+  geometry.setAttribute('aShadowOffset', ia(shadowOffset, 1));
+  geometry.setAttribute('aShadowCount', ia(shadowCount, 1));
   geometry.instanceCount = n;
 }
 

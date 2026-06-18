@@ -44,3 +44,23 @@ export function buildLightTextures(lights, lightIndices) {
     indexTexW: indexTex.width,
   };
 }
+
+// Occluders are the objects themselves as sphere proxies: one RGBA32F texel each
+// (center.xyz, proxyRadius). Plus the flat per-object occluder index list.
+export function buildOccluderTextures(objects, occluderIndices) {
+  const data = new Float32Array(objects.length * 4);
+  objects.forEach((o, i) => {
+    data[i * 4] = o.pos[0];
+    data[i * 4 + 1] = o.pos[1];
+    data[i * 4 + 2] = o.pos[2];
+    data[i * 4 + 3] = o.proxyRadius;
+  });
+  const occTex = dataTexture(data, objects.length, 4);
+  const idxTex = dataTexture(occluderIndices, occluderIndices.length, 1);
+  return {
+    occluderTex: occTex.tex,
+    occluderTexW: occTex.width,
+    shadowIndexTex: idxTex.tex,
+    shadowIndexW: idxTex.width,
+  };
+}

@@ -17,6 +17,8 @@ in float aRough;
 in float aMetal;
 in float aLightOffset;
 in float aLightCount;
+in float aShadowOffset;
+in float aShadowCount;
 
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
@@ -31,6 +33,8 @@ out float vRough;
 out float vMetal;
 flat out int vLightOffset;
 flat out int vLightCount;
+flat out int vShadowOffset;
+flat out int vShadowCount;
 
 vec3 qrot(vec4 q, vec3 v) {
   return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -75,6 +79,8 @@ void main() {
   vMetal = aMetal;
   vLightOffset = int(aLightOffset + 0.5);
   vLightCount = int(aLightCount + 0.5);
+  vShadowOffset = int(aShadowOffset + 0.5);
+  vShadowCount = int(aShadowCount + 0.5);
 
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }

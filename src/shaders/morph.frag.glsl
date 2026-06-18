@@ -6,6 +6,8 @@ in float vRough;
 in float vMetal;
 flat in int vLightOffset;
 flat in int vLightCount;
+flat in int vShadowOffset;
+flat in int vShadowCount;
 
 out vec4 fragColor;
 
@@ -14,6 +16,10 @@ uniform sampler2D uLightsTex;     // 2 texels per light: [pos.xyz,_], [color.rgb
 uniform sampler2D uLightIndexTex; // 1 texel per list entry: light index (as float)
 uniform int uLightsTexW;
 uniform int uIndexTexW;
+uniform sampler2D uOccluderTex;    // 1 texel per object: [center.xyz, proxyRadius]
+uniform sampler2D uShadowIndexTex; // 1 texel per occluder-list entry: object index
+uniform int uOccluderTexW;
+uniform int uShadowIndexW;
 
 ivec2 texel(int i, int w) { return ivec2(i % w, i / w); }
 
@@ -21,6 +27,25 @@ ivec2 texel(int i, int w) { return ivec2(i % w, i / w); }
 float falloff(float dist, float radius) {
   float a = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
   return a * a / (dist * dist + 1.0);
+}
+
+// Soft analytic shadow: trace from the surface toward a light, attenuating by
+// nearby occluder spheres (ray-sphere closest approach, smoothstep penumbra).
+float traceShadow(vec3 p, vec3 L, float distToLight) {
+  float sh = 1.0;
+  for (int s = 0; s < vShadowCount; s++) {
+    int oi = int(texelFetch(uShadowIndexTex, texel(vShadowOffset + s, uShadowIndexW), 0).r + 0.5);
+    vec4 occ = texelFetch(uOccluderTex, texel(oi, uOccluderTexW), 0);
+    vec3 oc = occ.xyz - p;
+    float R = occ.w;
+    float tca = dot(oc, L);
+    if (tca <= 0.0 || tca - R >= distToLight) continue; // behind us or past the light
+    float d = sqrt(max(dot(oc, oc) - tca * tca, 0.0));
+    float soft = 0.5 * R + 0.04;
+    sh *= smoothstep(-soft, soft, d - R);
+    if (sh < 0.01) return 0.0;
+  }
+  return sh;
 }
 
 // GGX microfacet BRDF (matches pdx-gfx: Trowbridge-Reitz D with source-radius
@@ -68,7 +93,8 @@ void main() {
     vec3 L = lightPos - vWorldPos;
     float dist = length(L);
     L /= max(dist, 1e-4);
-    lit += brdf(N, V, L, diffuseAlbedo, F0, vRough, dist) * colRad.rgb * falloff(dist, colRad.w);
+    float shadow = traceShadow(vWorldPos + N * 0.02, L, dist);
+    lit += brdf(N, V, L, diffuseAlbedo, F0, vRough, dist) * colRad.rgb * falloff(dist, colRad.w) * shadow;
   }
 
   // Faint hemispheric ambient so faces with no nearby light aren't pure black.

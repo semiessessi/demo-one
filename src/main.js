@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { generateScene } from './scene.js';
-import { buildLightTextures } from './lightData.js';
+import { buildLightTextures, buildOccluderTextures } from './lightData.js';
 import {
   buildUnifiedGeometry,
   setInstanceAttributes,
@@ -41,8 +41,9 @@ controls.minDistance = 5;
 controls.maxDistance = 120;
 
 // --- Generate the static volume -------------------------------------------
-const { objects, lights, lightIndices } = generateScene();
+const { objects, lights, lightIndices, occluderIndices } = generateScene();
 const lightTex = buildLightTextures(lights, lightIndices);
+const occTex = buildOccluderTextures(objects, occluderIndices);
 
 const uniforms = {
   uTime: { value: 0 },
@@ -53,6 +54,10 @@ const uniforms = {
   uLightsTexW: { value: lightTex.lightsTexW },
   uLightIndexTex: { value: lightTex.lightIndexTex },
   uIndexTexW: { value: lightTex.indexTexW },
+  uOccluderTex: { value: occTex.occluderTex },
+  uOccluderTexW: { value: occTex.occluderTexW },
+  uShadowIndexTex: { value: occTex.shadowIndexTex },
+  uShadowIndexW: { value: occTex.shadowIndexW },
 };
 const spriteUniforms = { uSpriteSize: { value: 0.16 } };
 
