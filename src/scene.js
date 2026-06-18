@@ -27,7 +27,14 @@ function makeRng(seed) {
   };
 }
 
-export function generateScene() {
+// opts.targetObjects / opts.lightsPerObject override the defaults for scale
+// testing; the volume grows with the cube root of the object count so packing
+// density (and thus the look) stays roughly constant.
+export function generateScene(opts = {}) {
+  const targetObjects = opts.targetObjects ?? TARGET_OBJECTS;
+  const lightsPerObject = opts.lightsPerObject ?? LIGHTS_PER_OBJECT;
+  const volume = VOLUME * Math.cbrt(targetObjects / TARGET_OBJECTS);
+
   const rng = makeRng(SEED);
   const rand = (a, b) => a + rng() * (b - a);
   const randUnitVec = () => {
@@ -53,11 +60,11 @@ export function generateScene() {
 
   const objects = [];
   const lights = [];
-  const half = VOLUME / 2;
+  const half = volume / 2;
 
   let attempts = 0;
-  const maxAttempts = TARGET_OBJECTS * 400;
-  while (objects.length < TARGET_OBJECTS && attempts < maxAttempts) {
+  const maxAttempts = targetObjects * 400;
+  while (objects.length < targetObjects && attempts < maxAttempts) {
     attempts++;
     const scale = rand(SCALE_MIN, SCALE_MAX);
     const radius = MAX_NORM_CIRCUMRADIUS * scale;
@@ -92,7 +99,7 @@ export function generateScene() {
       reflCount: 0,
     });
 
-    for (let k = 0; k < LIGHTS_PER_OBJECT; k++) {
+    for (let k = 0; k < lightsPerObject; k++) {
       const u = randUnitVec();
       const r = 1.3 * Math.cbrt(rng());
       const rgb = hslToRgb(rng(), 0.8, 0.55);

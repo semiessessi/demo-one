@@ -249,6 +249,14 @@ export function buildMorphMesh(data, uTime) {
       out.assign(vec4(wgQrot(q, enterN), tEnter));
     });
     return out;
+  }).setLayout({
+    name: 'traceHull',
+    type: 'vec4',
+    inputs: [
+      { name: 'oi', type: 'int' },
+      { name: 'roW', type: 'vec3' },
+      { name: 'rdW', type: 'vec3' },
+    ],
   });
 
   // 0 if any occluder in the object's shadow list blocks the light, else 1.
@@ -263,6 +271,16 @@ export function buildMorphMesh(data, uTime) {
       });
     });
     return sh;
+  }).setLayout({
+    name: 'traceShadow',
+    type: 'float',
+    inputs: [
+      { name: 'p', type: 'vec3' },
+      { name: 'L', type: 'vec3' },
+      { name: 'distToLight', type: 'float' },
+      { name: 'shadowOff', type: 'int' },
+      { name: 'shadowCount', type: 'int' },
+    ],
   });
 
   // GGX direct lighting over the object's light list (with optional shadows).
@@ -287,6 +305,22 @@ export function buildMorphMesh(data, uTime) {
       );
     });
     return lit;
+  }).setLayout({
+    name: 'shadeDirect',
+    type: 'vec3',
+    inputs: [
+      { name: 'p', type: 'vec3' },
+      { name: 'N', type: 'vec3' },
+      { name: 'V', type: 'vec3' },
+      { name: 'albedo', type: 'vec3' },
+      { name: 'rough', type: 'float' },
+      { name: 'metal', type: 'float' },
+      { name: 'lo', type: 'int' },
+      { name: 'lc', type: 'int' },
+      { name: 'doShadow', type: 'float' },
+      { name: 'shadowOff', type: 'int' },
+      { name: 'shadowCount', type: 'int' },
+    ],
   });
 
   // --- per-instance values for the fragment (constant per instance) ---

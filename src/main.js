@@ -10,7 +10,13 @@ const TEST = params.has('test');
 // camera, no UI. e.g. ?capture&cam=main-overview&t=8  or  ?test&capture&t=3.75
 const CAPTURE = params.has('capture');
 
-const sceneData = TEST ? generateTestScene() : generateScene();
+// Scale knobs for stress testing: ?objects=N (&lpo=N for lights per object).
+const objectsParam = parseInt(params.get('objects'), 10);
+const lpoParam = parseInt(params.get('lpo'), 10);
+const sceneData = TEST ? generateTestScene() : generateScene({
+  targetObjects: Number.isFinite(objectsParam) ? objectsParam : undefined,
+  lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : undefined,
+});
 const { objects, lights } = sceneData;
 
 // --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
