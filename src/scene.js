@@ -1,91 +1,103 @@
-// Static scene generation: a non-overlapping jittered grid of morph objects in a
-// bounded cube volume, with lights scattered around each object. Per-object
-// nearby-light lists are built once with a uniform 3D bucket grid (ported from
-// pdx-gfx: bin lights, then gather candidates from each object's bucket range
-// and keep those whose spheres overlap).
-import { MAX_CIRCUMRADIUS } from './journey.js';
+// Static scene generation: objects scattered at random (LCG, so it's
+// reproducible) in a bounded cube, rejection-sampled so none overlap; lights
+// scattered around each object. Per-object nearby-light lists are built once
+// with a uniform 3D bucket grid (ported from pdx-gfx).
+import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 
-const GRID_N = 6; // 6^3 = 216 cells
-const CELL = 3.0; // cell pitch; > 2 * max object radius so nothing overlaps
+const TARGET_OBJECTS = 200;
+const VOLUME = 16; // cube side
 const LIGHTS_PER_OBJECT = 20;
 const LIGHT_RADIUS = 2.0;
 const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;
+const PACK_MARGIN = 0.2; // extra gap between object bounding spheres
 const BUCKETS_PER_AXIS = 10;
+const R_PROXY = 1.0; // shadow/reflection sphere-proxy radius factor (× scale)
+const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
+const REFLECTION_CAP = 128; // max occluders per object for reflections
+const SEED = 0x1234abcd;
 
-const rand = (a, b) => a + Math.random() * (b - a);
-
-function randUnitVec() {
-  const z = rand(-1, 1);
-  const t = rand(0, Math.PI * 2);
-  const r = Math.sqrt(1 - z * z);
-  return [r * Math.cos(t), r * Math.sin(t), z];
-}
-
-// Uniform random unit quaternion (Shoemake).
-function randQuat() {
-  const u1 = Math.random(), u2 = Math.random(), u3 = Math.random();
-  const s1 = Math.sqrt(1 - u1), s2 = Math.sqrt(u1);
-  return [
-    s1 * Math.sin(2 * Math.PI * u2),
-    s1 * Math.cos(2 * Math.PI * u2),
-    s2 * Math.sin(2 * Math.PI * u3),
-    s2 * Math.cos(2 * Math.PI * u3),
-  ];
-}
-
-function hslToRgb(h, s, l) {
-  const k = (n) => (n + h * 12) % 12;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  return [f(0), f(8), f(4)];
+// Small LCG (numerical-recipes constants) for reproducible randomness.
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
 }
 
 export function generateScene() {
+  const rng = makeRng(SEED);
+  const rand = (a, b) => a + rng() * (b - a);
+  const randUnitVec = () => {
+    const z = rand(-1, 1);
+    const t = rand(0, Math.PI * 2);
+    const r = Math.sqrt(1 - z * z);
+    return [r * Math.cos(t), r * Math.sin(t), z];
+  };
+  const randQuat = () => {
+    const u1 = rng(), u2 = rng(), u3 = rng();
+    const s1 = Math.sqrt(1 - u1), s2 = Math.sqrt(u1);
+    return [
+      s1 * Math.sin(2 * Math.PI * u2), s1 * Math.cos(2 * Math.PI * u2),
+      s2 * Math.sin(2 * Math.PI * u3), s2 * Math.cos(2 * Math.PI * u3),
+    ];
+  };
+  const hslToRgb = (h, s, l) => {
+    const k = (n) => (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [f(0), f(8), f(4)];
+  };
+
   const objects = [];
   const lights = [];
+  const half = VOLUME / 2;
 
-  const half = ((GRID_N - 1) * CELL) / 2;
-  const jitter = (CELL - 2 * MAX_CIRCUMRADIUS * SCALE_MAX) * 0.4;
+  let attempts = 0;
+  const maxAttempts = TARGET_OBJECTS * 400;
+  while (objects.length < TARGET_OBJECTS && attempts < maxAttempts) {
+    attempts++;
+    const scale = rand(SCALE_MIN, SCALE_MAX);
+    const radius = MAX_NORM_CIRCUMRADIUS * scale;
+    const pos = [rand(-half, half), rand(-half, half), rand(-half, half)];
 
-  for (let gx = 0; gx < GRID_N; gx++) {
-    for (let gy = 0; gy < GRID_N; gy++) {
-      for (let gz = 0; gz < GRID_N; gz++) {
-        const scale = rand(SCALE_MIN, SCALE_MAX);
-        const pos = [
-          gx * CELL - half + rand(-jitter, jitter),
-          gy * CELL - half + rand(-jitter, jitter),
-          gz * CELL - half + rand(-jitter, jitter),
-        ];
-        objects.push({
-          pos,
-          quat: randQuat(),
-          spinAxis: randUnitVec(),
-          spinSpeed: rand(-0.4, 0.4),
-          scale,
-          phase: rand(0, 20), // ping-pong period is 2 * NUM_SEGMENTS = 20
-          color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
-          rough: rand(0.25, 0.9),
-          metal: Math.random() < 0.25 ? 1.0 : 0.0,
-          radius: MAX_CIRCUMRADIUS * scale,
-          lightOffset: 0,
-          lightCount: 0,
-        });
+    let ok = true;
+    for (const o of objects) {
+      const dx = pos[0] - o.pos[0], dy = pos[1] - o.pos[1], dz = pos[2] - o.pos[2];
+      const minD = radius + o.radius + PACK_MARGIN;
+      if (dx * dx + dy * dy + dz * dz < minD * minD) { ok = false; break; }
+    }
+    if (!ok) continue;
 
-        // 20 lights scattered around this object.
-        for (let k = 0; k < LIGHTS_PER_OBJECT; k++) {
-          const u = randUnitVec();
-          const r = CELL * 0.42 * Math.cbrt(Math.random());
-          const hue = Math.random();
-          const rgb = hslToRgb(hue, 0.75, 0.55);
-          const intensity = rand(1.2, 2.2);
-          lights.push({
-            pos: [pos[0] + u[0] * r, pos[1] + u[1] * r, pos[2] + u[2] * r],
-            color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],
-            radius: LIGHT_RADIUS,
-          });
-        }
-      }
+    objects.push({
+      pos,
+      quat: randQuat(),
+      spinAxis: randUnitVec(),
+      spinSpeed: rand(-0.4, 0.4),
+      scale,
+      radius,
+      proxyRadius: scale * R_PROXY,
+      phase: rand(0, 20),
+      color: [rand(0.55, 0.8), rand(0.55, 0.8), rand(0.55, 0.8)],
+      rough: rand(0.25, 0.9),
+      metal: rng() < 0.25 ? 1.0 : 0.0,
+      lightOffset: 0,
+      lightCount: 0,
+      shadowOffset: 0,
+      shadowCount: 0,
+    });
+
+    for (let k = 0; k < LIGHTS_PER_OBJECT; k++) {
+      const u = randUnitVec();
+      const r = 1.3 * Math.cbrt(rng());
+      const rgb = hslToRgb(rng(), 0.8, 0.55);
+      const intensity = rand(0.3, 0.7);
+      lights.push({
+        pos: [pos[0] + u[0] * r, pos[1] + u[1] * r, pos[2] + u[2] * r],
+        color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],
+        radius: LIGHT_RADIUS,
+      });
     }
   }
 
@@ -97,19 +109,17 @@ export function generateScene() {
 // object gather candidates from the buckets its reach overlaps and keep those
 // whose spheres actually overlap. Writes lightOffset/lightCount onto objects.
 function buildLightLists(objects, lights) {
-  let lo = [Infinity, Infinity, Infinity];
-  let hi = [-Infinity, -Infinity, -Infinity];
-  for (const l of lights) {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const l of lights)
     for (let a = 0; a < 3; a++) {
       lo[a] = Math.min(lo[a], l.pos[a]);
       hi[a] = Math.max(hi[a], l.pos[a]);
     }
-  }
   const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3;
   const bucketSize = extent / BUCKETS_PER_AXIS;
   const B = BUCKETS_PER_AXIS;
-  const coord = (p, a) =>
-    Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
+  const coord = (p, a) => Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
   const idx = (x, y, z) => (x * B + y) * B + z;
 
   const buckets = Array.from({ length: B * B * B }, () => []);
@@ -117,11 +127,10 @@ function buildLightLists(objects, lights) {
     buckets[idx(coord(l.pos[0], 0), coord(l.pos[1], 1), coord(l.pos[2], 2))].push(li);
   });
 
-  const maxLightRadius = LIGHT_RADIUS;
   const indices = [];
   for (const o of objects) {
     o.lightOffset = indices.length;
-    const reach = o.radius + maxLightRadius;
+    const reach = o.radius + LIGHT_RADIUS;
     const c = o.pos;
     const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
     const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
@@ -132,9 +141,7 @@ function buildLightLists(objects, lights) {
           for (const li of buckets[idx(x, y, z)]) {
             const l = lights[li];
             const dx = c[0] - l.pos[0], dy = c[1] - l.pos[1], dz = c[2] - l.pos[2];
-            if (dx * dx + dy * dy + dz * dz <= (o.radius + l.radius) ** 2) {
-              indices.push(li);
-            }
+            if (dx * dx + dy * dy + dz * dz <= (o.radius + l.radius) ** 2) indices.push(li);
           }
     o.lightCount = indices.length - o.lightOffset;
   }

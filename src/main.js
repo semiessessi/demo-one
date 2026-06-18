@@ -9,6 +9,7 @@ import {
   NUM_SEGMENTS,
 } from './instancedMorph.js';
 import { buildLightSprites } from './lightSprites.js';
+import { buildNormScaleLUT } from './normalize.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -41,6 +42,7 @@ const uniforms = {
   uTime: { value: 0 },
   uSpeed: { value: 0.5 },
   uNumSegments: { value: NUM_SEGMENTS },
+  uNormScale: { value: buildNormScaleLUT() },
   uLightsTex: { value: lightTex.lightsTex },
   uLightsTexW: { value: lightTex.lightsTexW },
   uLightIndexTex: { value: lightTex.lightIndexTex },

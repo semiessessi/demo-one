@@ -23,6 +23,7 @@ uniform mat4 projectionMatrix;
 uniform float uTime;
 uniform float uSpeed;
 uniform float uNumSegments;
+uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 
 out vec3 vWorldPos;
 out vec3 vColor;
@@ -57,6 +58,12 @@ void main() {
   // Only the vertices of the object's current segment are positioned; the rest
   // collapse to a point and are culled as degenerate triangles.
   vec3 local = (int(aSegment + 0.5) == seg) ? mix(position, aEnd, localT) : vec3(0.0);
+
+  // Normalize each shape to a constant mean of in/circumradius (LUT by phase).
+  float fp = (p / uNumSegments) * 127.0;
+  int i0 = int(floor(fp));
+  int i1 = min(i0 + 1, 127);
+  local *= mix(uNormScale[i0], uNormScale[i1], fp - float(i0));
 
   vec4 spin = quatAxisAngle(aSpinAxis, uTime * aSpinSpeed);
   vec4 q = qmul(spin, aQuat);

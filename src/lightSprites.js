@@ -4,9 +4,11 @@ import fragmentShader from './shaders/sprite.frag.glsl?raw';
 
 // Billboarded, additively-blended glowing quads, one per light.
 export function buildLightSprites(lights, uniforms) {
+  // Quad corners as a 3D `position` attribute (z unused) so Three.js derives the
+  // vertex count from it.
   const corners = new Float32Array([
-    -1, -1, 1, -1, 1, 1,
-    -1, -1, 1, 1, -1, 1,
+    -1, -1, 0, 1, -1, 0, 1, 1, 0,
+    -1, -1, 0, 1, 1, 0, -1, 1, 0,
   ]);
 
   const n = lights.length;
@@ -20,7 +22,7 @@ export function buildLightSprites(lights, uniforms) {
   });
 
   const g = new THREE.InstancedBufferGeometry();
-  g.setAttribute('aCorner', new THREE.BufferAttribute(corners, 2));
+  g.setAttribute('position', new THREE.BufferAttribute(corners, 3));
   g.setAttribute('aLightPos', new THREE.InstancedBufferAttribute(pos, 3));
   g.setAttribute('aLightColor', new THREE.InstancedBufferAttribute(col, 3));
   g.setAttribute('aLightRadius', new THREE.InstancedBufferAttribute(rad, 1));
