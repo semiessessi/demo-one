@@ -1,52 +1,8 @@
-import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { generateScene, generateTestScene } from './scene.js';
-import {
-  buildLightTextures,
-  buildOccluderTextures,
-  buildReflectionData,
-} from './lightData.js';
-import {
-  buildUnifiedGeometry,
-  setInstanceAttributes,
-  buildMorphMaterial,
-  NUM_SEGMENTS,
-} from './instancedMorph.js';
-import { buildLightSprites } from './lightSprites.js';
-import { buildNormScaleLUT } from './normalize.js';
-import { buildSky } from './sky.js';
-import { buildPlaneTexture, buildOccluderTransforms } from './occluderData.js';
+import { NUM_SEGMENTS } from './journey.js';
+import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
-
-// --- Renderer / scene / camera --------------------------------------------
-const app = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x050505, 1);
-renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
-renderer.toneMappingExposure = 0.85;
-app.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-scene.add(buildSky());
-const camera = new THREE.PerspectiveCamera(
-  50,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  300,
-);
-camera.position.set(24, 17, 31);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 5;
-controls.maxDistance = 120;
 
 // --- Generate the static volume -------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -54,65 +10,25 @@ const TEST = params.has('test');
 // Deterministic capture mode for renderer-comparison baselines: fixed time +
 // camera, no UI. e.g. ?capture&cam=main-overview&t=8  or  ?test&capture&t=3.75
 const CAPTURE = params.has('capture');
-const { objects, lights, lightIndices, occluderIndices, reflectionIndices } =
-  TEST ? generateTestScene() : generateScene();
-const lightTex = buildLightTextures(lights, lightIndices);
-const occTex = buildOccluderTextures(objects, occluderIndices);
-const reflTex = buildReflectionData(objects, reflectionIndices);
-const geo = buildPlaneTexture();
-const occXf = buildOccluderTransforms(objects);
+
+const sceneData = TEST ? generateTestScene() : generateScene();
+const { objects, lights } = sceneData;
+
+// --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
+const app = document.getElementById('app');
+const backend = await createBackend({ ...sceneData, test: TEST });
+const camera = backend.camera;
+app.appendChild(backend.domElement);
+
+const controls = new OrbitControls(camera, backend.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 5;
+controls.maxDistance = 120;
 if (TEST) {
   camera.position.set(4, 3.5, 9);
   controls.target.set(0, -1, 0);
 }
-
-const uniforms = {
-  uTime: { value: 0 },
-  uNumSegments: { value: NUM_SEGMENTS },
-  uNormScale: { value: buildNormScaleLUT() },
-  uLightsTex: { value: lightTex.lightsTex },
-  uLightsTexW: { value: lightTex.lightsTexW },
-  uLightIndexTex: { value: lightTex.lightIndexTex },
-  uIndexTexW: { value: lightTex.indexTexW },
-  uOccluderTex: { value: occTex.occluderTex },
-  uOccluderTexW: { value: occTex.occluderTexW },
-  uShadowIndexTex: { value: occTex.shadowIndexTex },
-  uShadowIndexW: { value: occTex.shadowIndexW },
-  uReflIndexTex: { value: reflTex.reflIndexTex },
-  uReflIndexW: { value: reflTex.reflIndexW },
-  uInstanceTex: { value: reflTex.instanceTex },
-  uInstanceTexW: { value: reflTex.instanceTexW },
-  uPlaneTex: { value: geo.planeTex },
-  uPlaneTexW: { value: geo.planeTexW },
-  uSegTriStart: { value: geo.segTriStart },
-  uSegTriCount: { value: geo.segTriCount },
-  uOccTransformTex: { value: occXf.transformTex },
-  uOccTransformTexW: { value: occXf.transformTexW },
-};
-const spriteUniforms = { uSpriteSize: { value: 0.16 } };
-
-const geometry = buildUnifiedGeometry();
-setInstanceAttributes(geometry, objects);
-const material = buildMorphMaterial(uniforms);
-const mesh = new THREE.Mesh(geometry, material);
-mesh.frustumCulled = false; // instances span the whole volume
-scene.add(mesh);
-
-// --- Light sprites (glowing billboards) ------------------------------------
-const lightSprites = buildLightSprites(lights, spriteUniforms);
-scene.add(lightSprites);
-
-// --- HDR post-processing (half-float target -> bloom -> tone map) ----------
-const composer = new EffectComposer(renderer); // half-float render targets
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  TEST ? 0.25 : 0.5, // strength
-  0.5, // radius
-  1.0, // luminance threshold: only HDR > 1 blooms (bright sprite cores), not lit objects
-);
-composer.addPass(bloomPass);
-composer.addPass(new OutputPass());
 
 // --- UI -------------------------------------------------------------------
 const scrub = document.getElementById('scrub');
@@ -123,6 +39,7 @@ const volume = document.getElementById('volume');
 const info = document.getElementById('info');
 const toast = document.getElementById('toast');
 let playing = false; // demo loads paused, with the controls pane open
+let morphTime = 0;
 const SCRUB_SPAN = (2 * NUM_SEGMENTS) / 0.5; // nominal ping-pong period (s)
 
 label.textContent = `${objects.length} objects · ${lights.length} lights`;
@@ -165,7 +82,8 @@ scrub.addEventListener('input', () => {
   // Scrubbing nudges the morph clock only; the music keeps looping.
   playing = false;
   playToggle.textContent = '▶';
-  uniforms.uTime.value = (scrub.value / 1000) * SCRUB_SPAN;
+  morphTime = (scrub.value / 1000) * SCRUB_SPAN;
+  backend.setTime(morphTime);
 });
 playToggle.addEventListener('click', () => setPlaying(!playing));
 muteToggle.addEventListener('click', () => {
@@ -203,10 +121,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+  backend.setSize(window.innerWidth, window.innerHeight);
 });
 
 // --- Capture mode: pin time + camera, hide UI for reproducible screenshots ---
@@ -221,7 +136,8 @@ if (CAPTURE) {
   controls.target.set(...preset[1]);
   controls.enableDamping = false;
   controls.update();
-  uniforms.uTime.value = parseFloat(params.get('t') || '0');
+  morphTime = parseFloat(params.get('t') || '0');
+  backend.setTime(morphTime);
   playing = false;
   for (const id of ['controls', 'info', 'toast', 'stats']) {
     const el = document.getElementById(id);
@@ -230,20 +146,22 @@ if (CAPTURE) {
 }
 
 // --- Render loop ----------------------------------------------------------
-const clock = new THREE.Clock();
+let lastFrame = performance.now();
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = performance.now();
+  const dt = Math.min((t - lastFrame) / 1000, 0.05);
+  lastFrame = t;
   if (playing) {
-    uniforms.uTime.value += dt;
-    scrub.value = String(Math.round(((uniforms.uTime.value % SCRUB_SPAN) / SCRUB_SPAN) * 1000));
+    morphTime += dt;
+    scrub.value = String(Math.round(((morphTime % SCRUB_SPAN) / SCRUB_SPAN) * 1000));
   }
+  backend.setTime(morphTime);
   controls.update();
-  composer.render();
+  backend.render();
 
-  // Measure real frame time (not the clamped animation dt).
-  const now = performance.now();
-  emaMs = emaMs * 0.9 + (now - lastNow) * 0.1;
-  lastNow = now;
+  // Measure real frame time.
+  emaMs = emaMs * 0.9 + (t - lastNow) * 0.1;
+  lastNow = t;
   if (statsOn) {
     statsAcc += 1;
     if (statsAcc >= 8) {
