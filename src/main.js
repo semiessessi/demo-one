@@ -49,7 +49,11 @@ controls.minDistance = 5;
 controls.maxDistance = 120;
 
 // --- Generate the static volume -------------------------------------------
-const TEST = new URLSearchParams(location.search).has('test');
+const params = new URLSearchParams(location.search);
+const TEST = params.has('test');
+// Deterministic capture mode for renderer-comparison baselines: fixed time +
+// camera, no UI. e.g. ?capture&cam=main-overview&t=8  or  ?test&capture&t=3.75
+const CAPTURE = params.has('capture');
 const { objects, lights, lightIndices, occluderIndices, reflectionIndices } =
   TEST ? generateTestScene() : generateScene();
 const lightTex = buildLightTextures(lights, lightIndices);
@@ -170,7 +174,7 @@ muteToggle.addEventListener('click', () => {
 volume.addEventListener('input', () => audio.setVolume(volume.value / 100));
 
 // Reveal the controls pane shortly after load so it animates in.
-setTimeout(() => info.classList.add('open'), 80);
+if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
 const statsEl = document.getElementById('stats');
@@ -204,6 +208,26 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// --- Capture mode: pin time + camera, hide UI for reproducible screenshots ---
+if (CAPTURE) {
+  const camPresets = {
+    'main-overview': [[24, 17, 31], [0, 0, 0]],
+    'main-close': [[11, 7, 15], [0, 0, 0]],
+    test: [[4, 3.5, 9], [0, -1, 0]],
+  };
+  const preset = camPresets[params.get('cam')] || (TEST ? camPresets.test : camPresets['main-overview']);
+  camera.position.set(...preset[0]);
+  controls.target.set(...preset[1]);
+  controls.enableDamping = false;
+  controls.update();
+  uniforms.uTime.value = parseFloat(params.get('t') || '0');
+  playing = false;
+  for (const id of ['controls', 'info', 'toast', 'stats']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+}
 
 // --- Render loop ----------------------------------------------------------
 const clock = new THREE.Clock();
