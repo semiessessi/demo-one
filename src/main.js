@@ -88,7 +88,7 @@ function updateMusic(dt) {
   for (let b = 0; b < N_BANDS; b++) {
     if (slotNote[b]) {
       beatTime[b] = musicClock;
-      beatStrength[b] = 1.3;
+      beatStrength[b] = 2.5; // strong beat->brightness flare (was 1.3 — wasn't punching enough)
       beatSeed[b] = ++noteCounter; // fresh seed -> a different ~12% subset of this slot flares
       beatDecay[b] = 0.3 + slotPitch[b] / 120.0 * 1.4; // low pitch (bass) -> slower decay (longer pulse)
       notes++;
