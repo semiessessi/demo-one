@@ -61,8 +61,13 @@ export async function createWebGPUBackend(data) {
 
   // Morphing instances (storage-buffer driven, GGX direct lighting).
   const uTime = uniform(0);
-  scene.add(buildMorphMesh(data, uTime));
+  const morphMesh = buildMorphMesh(data, uTime);
+  scene.add(morphMesh);
   scene.add(buildLightSprites(data.lights));
+
+  if (new URLSearchParams(location.search).has('debug')) {
+    window.__wgpu = { renderer, scene, camera, morphMesh };
+  }
 
   // Post: bloom + ACES tone map (matches the WebGL EffectComposer chain).
   const postProcessing = new THREE.PostProcessing(renderer);

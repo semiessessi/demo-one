@@ -1,19 +1,44 @@
 // WebGPU morph material: per-object phase morph in the vertex node + GGX direct
-// lighting over the storage-buffer light list in the fragment node. Data access
-// and loops are TSL; the heavy math is raw WGSL (wgslFn), ported ~1:1 from
-// shaders/morph.vert.glsl + morph.frag.glsl. Shadows/reflections land in P4.
+// lighting with convex-hull shadows + reflections in the fragment node. Storage
+// access + control flow are TSL (Fn/Loop/If closing over the storage nodes); the
+// leaf math is raw WGSL (wgslFn). Ported ~1:1 from shaders/morph.vert/frag.glsl.
 import * as THREE from 'three/webgpu';
 import {
   Fn, wgslFn, attribute, instanceIndex, varying,
   positionGeometry, positionWorld, cameraPosition,
-  Loop, float, int, vec3, mix, max, length, normalize,
+  Loop, If, Break, and,
+  float, int, vec3, vec4, mix, max, length, normalize, dot, abs, pow, reflect,
 } from 'three/tsl';
 import { buildJourneySegments, NUM_SEGMENTS } from '../journey.js';
 import { buildNormScaleLUT } from '../normalize.js';
-import { packInstances, packLights } from './data.js';
+import { buildPlaneData } from '../occluderData.js';
+import {
+  packInstanceBuffer, packIndices, packLights, packInstanceMaterial,
+  packOccluderTransforms, INSTANCE_STRIDE,
+} from './data.js';
 import { roVec4, roFloat } from './storage.js';
 
-// --- WGSL math (no storage; pure functions ported from the GLSL) -------------
+const REFL_ROUGHNESS_MAX = 0.35;
+const SHADOW_LIGHTS = 16; // nearest N lights cast shadows
+
+// --- WGSL leaf math (no storage) ---------------------------------------------
+const wgQrot = wgslFn(`
+  fn wgQrot(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+  }
+`);
+const wgQconj = wgslFn(`fn wgQconj(q: vec4<f32>) -> vec4<f32> { return vec4<f32>(-q.xyz, q.w); }`);
+const wgQuatAxisAngle = wgslFn(`
+  fn wgQuatAxisAngle(axis: vec3<f32>, angle: f32) -> vec4<f32> {
+    let h = angle * 0.5;
+    return vec4<f32>(normalize(axis) * sin(h), cos(h));
+  }
+`);
+const wgQmul = wgslFn(`
+  fn wgQmul(a: vec4<f32>, b: vec4<f32>) -> vec4<f32> {
+    return vec4<f32>(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
+  }
+`);
 const wgPhase = wgslFn(`
   fn wgPhase(t: f32, ms: f32, ph: f32, n: f32) -> f32 {
     let x = t * ms + ph;
@@ -22,9 +47,25 @@ const wgPhase = wgslFn(`
     return 2.0 * n - m;
   }
 `);
+const wgEnvironment = wgslFn(`
+  fn wgEnvironment(d: vec3<f32>) -> vec3<f32> {
+    let Sky = vec3<f32>(0.008, 0.012, 0.035);
+    let Horizon = vec3<f32>(0.06, 0.08, 0.14);
+    let Glow = vec3<f32>(0.16, 0.20, 0.30);
+    let GroundEdge = vec3<f32>(0.035, 0.035, 0.045);
+    let Ground = vec3<f32>(0.02, 0.02, 0.028);
+    let Up = d.y;
+    var Base: vec3<f32>;
+    if (Up >= 0.0) {
+      Base = mix(Horizon, Sky, pow(clamp(Up, 0.0, 1.0), 0.20));
+    } else {
+      Base = mix(Horizon, mix(GroundEdge, Ground, clamp(-Up, 0.0, 1.0)), pow(clamp(-Up, 0.0, 1.0), 0.30));
+    }
+    let Band = pow(clamp(1.0 - abs(Up), 0.0, 1.0), 60.0);
+    return mix(Base, Glow, Band);
+  }
+`);
 
-// Morph a vertex to world space: collapse inactive segments, normalize by phase,
-// spin, orient, scale, translate. (matches morph.vert.glsl)
 const wgMorphWorld = wgslFn(`
   fn wgMorphWorld(start: vec3<f32>, end: vec3<f32>, segId: f32, p: f32, ns: f32,
                   ps: vec4<f32>, q: vec4<f32>, sp: vec4<f32>, t: f32, n: f32) -> vec3<f32> {
@@ -44,7 +85,6 @@ const wgMorphWorld = wgslFn(`
   }
 `);
 
-// Flat shading normal from screen-space derivatives, flipped to face the camera.
 const wgFlatNormal = wgslFn(`
   fn wgFlatNormal(p: vec3<f32>, viewDir: vec3<f32>) -> vec3<f32> {
     var nrm = normalize(cross(dpdx(p), dpdy(p)));
@@ -53,7 +93,6 @@ const wgFlatNormal = wgslFn(`
   }
 `);
 
-// GGX (widened-alpha D, Smith joint Vis, Schlick F) + Unreal falloff.
 const wgBrdf = wgslFn(`
   fn wgBrdf(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, diffuseAlbedo: vec3<f32>,
             F0: vec3<f32>, roughness: f32, dist: f32) -> vec3<f32> {
@@ -76,7 +115,6 @@ const wgBrdf = wgslFn(`
     return (diffuseAlbedo + D * Vis * F) * NdotL;
   }
 `);
-
 const wgFalloff = wgslFn(`
   fn wgFalloff(dist: f32, radius: f32) -> f32 {
     let a = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
@@ -110,29 +148,151 @@ function buildGeometry() {
 
 // Builds the instanced morph mesh. `uTime` is a shared TSL uniform node so the
 // backend can drive the morph clock.
-export function buildMorphMesh({ objects, lights, lightIndices }, uTime) {
+export function buildMorphMesh(data, uTime) {
+  const { objects, lights, lightIndices, occluderIndices, reflectionIndices } = data;
+
   const geometry = buildGeometry();
   geometry.instanceCount = objects.length;
 
-  const inst = packInstances(objects);
-  const uPosScale = roVec4(inst.posScale);
-  const uQuat = roVec4(inst.quat);
-  const uSpin = roVec4(inst.spin);
-  const uTm = roVec4(inst.tm); // phaseOffset, morphSpeed, _, _
-  const uColorRough = roVec4(inst.colorRough);
-  const uMatLists = roVec4(inst.matLists); // metal, lightOffset, lightCount, _
+  // --- storage buffers (consolidated to stay within 8 per shader stage) ---
+  // Per-instance: one interleaved buffer (vertex stage; fragment reads via varyings).
+  const uInst = roVec4(packInstanceBuffer(objects));
+  const ST = INSTANCE_STRIDE;
+  const instSlot = (k) => uInst.element(instanceIndex.mul(ST).add(k));
 
-  const uLights = roVec4(packLights(lights)); // 2 vec4 / light
-  const uLightIndex = roFloat(new Float32Array(lightIndices));
+  // Index lists (light / shadow / reflection) merged into one buffer + bases.
+  const idx = packIndices(lightIndices, occluderIndices, reflectionIndices);
+  const uIndices = roFloat(idx.combined);
+  const SHADOW_BASE = int(idx.shadowBase);
+  const REFL_BASE = int(idx.reflBase);
+
+  const uLights = roVec4(packLights(lights));
+  const uInstanceMat = roVec4(packInstanceMaterial(objects));
+  const uOccXf = roVec4(packOccluderTransforms(objects));
+
+  const plane = buildPlaneData();
+  const uPlanes = roVec4(plane.planes);
+  // segTriStart [0..N) then segTriCount [N..2N) in one buffer.
+  const SEG_N = plane.segTriStart.length;
+  const segInfo = new Float32Array(SEG_N * 2);
+  segInfo.set(plane.segTriStart, 0);
+  segInfo.set(plane.segTriCount, SEG_N);
+  const uSegInfo = roFloat(segInfo);
 
   const uNormLUT = roFloat(buildNormScaleLUT());
   const N_SEG = float(NUM_SEGMENTS);
 
-  // Per-instance values the fragment needs (constant across each instance, so a
-  // plain varying is exact). Reading storage by instanceIndex happens in the
-  // vertex stage where instanceIndex is valid.
-  const vColorRough = varying(uColorRough.element(instanceIndex));
-  const vMatLists = varying(uMatLists.element(instanceIndex));
+  // phase -> mean-radius normalization scale (128-sample LUT)
+  const lookupNorm = (p) => {
+    const fp = p.div(N_SEG).mul(127.0);
+    const i0 = fp.floor();
+    const i1 = i0.add(1.0).min(127.0);
+    return mix(uNormLUT.element(i0.toInt()), uNormLUT.element(i1.toInt()), fp.sub(i0));
+  };
+
+  // --- convex-hull trace of occluder `oi` against a world ray ---
+  // returns vec4(entryNormal.xyz, tHit); tHit < 0 means miss.
+  const traceHull = Fn(([oi, roW, rdW]) => {
+    const b = oi.mul(4);
+    const t0 = uOccXf.element(b);
+    const baseQ = uOccXf.element(b.add(1));
+    const t2 = uOccXf.element(b.add(2));
+    const t3 = uOccXf.element(b.add(3));
+    const center = t0.xyz;
+    const scale = t0.w;
+
+    const p = wgPhase(uTime, t3.y, t3.x, N_SEG);
+    const localT = p.fract().toVar();
+    const seg = p.floor().toVar();
+    If(seg.greaterThanEqual(N_SEG.sub(0.5)), () => {
+      seg.assign(N_SEG.sub(1.0));
+      localT.assign(1.0);
+    });
+    const segI = seg.toInt();
+
+    const q = wgQmul(wgQuatAxisAngle(t2.xyz, uTime.mul(t2.w)), baseQ);
+    const S = scale.mul(lookupNorm(p));
+    const roL = wgQrot(wgQconj(q), roW.sub(center)).div(S);
+    const rdL = wgQrot(wgQconj(q), rdW).div(S);
+
+    const triBase = uSegInfo.element(segI).add(0.5).floor().toInt();
+    const tcount = uSegInfo.element(int(SEG_N).add(segI)).add(0.5).floor().toInt();
+    const tEnter = float(-1e9).toVar();
+    const tExit = float(1e9).toVar();
+    const enterN = vec3(0).toVar();
+    const valid = float(1).toVar();
+
+    Loop(tcount, ({ i }) => {
+      const gi = triBase.add(int(i)).mul(2);
+      const p0 = uPlanes.element(gi);
+      If(dot(p0.xyz, p0.xyz).greaterThanEqual(0.25), () => {
+        const p1 = uPlanes.element(gi.add(1));
+        const n = normalize(mix(p0.xyz, p1.xyz, localT));
+        const d = mix(p0.w, p1.w, localT);
+        const denom = dot(n, rdL);
+        const num = d.sub(dot(n, roL));
+        If(abs(denom).lessThan(1e-9), () => {
+          If(num.lessThan(0), () => { valid.assign(0); });
+        }).Else(() => {
+          const th = num.div(denom);
+          If(denom.lessThan(0), () => {
+            If(th.greaterThan(tEnter), () => { tEnter.assign(th); enterN.assign(n); });
+          }).Else(() => {
+            If(th.lessThan(tExit), () => { tExit.assign(th); });
+          });
+        });
+      });
+    });
+
+    const out = vec4(0, 0, 0, -1).toVar();
+    If(and(and(tEnter.lessThanEqual(tExit), tExit.greaterThan(1e-4)), valid.greaterThan(0.5)), () => {
+      out.assign(vec4(wgQrot(q, enterN), tEnter));
+    });
+    return out;
+  });
+
+  // 0 if any occluder in the object's shadow list blocks the light, else 1.
+  const traceShadow = Fn(([p, L, distToLight, shadowOff, shadowCount]) => {
+    const sh = float(1).toVar();
+    Loop(shadowCount, ({ i }) => {
+      const oi = uIndices.element(SHADOW_BASE.add(shadowOff).add(int(i))).add(0.5).floor().toInt();
+      const h = traceHull(oi, p, L);
+      If(and(h.w.greaterThan(1e-3), h.w.lessThan(distToLight)), () => {
+        sh.assign(0);
+        Break();
+      });
+    });
+    return sh;
+  });
+
+  // GGX direct lighting over the object's light list (with optional shadows).
+  const shadeDirect = Fn(([p, N, V, albedo, rough, metal, lo, lc, doShadow, shadowOff, shadowCount]) => {
+    const diffuseAlbedo = albedo.mul(float(1).sub(metal));
+    const F0 = mix(vec3(0.04), albedo, metal);
+    const lit = vec3(0).toVar();
+    Loop(lc, ({ i }) => {
+      const li = uIndices.element(lo.add(int(i))).add(0.5).floor().toInt();
+      const lpos = uLights.element(li.mul(2));
+      const colRad = uLights.element(li.mul(2).add(1));
+      const Lv = lpos.xyz.sub(p);
+      const dist = length(Lv);
+      const L = Lv.div(max(dist, 1e-4));
+      const shadow = float(1).toVar();
+      If(and(doShadow.greaterThan(0.5), int(i).lessThan(SHADOW_LIGHTS)), () => {
+        shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
+      });
+      lit.addAssign(
+        wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist)
+          .mul(colRad.xyz).mul(wgFalloff(dist, colRad.w)).mul(shadow),
+      );
+    });
+    return lit;
+  });
+
+  // --- per-instance values for the fragment (constant per instance) ---
+  const vColorRough = varying(instSlot(4));
+  const vMatLists = varying(instSlot(5));
+  const vShadowRefl = varying(instSlot(6));
 
   const material = new THREE.MeshBasicNodeMaterial();
   material.side = THREE.DoubleSide;
@@ -140,57 +300,79 @@ export function buildMorphMesh({ objects, lights, lightIndices }, uTime) {
 
   // --- vertex: phase morph to world space ---
   material.positionNode = Fn(() => {
-    const ps = uPosScale.element(instanceIndex);
-    const q = uQuat.element(instanceIndex);
-    const sp = uSpin.element(instanceIndex);
-    const tm = uTm.element(instanceIndex);
+    const ps = instSlot(0);
+    const q = instSlot(1);
+    const sp = instSlot(2);
+    const tm = instSlot(3);
 
     const start = positionGeometry;
     const end = attribute('aEnd', 'vec3');
     const segId = attribute('aSegment', 'float');
 
     const p = wgPhase(uTime, tm.y, tm.x, N_SEG);
-
-    // mean-radius normalization LUT (128 samples) by phase
-    const fp = p.div(N_SEG).mul(127.0);
-    const i0 = fp.floor();
-    const i1 = i0.add(1.0).min(127.0);
-    const ns = mix(uNormLUT.element(i0.toInt()), uNormLUT.element(i1.toInt()), fp.sub(i0));
-
+    const ns = lookupNorm(p);
     return wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
   })();
 
-  // --- fragment: GGX direct lighting over the light list ---
+  // --- fragment: GGX direct + shadows + reflections ---
   material.colorNode = Fn(() => {
     const albedo = vColorRough.xyz;
     const rough = vColorRough.w;
     const metal = vMatLists.x;
     const lo = vMatLists.y.add(0.5).floor().toInt();
     const lc = vMatLists.z.add(0.5).floor().toInt();
+    const shadowOff = vShadowRefl.x.add(0.5).floor().toInt();
+    const shadowCount = vShadowRefl.y.add(0.5).floor().toInt();
+    const reflOff = vShadowRefl.z.add(0.5).floor().toInt();
+    const reflCount = vShadowRefl.w.add(0.5).floor().toInt();
 
     const P = positionWorld;
     const V = normalize(cameraPosition.sub(P));
     const N = wgFlatNormal(P, V);
 
-    const diffuseAlbedo = albedo.mul(float(1.0).sub(metal));
-    const F0 = mix(vec3(0.04), albedo, metal);
+    const lit = shadeDirect(P, N, V, albedo, rough, metal, lo, lc, float(1), shadowOff, shadowCount).toVar();
 
-    const lit = vec3(0.0).toVar();
-    Loop(lc, ({ i }) => {
-      const idx = uLightIndex.element(lo.add(int(i))).add(0.5).floor().toInt();
-      const lpos = uLights.element(idx.mul(2));
-      const colRad = uLights.element(idx.mul(2).add(1));
-      const Lv = lpos.xyz.sub(P);
-      const dist = length(Lv);
-      const L = Lv.div(max(dist, 1e-4));
-      const contrib = wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist)
-        .mul(colRad.xyz).mul(wgFalloff(dist, colRad.w));
-      lit.addAssign(contrib);
+    const diffuseAlbedo = albedo.mul(float(1).sub(metal));
+    lit.addAssign(diffuseAlbedo.mul(mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), N.y.mul(0.5).add(0.5))));
+
+    If(rough.lessThan(REFL_ROUGHNESS_MAX), () => {
+      const F0 = mix(vec3(0.04), albedo, metal);
+      const Rdir = reflect(V.negate(), N);
+      const NdotV = max(dot(N, V), 0.0);
+      const oneMinusRough = vec3(float(1).sub(rough));
+      const envF = F0.add(max(oneMinusRough, F0).sub(F0).mul(pow(float(1).sub(NdotV), 5.0)));
+
+      const bestT = float(1e9).toVar();
+      const bestN = vec3(0).toVar();
+      const bestObj = int(0).toVar();
+      const hit = float(0).toVar();
+      Loop(reflCount, ({ i }) => {
+        const oi = uIndices.element(REFL_BASE.add(reflOff).add(int(i))).add(0.5).floor().toInt();
+        const h = traceHull(oi, P.add(N.mul(0.02)), Rdir);
+        If(and(h.w.greaterThan(1e-3), h.w.lessThan(bestT)), () => {
+          bestT.assign(h.w);
+          bestN.assign(h.xyz);
+          bestObj.assign(oi);
+          hit.assign(1);
+        });
+      });
+
+      const refl = vec3(0).toVar();
+      If(hit.greaterThan(0.5), () => {
+        const hp = P.add(Rdir.mul(bestT));
+        const m0 = uInstanceMat.element(bestObj.mul(2));
+        const m1 = uInstanceMat.element(bestObj.mul(2).add(1));
+        refl.assign(shadeDirect(
+          hp, bestN, Rdir.negate(), m0.xyz, m0.w, m1.z,
+          m1.x.add(0.5).floor().toInt(), m1.y.add(0.5).floor().toInt(),
+          float(0), int(0), int(0),
+        ));
+        refl.addAssign(m0.xyz.mul(wgEnvironment(bestN)).mul(0.3));
+      }).Else(() => {
+        refl.assign(wgEnvironment(Rdir));
+      });
+      lit.addAssign(refl.mul(envF));
     });
-
-    // hemispheric ambient
-    const amb = mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), N.y.mul(0.5).add(0.5));
-    lit.addAssign(diffuseAlbedo.mul(amb));
 
     return lit;
   })();

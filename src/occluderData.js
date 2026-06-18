@@ -64,7 +64,11 @@ function matchFaces(starts, ends, startVerts, endVerts) {
 // each slot by phase. This merges coplanar triangles (e.g. cube 24 tris -> 6
 // faces) so the trace loops far fewer planes. Return keys keep the "Tri" names so
 // the shader/main don't change (a "tri" entry is now a face slot).
-export function buildPlaneTexture() {
+// Raw per-segment face-plane data (renderer-independent): a Float32Array of
+// 2 RGBA slots per face ([n.xyz, d] start, then end), plus the per-segment start
+// offset + count. Consumed by both the WebGL plane texture and the WebGPU storage
+// buffer.
+export function buildPlaneData() {
   const segs = buildJourneySegments();
   const segSlots = segs.map((s) =>
     matchFaces(uniqueFaces(s.start), uniqueFaces(s.end), s.start, s.end));
@@ -77,17 +81,22 @@ export function buildPlaneTexture() {
     segTriCount.push(sl.length);
     total += sl.length;
   }
-  const data = new Float32Array(total * 2 * 4);
+  const planes = new Float32Array(total * 2 * 4);
   let f = 0;
   for (const sl of segSlots) {
     for (const [ps, pe] of sl) {
       const o = f * 8;
-      data[o] = ps[0]; data[o + 1] = ps[1]; data[o + 2] = ps[2]; data[o + 3] = ps[3];
-      data[o + 4] = pe[0]; data[o + 5] = pe[1]; data[o + 6] = pe[2]; data[o + 7] = pe[3];
+      planes[o] = ps[0]; planes[o + 1] = ps[1]; planes[o + 2] = ps[2]; planes[o + 3] = ps[3];
+      planes[o + 4] = pe[0]; planes[o + 5] = pe[1]; planes[o + 6] = pe[2]; planes[o + 7] = pe[3];
       f++;
     }
   }
-  const { tex, width } = floatTexture(data, total * 2, 4);
+  return { planes, total, segTriStart, segTriCount };
+}
+
+export function buildPlaneTexture() {
+  const { planes, total, segTriStart, segTriCount } = buildPlaneData();
+  const { tex, width } = floatTexture(planes, total * 2, 4);
   return { planeTex: tex, planeTexW: width, segTriStart, segTriCount };
 }
 

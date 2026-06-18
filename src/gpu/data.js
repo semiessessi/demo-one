@@ -12,26 +12,41 @@ export function packLights(lights) {
   return a;
 }
 
-// Per-instance data as a set of vec4 storage buffers (indexed by instanceIndex).
-export function packInstances(objects) {
-  const n = objects.length;
-  const posScale = new Float32Array(n * 4); // pos.xyz, scale
-  const quat = new Float32Array(n * 4); // x,y,z,w
-  const spin = new Float32Array(n * 4); // axis.xyz, spinSpeed
-  const tm = new Float32Array(n * 4); // phaseOffset, morphSpeed, 0, 0
-  const colorRough = new Float32Array(n * 4); // color.rgb, rough
-  const matLists = new Float32Array(n * 4); // metal, lightOffset, lightCount, _
-  const shadowRefl = new Float32Array(n * 4); // shadowOffset, shadowCount, reflOffset, reflCount
+// All per-instance data interleaved into ONE storage buffer (7 vec4 per
+// instance), to stay within maxStorageBuffersPerShaderStage (8). Slot layout:
+//   0 posScale (pos.xyz, scale)        4 colorRough (color.rgb, rough)
+//   1 quat (x,y,z,w)                   5 matLists (metal, lightOffset, lightCount, _)
+//   2 spin (axis.xyz, spinSpeed)       6 shadowRefl (shadowOff, shadowCount, reflOff, reflCount)
+//   3 tm (phaseOffset, morphSpeed, _, _)
+export const INSTANCE_STRIDE = 7;
+export function packInstanceBuffer(objects) {
+  const a = new Float32Array(objects.length * INSTANCE_STRIDE * 4);
   objects.forEach((o, i) => {
-    posScale.set([o.pos[0], o.pos[1], o.pos[2], o.scale], i * 4);
-    quat.set(o.quat, i * 4);
-    spin.set([o.spinAxis[0], o.spinAxis[1], o.spinAxis[2], o.spinSpeed], i * 4);
-    tm.set([o.phase, o.morphSpeed, 0, 0], i * 4);
-    colorRough.set([o.color[0], o.color[1], o.color[2], o.rough], i * 4);
-    matLists.set([o.metal, o.lightOffset, o.lightCount, 0], i * 4);
-    shadowRefl.set([o.shadowOffset, o.shadowCount, o.reflOffset, o.reflCount], i * 4);
+    const b = i * INSTANCE_STRIDE * 4;
+    a[b] = o.pos[0]; a[b + 1] = o.pos[1]; a[b + 2] = o.pos[2]; a[b + 3] = o.scale;
+    a[b + 4] = o.quat[0]; a[b + 5] = o.quat[1]; a[b + 6] = o.quat[2]; a[b + 7] = o.quat[3];
+    a[b + 8] = o.spinAxis[0]; a[b + 9] = o.spinAxis[1]; a[b + 10] = o.spinAxis[2]; a[b + 11] = o.spinSpeed;
+    a[b + 12] = o.phase; a[b + 13] = o.morphSpeed;
+    a[b + 16] = o.color[0]; a[b + 17] = o.color[1]; a[b + 18] = o.color[2]; a[b + 19] = o.rough;
+    a[b + 20] = o.metal; a[b + 21] = o.lightOffset; a[b + 22] = o.lightCount;
+    a[b + 24] = o.shadowOffset; a[b + 25] = o.shadowCount; a[b + 26] = o.reflOffset; a[b + 27] = o.reflCount;
   });
-  return { posScale, quat, spin, tm, colorRough, matLists, shadowRefl };
+  return a;
+}
+
+// Concatenate the three index lists into one buffer; returns the buffer + the
+// base offsets of the shadow and reflection sections.
+export function packIndices(lightIndices, shadowIndices, reflIndices) {
+  const l = new Float32Array(lightIndices);
+  const s = new Float32Array(shadowIndices);
+  const r = new Float32Array(reflIndices);
+  const shadowBase = l.length;
+  const reflBase = shadowBase + s.length;
+  const combined = new Float32Array(reflBase + r.length);
+  combined.set(l, 0);
+  combined.set(s, shadowBase);
+  combined.set(r, reflBase);
+  return { combined, shadowBase, reflBase };
 }
 
 // 2 vec4 per object for reflection-hit shading: [albedo.rgb, rough], [lo, lc, metal, _].
