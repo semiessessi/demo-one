@@ -1,16 +1,24 @@
 // Static scene generation: objects scattered at random (LCG, so it's
-// reproducible) in a bounded cube, rejection-sampled so none overlap; lights
-// scattered around each object. Per-object nearby-light lists are built once
-// with a uniform 3D bucket grid (ported from pdx-gfx).
+// reproducible) in a bounded cube, rejection-sampled so none overlap; each light
+// is assigned to one object and orbits it on a sphere just outside it (animated
+// in-shader). Per-object nearby-light lists are built once with a uniform 3D
+// bucket grid (ported from pdx-gfx), conservatively sized for the orbit.
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 
 const TARGET_OBJECTS = 200;
-const VOLUME = 16; // cube side
+const VOLUME = 22; // cube side (grown from 16 to give orbiting lights clearance)
 const LIGHTS_PER_OBJECT = 20;
-const LIGHT_RADIUS = 2.0;
+const LIGHT_RADIUS = 3.0; // light falloff radius (raised from 2.0 for the orbit distance)
 const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;
-const PACK_MARGIN = 0.2; // extra gap between object bounding spheres
+const PACK_MARGIN = 0.9; // extra gap between object spheres; must exceed the max orbit reach
+// Lights orbit their host object on a sphere just outside it, animated entirely
+// in-shader (see animLightDir in shaders/lib.glsl + the WGSL ports). orbitRadius is
+// per-light: object.radius + ORBIT_MARGIN + rng()*ORBIT_SPREAD (always > object.radius,
+// so the light stays outside its host). PACK_MARGIN >= ORBIT_MARGIN + ORBIT_SPREAD so a
+// light never sweeps into a neighbouring object (their light clouds may still overlap).
+const ORBIT_MARGIN = 0.35; // min gap from the object surface to the orbit sphere
+const ORBIT_SPREAD = 0.4; // per-light random extra orbit radius
 const BUCKETS_PER_AXIS = 10;
 const R_PROXY = 1.0; // shadow/reflection sphere-proxy radius factor (× scale)
 const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
@@ -100,20 +108,21 @@ export function generateScene(opts = {}) {
     });
 
     for (let k = 0; k < lightsPerObject; k++) {
-      const u = randUnitVec();
-      const r = 1.3 * Math.cbrt(rng());
+      const orbitRadius = radius + ORBIT_MARGIN + rng() * ORBIT_SPREAD;
       const rgb = hslToRgb(rng(), 0.8, 0.55);
       const intensity = rand(0.12, 0.35);
       lights.push({
-        pos: [pos[0] + u[0] * r, pos[1] + u[1] * r, pos[2] + u[2] * r],
+        pos: [pos[0], pos[1], pos[2]], // host object centre; the shader orbits the light around it
+        orbitRadius,
         color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],
-        radius: LIGHT_RADIUS,
+        radius: LIGHT_RADIUS, // falloff radius
       });
     }
   }
 
+  const maxOrbit = lights.reduce((m, l) => Math.max(m, l.orbitRadius), 0);
   const lightIndices = buildLightLists(objects, lights);
-  const occluderIndices = buildOccluderLists(objects);
+  const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
     objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
   return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
@@ -150,20 +159,23 @@ export function generateTestScene() {
   // Shiny static icosahedron: reflects the morphing object + casts its own shadow.
   objects.push(makeObj([1.7, 1.0, 0.6], 1.1, [0.95, 0.95, 1.0], 0.02, 1, 6.0, 0.0));
 
-  // One bright light above so both objects drop shadows onto the floor.
-  const lights = [{ pos: [1.5, 8.0, 2.5], color: [22, 22, 22], radius: 40 }];
+  // One bright light above so both objects drop shadows onto the floor. It also
+  // orbits its base point, so the test scene exercises moving lights + shadows.
+  const lights = [{ pos: [1.5, 8.0, 2.5], orbitRadius: 2.0, color: [22, 22, 22], radius: 40 }];
 
+  const maxOrbit = lights.reduce((m, l) => Math.max(m, l.orbitRadius), 0);
   const lightIndices = buildLightLists(objects, lights);
-  const occluderIndices = buildOccluderLists(objects);
+  const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
     objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
   return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
 }
 
-// Shadow occluder lists: reach is tied to the light radius so lists stay short.
-function buildOccluderLists(objects) {
+// Shadow occluder lists: reach covers the object plus the orbit + falloff of the
+// lights that can reach it, so casters between a surface and a moving light are kept.
+function buildOccluderLists(objects, maxOrbit) {
   return buildNeighborLists(
-    objects, (o) => o.radius + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount');
+    objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount');
 }
 
 // Generic per-object nearby-object lists via the bucket grid. An object j is
@@ -237,6 +249,16 @@ function buildLightLists(objects, lights) {
   const coord = (p, a) => Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
   const idx = (x, y, z) => (x * B + y) * B + z;
 
+  // A light can be anywhere on a sphere of radius orbitRadius around its stored
+  // centre, so a list built from the static centres must reach orbitRadius + falloff
+  // further to stay valid for every animated frame (conservative superset; falloff
+  // zeroes the far side at shading time).
+  let maxOrbit = 0, maxFalloff = 0;
+  for (const l of lights) {
+    maxOrbit = Math.max(maxOrbit, l.orbitRadius);
+    maxFalloff = Math.max(maxFalloff, l.radius);
+  }
+
   const buckets = Array.from({ length: B * B * B }, () => []);
   lights.forEach((l, li) => {
     buckets[idx(coord(l.pos[0], 0), coord(l.pos[1], 1), coord(l.pos[2], 2))].push(li);
@@ -245,7 +267,7 @@ function buildLightLists(objects, lights) {
   const indices = [];
   for (const o of objects) {
     o.lightOffset = indices.length;
-    const reach = o.radius + LIGHT_RADIUS;
+    const reach = o.radius + maxOrbit + maxFalloff;
     const c = o.pos;
     const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
     const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
@@ -258,7 +280,8 @@ function buildLightLists(objects, lights) {
             const l = lights[li];
             const dx = c[0] - l.pos[0], dy = c[1] - l.pos[1], dz = c[2] - l.pos[2];
             const d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 <= (o.radius + l.radius) ** 2) found.push({ li, d2 });
+            const lim = o.radius + l.orbitRadius + l.radius;
+            if (d2 <= lim * lim) found.push({ li, d2 });
           }
     found.sort((a, b) => a.d2 - b.d2); // nearest first, so the shader shadows the closest
     for (const f of found) indices.push(f.li);

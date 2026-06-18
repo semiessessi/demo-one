@@ -1,12 +1,12 @@
 // Pack the scene's static data into flat Float32Arrays for WebGPU storage
 // buffers (attributeArray). Layouts mirror the WebGL DataTexture packings.
 
-// 2 vec4 per light: [pos.xyz, _], [color.rgb, radius].
+// 2 vec4 per light: [center.xyz, orbitRadius], [color.rgb, radius(falloff)].
 export function packLights(lights) {
   const a = new Float32Array(lights.length * 8);
   lights.forEach((l, i) => {
     const o = i * 8;
-    a[o] = l.pos[0]; a[o + 1] = l.pos[1]; a[o + 2] = l.pos[2];
+    a[o] = l.pos[0]; a[o + 1] = l.pos[1]; a[o + 2] = l.pos[2]; a[o + 3] = l.orbitRadius;
     a[o + 4] = l.color[0]; a[o + 5] = l.color[1]; a[o + 6] = l.color[2]; a[o + 7] = l.radius;
   });
   return a;

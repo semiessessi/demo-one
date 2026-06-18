@@ -17,6 +17,7 @@ in vec4 aLists;       // shadowOffset, shadowCount, reflOffset, reflCount
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform float uTime;
+uniform float uSpawn; // spawn-in intro clock: objects scale up as it sweeps past their slot
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
 
@@ -33,7 +34,7 @@ flat out int vReflCount;
 
 void main() {
   float spinSpeed = aMisc.x;
-  float scale = aMisc.y;
+  float scale = aMisc.y * spawnReveal(spawnSlot(gl_InstanceID), uSpawn); // scale in over the intro
   float phaseOffset = aMisc.z;
   float morphSpeed = aMisc.w;
 

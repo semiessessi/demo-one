@@ -3,8 +3,8 @@ import { floatTexture } from './textures.js';
 const dataTexture = floatTexture;
 
 // Pack lights into an RGBA32F texture, 2 texels per light:
-//   texel 0: position.xyz, _
-//   texel 1: color.rgb, radius
+//   texel 0: center.xyz, orbitRadius   (shader orbits the light around center)
+//   texel 1: color.rgb, radius         (radius = falloff)
 // And the flat light-index list into an R32F texture (one index per texel).
 export function buildLightTextures(lights, lightIndices) {
   const lightData = new Float32Array(lights.length * 2 * 4);
@@ -13,6 +13,7 @@ export function buildLightTextures(lights, lightIndices) {
     lightData[o] = l.pos[0];
     lightData[o + 1] = l.pos[1];
     lightData[o + 2] = l.pos[2];
+    lightData[o + 3] = l.orbitRadius;
     lightData[o + 4] = l.color[0];
     lightData[o + 5] = l.color[1];
     lightData[o + 6] = l.color[2];

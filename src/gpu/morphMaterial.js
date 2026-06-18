@@ -17,6 +17,7 @@ import {
   packOccluderTransforms, INSTANCE_STRIDE,
 } from './data.js';
 import { roVec4, roFloat } from './storage.js';
+import { wgAnimDir, wgLightEmission, wgSpawnScale } from './orbit.js';
 
 const REFL_ROUGHNESS_MAX = 0.35;
 const SHADOW_LIGHTS = 16; // nearest N lights cast shadows
@@ -146,9 +147,10 @@ function buildGeometry() {
   return g;
 }
 
-// Builds the instanced morph mesh. `uTime` is a shared TSL uniform node so the
-// backend can drive the morph clock.
-export function buildMorphMesh(data, uTime) {
+// Builds the instanced morph mesh. `uTime` drives the morph clock; `uLightTime` is a
+// separate clock for the orbiting lights (toggleable); `uBeatTime`/`uBeatStrength` +
+// `uMusicTime` drive the beat flares; `uSpawn` is the spawn-in intro clock. TSL nodes.
+export function buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn) {
   const { objects, lights, lightIndices, occluderIndices, reflectionIndices } = data;
 
   const geometry = buildGeometry();
@@ -299,10 +301,12 @@ export function buildMorphMesh(data, uTime) {
     const F0 = mix(vec3(0.04), albedo, metal);
     const lit = vec3(0).toVar();
     Loop(lc, ({ i }) => {
-      const li = uIndices.element(lo.add(int(i))).add(0.5).floor().toInt();
-      const lpos = uLights.element(li.mul(2));
+      const liF = uIndices.element(lo.add(int(i))).add(0.5).floor();
+      const li = liF.toInt();
+      const l0 = uLights.element(li.mul(2)); // center.xyz, orbitRadius
       const colRad = uLights.element(li.mul(2).add(1));
-      const Lv = lpos.xyz.sub(p);
+      const lpos = l0.xyz.add(wgAnimDir(liF, uLightTime).mul(l0.w)); // orbit around the host centre
+      const Lv = lpos.sub(p);
       const dist = length(Lv);
       const L = Lv.div(max(dist, 1e-4));
       const fall = wgFalloff(dist, colRad.w);
@@ -313,8 +317,11 @@ export function buildMorphMesh(data, uTime) {
         If(and(doShadow.greaterThan(0.5), int(i).lessThan(SHADOW_LIGHTS)), () => {
           shadow.assign(traceShadow(p.add(N.mul(0.02)), L, dist, shadowOff, shadowCount));
         });
+        const band = liF.div(8).fract().mul(8).add(0.5).floor().toInt(); // li % 8
+        const ls = uSpawn.sub(0.2).max(0).mul(0.7); // lights lag + slower than objects (LIGHT_SPAWN_*)
+        const emission = wgLightEmission(liF, ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
         lit.addAssign(
-          wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow),
+          wgBrdf(N, V, L, diffuseAlbedo, F0, rough, dist).mul(colRad.xyz).mul(fall).mul(shadow).mul(emission),
         );
       });
     });
@@ -359,7 +366,9 @@ export function buildMorphMesh(data, uTime) {
 
     const p = wgPhase(uTime, tm.y, tm.x, N_SEG);
     const ns = lookupNorm(p);
-    return wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
+    const world = wgMorphWorld(start, end, segId, p, ns, ps, q, sp, uTime, N_SEG);
+    // Scale the object in around its centre over the spawn intro.
+    return ps.xyz.add(world.sub(ps.xyz).mul(wgSpawnScale(float(instanceIndex), uSpawn)));
   })();
 
   // --- fragment: GGX direct + shadows + reflections ---

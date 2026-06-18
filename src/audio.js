@@ -23,6 +23,8 @@ export function createAudioManager() {
   let muted = false;
   let failed = false; // audio unavailable — degrade silently
   let volume = DEFAULT_VOLUME;
+  let analyser = null; // passive tap on player.gain for the music spectrum
+  const freqBins = new Uint8Array(128); // analyser.frequencyBinCount (fftSize 256)
 
   // Fetch the ~3.9 MB module up front (while the info pane is on screen) so the
   // first play starts immediately rather than waiting on the download.
@@ -57,6 +59,17 @@ export function createAudioManager() {
     try {
       player = new ChiptuneJsPlayer({ repeatCount: -1 }); // -1 = loop forever
       player.gain.gain.value = 0; // silent until we fade in
+      // Tap the output for a frequency spectrum that drives the light pulse. The
+      // analyser is a passive branch off the gain node, so it never alters the
+      // audio that reaches the speakers.
+      try {
+        analyser = player.context.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.7; // time-smooths the spectrum
+        player.gain.connect(analyser);
+      } catch (_) {
+        analyser = null;
+      }
       player.onError((err) => console.warn('[audio] chiptune error', err));
       player.onInitialized(async () => {
         try {
@@ -126,6 +139,24 @@ export function createAudioManager() {
     return muted;
   }
 
+  // Fill `out` (length N) with normalized [0,1] energy per frequency band, from the
+  // lower ~half of the spectrum (where the musical content sits). Returns zeros when
+  // nothing is audible, so the visuals fall back to their baseline (and stay
+  // deterministic in capture mode, where audio never starts).
+  function sampleBands(out) {
+    const n = out.length;
+    if (!analyser || paused || muted) { out.fill(0); return out; }
+    analyser.getByteFrequencyData(freqBins);
+    const usable = freqBins.length >> 2; // lower quarter ≈ 0–5.5 kHz (where the chip energy sits)
+    const per = Math.max(1, Math.floor(usable / n));
+    for (let b = 0; b < n; b++) {
+      let s = 0;
+      for (let k = 0; k < per; k++) s += freqBins[b * per + k];
+      out[b] = s / (per * 255);
+    }
+    return out;
+  }
+
   return {
     prefetch,
     play,
@@ -133,6 +164,7 @@ export function createAudioManager() {
     setVolume,
     setMuted,
     toggleMute,
+    sampleBands,
     get isStarted() {
       return started;
     },

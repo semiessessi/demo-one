@@ -57,6 +57,11 @@ export function createWebGLBackend({
 
   const uniforms = {
     uTime: { value: 0 },
+    uLightTime: { value: 0 },
+    uSpawn: { value: 0 },
+    uBeatTime: { value: new Float32Array(8) },
+    uBeatStrength: { value: new Float32Array(8) },
+    uMusicTime: { value: 0 },
     uNumSegments: { value: NUM_SEGMENTS },
     uNormScale: { value: buildNormScaleLUT() },
     uMaxCircumradius: { value: MAX_NORM_CIRCUMRADIUS },
@@ -85,7 +90,16 @@ export function createWebGLBackend({
   const mesh = new THREE.Mesh(geometry, buildMorphMaterial(uniforms));
   mesh.frustumCulled = false; // instances span the whole volume
   scene.add(mesh);
-  scene.add(buildLightSprites(lights, { uSpriteSize: { value: 0.16 } }));
+  // Share the light-orbit clock + music bands so the sprites orbit and pulse in
+  // lockstep with the lighting.
+  scene.add(buildLightSprites(lights, {
+    uSpriteSize: { value: 0.16 },
+    uLightTime: uniforms.uLightTime,
+    uSpawn: uniforms.uSpawn,
+    uBeatTime: uniforms.uBeatTime,
+    uBeatStrength: uniforms.uBeatStrength,
+    uMusicTime: uniforms.uMusicTime,
+  }));
 
   const composer = new EffectComposer(renderer); // half-float render targets
   composer.addPass(new RenderPass(scene, camera));
@@ -100,6 +114,13 @@ export function createWebGLBackend({
     domElement: renderer.domElement,
     camera,
     setTime(t) { uniforms.uTime.value = t; },
+    setLightTime(t) { uniforms.uLightTime.value = t; },
+    setSpawn(s) { uniforms.uSpawn.value = s; },
+    setMusic(now, beatTime, strength) {
+      uniforms.uMusicTime.value = now;
+      uniforms.uBeatTime.value.set(beatTime);
+      uniforms.uBeatStrength.value.set(strength);
+    },
     setView({ position, target, damping = true }) {
       if (position) camera.position.set(...position);
       if (target) controls.target.set(...target);

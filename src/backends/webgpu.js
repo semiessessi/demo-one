@@ -4,7 +4,7 @@
 // never mix.
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { wgslFn, positionLocal, normalize, uniform, pass } from 'three/tsl';
+import { wgslFn, positionLocal, normalize, uniform, uniformArray, pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { buildMorphMesh } from '../gpu/morphMaterial.js';
 import { buildLightSprites } from '../gpu/spriteMaterial.js';
@@ -62,9 +62,16 @@ export async function createWebGPUBackend(data) {
 
   // Morphing instances (storage-buffer driven, GGX direct lighting).
   const uTime = uniform(0);
-  const morphMesh = buildMorphMesh(data, uTime);
+  const uLightTime = uniform(0); // separate clock for the orbiting lights (toggleable)
+  const uSpawn = uniform(0); // spawn-in intro clock (object scale + light reveal)
+  const beatTimeArr = new Float32Array(8);  // per-band last-beat time, set in setMusic
+  const beatStrengthArr = new Float32Array(8); // per-band last-beat strength, set in setMusic
+  const uBeatTime = uniformArray(beatTimeArr, 'float');   // auto-uploads each render
+  const uBeatStrength = uniformArray(beatStrengthArr, 'float');
+  const uMusicTime = uniform(0);
+  const morphMesh = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
   scene.add(morphMesh);
-  scene.add(buildLightSprites(data.lights));
+  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn));
 
   if (params.has('debug')) {
     window.__wgpu = { renderer, scene, camera, morphMesh };
@@ -81,6 +88,9 @@ export async function createWebGPUBackend(data) {
     domElement: renderer.domElement,
     camera,
     setTime(t) { uTime.value = t; },
+    setLightTime(t) { uLightTime.value = t; },
+    setSpawn(s) { uSpawn.value = s; },
+    setMusic(now, beatTime, strength) { uMusicTime.value = now; beatTimeArr.set(beatTime); beatStrengthArr.set(strength); },
     setView({ position, target, damping = true }) {
       if (position) camera.position.set(...position);
       if (target) controls.target.set(...target);

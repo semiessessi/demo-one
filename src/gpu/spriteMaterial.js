@@ -7,6 +7,7 @@ import {
   cameraViewMatrix, cameraProjectionMatrix, float,
 } from 'three/tsl';
 import { roVec4 } from './storage.js';
+import { wgAnimDir, wgLightEmission } from './orbit.js';
 
 // Billboard a quad corner to clip space (camera right/up = rows of the view matrix).
 const wgSpriteClip = wgslFn(`
@@ -38,18 +39,18 @@ const wgSpriteColor = wgslFn(`
   }
 `);
 
-export function buildLightSprites(lights) {
+export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn) {
   const n = lights.length;
   const corners = new Float32Array([
     -1, -1, 0, 1, -1, 0, 1, 1, 0,
     -1, -1, 0, 1, 1, 0, -1, 1, 0,
   ]);
 
-  const posRad = new Float32Array(n * 4); // pos.xyz, radius
-  const color = new Float32Array(n * 4); // color.rgb, _
+  const posRad = new Float32Array(n * 4); // center.xyz, falloff radius (drives sprite size)
+  const color = new Float32Array(n * 4); // color.rgb, orbitRadius
   lights.forEach((l, i) => {
     posRad.set([l.pos[0], l.pos[1], l.pos[2], l.radius], i * 4);
-    color.set([l.color[0], l.color[1], l.color[2], 0], i * 4);
+    color.set([l.color[0], l.color[1], l.color[2], l.orbitRadius], i * 4);
   });
   const uPosRad = roVec4(posRad);
   const uColor = roVec4(color);
@@ -59,9 +60,16 @@ export function buildLightSprites(lights) {
   g.instanceCount = n;
 
   const SIZE = float(0.16);
-  const lpr = uPosRad.element(instanceIndex);
+  const lpr = uPosRad.element(instanceIndex); // center.xyz, falloff radius
+  const c = uColor.element(instanceIndex);    // color.rgb, orbitRadius
+  // Orbit the light around its host centre (matches morph.frag / morphMaterial shadeDirect).
+  const lp = lpr.xyz.add(wgAnimDir(float(instanceIndex), uLightTime).mul(c.w));
+  // Beat-driven flare: band envelope gated by a per-beat random subset (band = index % 8).
+  const band = float(instanceIndex).div(8).fract().mul(8).add(0.5).floor().toInt();
+  const ls = uSpawn.sub(0.2).max(0).mul(0.7); // lights lag + slower than objects (LIGHT_SPAWN_*)
+  const emission = wgLightEmission(float(instanceIndex), ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
   const vCorner = varying(positionGeometry.xy);
-  const vColor = varying(uColor.element(instanceIndex).xyz);
+  const vColor = varying(c.xyz.mul(emission));
 
   const material = new THREE.MeshBasicNodeMaterial();
   material.transparent = true;
@@ -69,7 +77,7 @@ export function buildLightSprites(lights) {
   material.depthWrite = false;
   material.name = 'sprites';
   material.vertexNode = wgSpriteClip(
-    positionGeometry, lpr.xyz, lpr.w, SIZE, cameraViewMatrix, cameraProjectionMatrix,
+    positionGeometry, lp, lpr.w, SIZE.mul(emission), cameraViewMatrix, cameraProjectionMatrix,
   );
   material.colorNode = wgSpriteColor(vCorner, vColor);
 

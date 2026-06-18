@@ -15,6 +15,11 @@ out vec4 fragColor;
 
 uniform vec3 cameraPosition;
 uniform float uTime;
+uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
+uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
+uniform float uBeatTime[8];     // per-band timestamp (uMusicTime units) of the last beat
+uniform float uBeatStrength[8]; // per-band strength of the last beat; light picks band = idx % 8
+uniform float uMusicTime;       // music clock the beat timestamps are measured in
 uniform float uNumSegments;
 uniform float uNormScale[128];
 uniform float uMaxCircumradius; // occluder bounding radius = scale * this (cull)
@@ -150,7 +155,8 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
   vec3 lit = vec3(0.0);
   for (int k = 0; k < lc; k++) {
     int idx = int(texelFetch(uLightIndexTex, texel(lo + k, uIndexTexW), 0).r + 0.5);
-    vec3 lightPos = texelFetch(uLightsTex, texel(idx * 2, uLightsTexW), 0).xyz;
+    vec4 c0 = texelFetch(uLightsTex, texel(idx * 2, uLightsTexW), 0); // center.xyz, orbitRadius
+    vec3 lightPos = c0.xyz + c0.w * animLightDir(idx, uLightTime); // orbit around the host centre
     vec4 colRad = texelFetch(uLightsTex, texel(idx * 2 + 1, uLightsTexW), 0);
     vec3 L = lightPos - p;
     float dist = length(L);
@@ -159,8 +165,14 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     float lum = max(colRad.r, max(colRad.g, colRad.b));
     // skip lights that can't contribute: back-facing, out of radius, or dark
     if (dot(N, L) <= 0.0 || fall <= 1e-6 || lum <= 0.0) continue;
+    int band = idx % 8;
+    float slot = spawnSlot(idx);
+    float ls = lightSpawnClock(uSpawn);
+    float emission = spawnIgnite(slot, ls)
+                   + spawnReveal(slot, ls) * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime);
+    if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < SHADOW_LIGHTS) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
-    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow;
+    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow * emission;
   }
   return lit;
 }

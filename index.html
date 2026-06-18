@@ -51,7 +51,8 @@
         gap: 14px;
       }
       #playToggle,
-      #muteToggle {
+      #muteToggle,
+      #orbitToggle {
         flex: none;
         width: 38px;
         height: 38px;
@@ -65,8 +66,12 @@
         transition: background 0.15s ease;
       }
       #playToggle:hover,
-      #muteToggle:hover {
+      #muteToggle:hover,
+      #orbitToggle:hover {
         background: rgba(255, 255, 255, 0.1);
+      }
+      #orbitToggle.off {
+        color: #666;
       }
       #scrub {
         flex: 1 1 auto;
@@ -212,6 +217,7 @@
         <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Scrub morph" />
         <button id="muteToggle" title="Mute / unmute" aria-label="Mute or unmute">🔊</button>
         <input id="volume" type="range" min="0" max="100" value="70" step="1" aria-label="Volume" />
+        <button id="orbitToggle" title="Light movement (L)" aria-label="Toggle light movement" aria-pressed="true">✦</button>
       </div>
       <span id="label">tetrahedron</span>
     </div>
@@ -226,6 +232,8 @@
         <dd>fps overlay</dd>
         <dt>T</dt>
         <dd>test scene</dd>
+        <dt>L</dt>
+        <dd>light movement</dd>
         <dt>Drag</dt>
         <dd>orbit camera</dd>
         <dt>Scroll</dt>
