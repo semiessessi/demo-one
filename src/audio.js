@@ -183,6 +183,9 @@ export function createAudioManager() {
     setMuted,
     toggleMute,
     consumeNotes,
+    get isRunning() {
+      return !!(player && player.context && player.context.state === 'running');
+    },
     get isStarted() {
       return started;
     },

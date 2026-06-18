@@ -198,11 +198,14 @@ if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 // Auto-play the demo after ~1s of idling at the skybox (camera held at the start pose).
 // Any pointer/key/wheel input cancels it — the user is in control and can press play.
 if (!CAPTURE && !TEST) {
-  let idleHandled = false;
-  const cancelIdle = () => { idleHandled = true; };
-  ['pointerdown', 'keydown', 'wheel'].forEach((ev) =>
-    window.addEventListener(ev, cancelIdle, { once: true, passive: true }));
-  setTimeout(() => { if (!idleHandled && !playing) setPlaying(true); }, 1000);
+  // Start the demo on the first interaction (the audio needs a user gesture to be audible).
+  // Also auto-start after 1s of idle — audible only where the browser allows autoplay;
+  // otherwise it runs silently until the first gesture, which then starts it for real.
+  let kicked = false;
+  const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
+  ['pointerdown', 'touchstart', 'wheel'].forEach((ev) =>
+    window.addEventListener(ev, kickoff, { once: true, passive: true }));
+  setTimeout(() => { if (!playing) setPlaying(true); }, 1000);
 }
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
@@ -214,7 +217,9 @@ let lastNow = performance.now();
 let statsAcc = 0;
 window.addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P') {
-    setPlaying(!playing);
+    // Start/resume if the audio isn't actually running (e.g. a silent autoplay before a
+    // gesture), otherwise toggle. Avoids the "press P twice" after the idle auto-play.
+    if (!playing || !audio.isRunning) setPlaying(true); else setPlaying(false);
   }
   if (e.key === 'Tab') {
     e.preventDefault(); // don't shift focus between the on-screen controls
