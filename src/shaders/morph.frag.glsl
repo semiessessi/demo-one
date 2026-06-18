@@ -77,7 +77,7 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
-  return (diffuseAlbedo + D * Vis * F) * NdotL;
+  return (diffuseAlbedo + D * Vis * F * 3.0) * NdotL; // specular x3 (increment 1) so light reflections read
 }
 
 // Convex-hull trace of occluder `oi` against a world ray. Rebuilds the occluder's
