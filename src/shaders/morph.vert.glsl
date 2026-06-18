@@ -35,7 +35,9 @@ flat out int vReflCount;
 
 void main() {
   float spinSpeed = aMisc.x;
-  float scale = aMisc.y * spawnReveal(spawnSlot(int(aOrigIndex + 0.5)), uSpawn); // scale in over the intro
+  // spawn rank by stable object id (aOrigIndex), so the reveal order survives the
+  // frustum compaction that makes gl_InstanceID the draw slot rather than the object.
+  float scale = aMisc.y * spawnReveal(float(aOrigIndex), uSpawn);
   float phaseOffset = aMisc.z;
   float morphSpeed = aMisc.w;
 

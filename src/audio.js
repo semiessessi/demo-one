@@ -23,8 +23,9 @@ export function createAudioManager() {
   let muted = false;
   let failed = false; // audio unavailable — degrade silently
   let volume = DEFAULT_VOLUME;
-  let analyser = null; // passive tap on player.gain for the music spectrum
-  const freqBins = new Uint8Array(128); // analyser.frequencyBinCount (fftSize 256)
+  const N_SLOTS = 32; // light "bands": tracker channels are folded into this many slots
+  const noteFlags = new Uint8Array(N_SLOTS); // pending note-ons per slot (set on note, cleared on consume)
+  let noteShift = 0; // rotates the channel->slot map each row so every slot cycles even with few tracks
 
   // Fetch the ~3.9 MB module up front (while the info pane is on screen) so the
   // first play starts immediately rather than waiting on the download.
@@ -59,17 +60,17 @@ export function createAudioManager() {
     try {
       player = new ChiptuneJsPlayer({ repeatCount: -1 }); // -1 = loop forever
       player.gain.gain.value = 0; // silent until we fade in
-      // Tap the output for a frequency spectrum that drives the light pulse. The
-      // analyser is a passive branch off the gain node, so it never alters the
-      // audio that reaches the speakers.
-      try {
-        analyser = player.context.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.7; // time-smooths the spectrum
-        player.gain.connect(analyser);
-      } catch (_) {
-        analyser = null;
-      }
+      // Flash on real tracker note-ons (no FFT): the worklet reads the .it note column
+      // per channel on each row and posts it here; fold those channels into N_SLOTS slots.
+      player.onRow((d) => {
+        if (muted || paused) return;
+        noteShift = (noteShift + 1) % N_SLOTS; // advance the rotation each row
+        const notes = d.notes;
+        for (let c = 0; c < notes.length; c++) {
+          const note = notes[c];
+          if (note > 0 && note < 254) noteFlags[(c + noteShift) % N_SLOTS] = 1; // real note-on -> rotated slot
+        }
+      });
       player.onError((err) => console.warn('[audio] chiptune error', err));
       player.onInitialized(async () => {
         try {
@@ -139,20 +140,12 @@ export function createAudioManager() {
     return muted;
   }
 
-  // Fill `out` (length N) with normalized [0,1] energy per frequency band, from the
-  // lower ~half of the spectrum (where the musical content sits). Returns zeros when
-  // nothing is audible, so the visuals fall back to their baseline (and stay
-  // deterministic in capture mode, where audio never starts).
-  function sampleBands(out) {
-    const n = out.length;
-    if (!analyser || paused || muted) { out.fill(0); return out; }
-    analyser.getByteFrequencyData(freqBins);
-    const usable = freqBins.length >> 2; // lower quarter ≈ 0–5.5 kHz (where the chip energy sits)
-    const per = Math.max(1, Math.floor(usable / n));
-    for (let b = 0; b < n; b++) {
-      let s = 0;
-      for (let k = 0; k < per; k++) s += freqBins[b * per + k];
-      out[b] = s / (per * 255);
+  // Copy the pending per-slot note-on flags into `out` (1 = a note fired in that slot
+  // since the last call) and clear them, so each note-on triggers exactly one flash.
+  function consumeNotes(out) {
+    for (let i = 0; i < out.length; i++) {
+      out[i] = i < noteFlags.length ? noteFlags[i] : 0;
+      if (i < noteFlags.length) noteFlags[i] = 0;
     }
     return out;
   }
@@ -164,7 +157,7 @@ export function createAudioManager() {
     setVolume,
     setMuted,
     toggleMute,
-    sampleBands,
+    consumeNotes,
     get isStarted() {
       return started;
     },

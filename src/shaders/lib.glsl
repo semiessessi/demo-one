@@ -47,7 +47,7 @@ vec3 animLightDir(int idx, float t) {
   return dir;
 }
 
-// Music-reactive flare: each light maps to a frequency band (index % 8). A beat in
+// Music-reactive flare: each light maps to a slot (index % 32). A beat in
 // that band re-triggers all of its lights (uBeatTime/uBeatStrength record the band's
 // last beat); each light then fades at one of 8 pseudo-random per-light rates, so some
 // linger far longer than others. Returns the raw flare; the caller folds it into the
@@ -59,6 +59,11 @@ float musicFlare(int idx, float beatTime, float strength, float now) {
   float age = now - beatTime;
   return age < 0.0 ? 0.0 : strength * exp(-age * lightFadeRate(idx));
 }
+// Only a fraction of lights react to the music (so loud beats don't over-brighten the
+// scene); the rest never flare. Static per-light, independent of the band/rate/slot
+// hashes. Keep MUSIC_LIT in sync with gpu/orbit.js.
+const float MUSIC_LIT = 1.0; // fraction of lights that react (1.0 = all of them)
+float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC_LIT ? 1.0 : 0.0; }
 
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash
@@ -66,11 +71,11 @@ float musicFlare(int idx, float beatTime, float strength, float now) {
 float spawnSlot(int i) { return hashUnit(hash(uint(i) * 2654435761u + 12345u)); }
 float spawnReveal(float slot, float spawn) {
   float a = spawn - slot;
-  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.25, a);
+  return a <= 0.0 ? 0.0 : smoothstep(0.0, 0.6, a); // object scales in over ~0.6 of a spawn count
 }
 float spawnIgnite(float slot, float spawn) {
   float a = spawn - slot;
-  return a <= 0.0 ? 0.0 : 1.5 * exp(-a / 0.3);
+  return a <= 0.0 ? 0.0 : 3.0 * exp(-a / 0.25); // sharp bright flash-in (not a slow lerp)
 }
 // Lights reveal a touch later and slower than objects, via their own derived clock.
 const float LIGHT_SPAWN_DELAY = 0.2;

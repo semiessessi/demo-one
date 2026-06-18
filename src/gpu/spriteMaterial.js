@@ -39,7 +39,7 @@ const wgSpriteColor = wgslFn(`
   }
 `);
 
-export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn) {
+export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn, lpo) {
   const n = lights.length;
   const corners = new Float32Array([
     -1, -1, 0, 1, -1, 0, 1, 1, 0,
@@ -64,10 +64,10 @@ export function buildLightSprites(lights, uLightTime, uBeatTime, uBeatStrength, 
   const c = uColor.element(instanceIndex);    // color.rgb, orbitRadius
   // Orbit the light around its host centre (matches morph.frag / morphMaterial shadeDirect).
   const lp = lpr.xyz.add(wgAnimDir(float(instanceIndex), uLightTime).mul(c.w));
-  // Beat-driven flare: band envelope gated by a per-beat random subset (band = index % 8).
-  const band = float(instanceIndex).div(8).fract().mul(8).add(0.5).floor().toInt();
-  const ls = uSpawn.sub(0.2).max(0).mul(0.7); // lights lag + slower than objects (LIGHT_SPAWN_*)
-  const emission = wgLightEmission(float(instanceIndex), ls, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
+  // Light's music slot for the note-on flare (light picks slot = index % 32).
+  const band = float(instanceIndex).div(32).fract().mul(32).add(0.5).floor().toInt();
+  const hostSlot = float(instanceIndex).div(lpo).floor(); // host object spawn rank
+  const emission = wgLightEmission(float(instanceIndex), hostSlot, uSpawn, uBeatTime.element(band), uBeatStrength.element(band), uMusicTime);
   const vCorner = varying(positionGeometry.xy);
   const vColor = varying(c.xyz.mul(emission));
 

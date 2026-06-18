@@ -64,14 +64,14 @@ export async function createWebGPUBackend(data) {
   const uTime = uniform(0);
   const uLightTime = uniform(0); // separate clock for the orbiting lights (toggleable)
   const uSpawn = uniform(0); // spawn-in intro clock (object scale + light reveal)
-  const beatTimeArr = new Float32Array(8);  // per-band last-beat time, set in setMusic
-  const beatStrengthArr = new Float32Array(8); // per-band last-beat strength, set in setMusic
+  const beatTimeArr = new Float32Array(32);  // per-slot last note-on time, set in setMusic
+  const beatStrengthArr = new Float32Array(32); // per-slot last note-on strength, set in setMusic
   const uBeatTime = uniformArray(beatTimeArr, 'float');   // auto-uploads each render
   const uBeatStrength = uniformArray(beatStrengthArr, 'float');
   const uMusicTime = uniform(0);
   const morph = buildMorphMesh(data, uTime, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn);
   scene.add(morph.mesh);
-  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn));
+  scene.add(buildLightSprites(data.lights, uLightTime, uBeatTime, uBeatStrength, uMusicTime, uSpawn, data.lights.length / data.objects.length));
 
   // Per-frame frustum cull. Default: CPU order-buffer culler (reliable; same result
   // + same perf as compute at these scales). ?computecull opts into the WIP fully

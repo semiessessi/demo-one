@@ -19,19 +19,9 @@ const sceneData = TEST ? generateTestScene() : generateScene({
 });
 const { objects, lights } = sceneData;
 
-// Focus the intro camera on the object that spawns first (lowest spawn slot), so it's
-// on screen from the first frame of the orbit. Mirrors spawnSlot() in shaders/lib.glsl.
-const spawnSlot = (i) => {
-  let s = ((Math.imul(i, 2654435761) >>> 0) + 12345) >>> 0;
-  s = (s ^ 2747636419) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0; s = (s ^ (s >>> 16)) >>> 0;
-  s = Math.imul(s, 2654435769) >>> 0;
-  return (s & 0x00ffffff) / 16777215;
-};
-let introIdx = 0;
-for (let i = 1; i < objects.length; i++) if (spawnSlot(i) < spawnSlot(introIdx)) introIdx = i;
-const introTarget = objects[introIdx].pos;
+// Objects are distance-sorted (closest to the origin first), so the instance index is
+// the spawn rank: index 0 spawns first and is the intro camera's focal object.
+const introTarget = objects[0].pos;
 
 // --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
 const app = document.getElementById('app');
@@ -54,36 +44,33 @@ let morphTime = 0;
 let lightTime = 0; // separate clock for the orbiting lights (advances when lightsMoving)
 let lightsMoving = true; // light orbit on by default; toggle with the ✦ button or L
 let spawnTime = 0; // intro clock (real time): objects scale in + lights ignite over it
-const SPAWN_RATE = 0.15; // spawn-clock units/s (objects in over ~8 s; lights lag + slower)
+// pdx-gfx spawn-count curve: a slow intro (5*(t/5)^1.3) then exponential DOUBLING
+// (5*2^(t-5)), normalised by object count and fed to the shader as uSpawn — so the number
+// of visible objects doubles over time. Driven by spawnTime (real seconds; resets on play).
+const SPAWN_TIMESCALE = 0.5;
+function demoSpawnCount(t) {
+  const D = 5.0, C = 5.0;
+  return t < D ? C * Math.pow(t / D, 1.3) : C * Math.pow(2.0, (t - D) / 1.0);
+}
 // Music-reactive light flares: sample the spectrum, detect a beat per band (spectral
 // flux clearly above a running average), flare that band's envelope and re-roll its
 // subset seed, then decay the envelope toward zero so the lights blink with the music
 // and go dark when it's silent.
-const N_BANDS = 8;
-const bandLevel = new Float32Array(N_BANDS); // raw FFT energy per band
-const bandPrev = new Float32Array(N_BANDS); // previous level (for flux)
-const bandAvg = new Float32Array(N_BANDS); // slow running average
-const beatGap = new Float32Array(N_BANDS); // seconds since last beat (refractory)
-const beatTime = new Float32Array(N_BANDS); // musicClock time of each band's last beat
-const beatStrength = new Float32Array(N_BANDS); // strength of each band's last beat
+const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader arrays)
+const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
+const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
+const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
-// A beat in a band re-triggers ALL of its lights at beatStrength; the shader then fades
-// each light at its own (1-of-8) rate, so they linger by different amounts. Detection is
-// per-band spectral flux relative to that band's OWN running average, so every band fires
-// regardless of absolute loudness -> every light (idx % 8) is reached over the track.
+// Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
+// channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
+// the shader then fades each light at its own rate. A light maps to a slot via idx % N_BANDS.
 function updateMusic(dt) {
   musicClock += dt;
-  audio.sampleBands(bandLevel);
+  audio.consumeNotes(slotNote);
   for (let b = 0; b < N_BANDS; b++) {
-    const e = bandLevel[b];
-    const flux = Math.max(0, e - bandPrev[b]);
-    bandPrev[b] = e;
-    bandAvg[b] += (e - bandAvg[b]) * 0.1;
-    beatGap[b] += dt;
-    if (flux > 0.012 && e > bandAvg[b] * 1.2 + 0.006 && beatGap[b] > 0.07) {
+    if (slotNote[b]) {
       beatTime[b] = musicClock;
-      beatStrength[b] = Math.min(2.5, 0.9 + e * 3.5); // flare scales with the onset's loudness
-      beatGap[b] = 0;
+      beatStrength[b] = 1.3;
     }
   }
   backend.setMusic(musicClock, beatTime, beatStrength);
@@ -203,7 +190,7 @@ if (CAPTURE) {
   backend.setLightTime(lightTime);
   playing = false;
   lightsMoving = false; // freeze the orbit so captures stay reproducible
-  backend.setSpawn(100); // fully spawned-in for deterministic captures
+  backend.setSpawn(objects.length + 5); // fully spawned-in for deterministic captures
   beatStrength.fill(1.0); // all lights fully lit (age 0) for deterministic captures
   beatTime.fill(0.0);
   backend.setMusic(0, beatTime, beatStrength);
@@ -228,7 +215,7 @@ function frame() {
   spawnTime += dt;
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
-  if (!CAPTURE) backend.setSpawn(spawnTime * SPAWN_RATE);
+  if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(spawnTime * SPAWN_TIMESCALE)));
   backend.render();
 
   // Measure real frame time.

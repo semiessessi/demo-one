@@ -75,26 +75,28 @@ class MPT extends AudioWorkletProcessor {
 		right.set(libopenmpt.HEAPF32.subarray(this.rightPtr / 4, this.rightPtr / 4 + actualFramesPerChunk))
 
 		// post progress
-		// 	openmpt_module_get_current_order
+		const order = libopenmpt._openmpt_module_get_current_order(this.modulePtr)
+		const pattern = libopenmpt._openmpt_module_get_current_pattern(this.modulePtr)
+		const row = libopenmpt._openmpt_module_get_current_row(this.modulePtr)
 
 		let msg = {
 			cmd: 'pos',
 			pos: libopenmpt._openmpt_module_get_position_seconds(this.modulePtr),
-			// pos in song
-			order: libopenmpt._openmpt_module_get_current_order(this.modulePtr),
-			pattern: libopenmpt._openmpt_module_get_current_pattern(this.modulePtr),
-			row: libopenmpt._openmpt_module_get_current_row(this.modulePtr),
-			// channel volumes
-			//chVol: [], // ch0Left, ch0Right, ch1Left, ...
+			order, pattern, row,
 		}
-		/*
-		for (let i = 0; i < this.channels; i++) {
-			msg.chVol.push( {
-				left: libopenmpt._openmpt_module_get_current_channel_vu_left(this.modulePtr, i),
-				right: libopenmpt._openmpt_module_get_current_channel_vu_right(this.modulePtr, i),
-			})
+
+		// On each new row, read the note column for every channel, so the visuals can
+		// flash on real tracker note-ons (the .it has the notes — no FFT needed).
+		// command 0 = OPENMPT_MODULE_COMMAND_NOTE.
+		if (row !== this.lastRow || pattern !== this.lastPattern) {
+			this.lastRow = row
+			this.lastPattern = pattern
+			const notes = new Array(this.numChannels | 0)
+			for (let ch = 0; ch < notes.length; ch++) {
+				notes[ch] = libopenmpt._openmpt_module_get_pattern_row_channel_command(this.modulePtr, pattern, row, ch, 0)
+			}
+			msg.notes = notes
 		}
-		*/
 
 		this.port.postMessage( msg )
 
@@ -226,6 +228,11 @@ class MPT extends AudioWorkletProcessor {
 		libopenmpt._openmpt_module_set_repeat_count(this.modulePtr, this.config.repeatCount)
 		libopenmpt._openmpt_module_set_render_param(this.modulePtr, OPENMPT_MODULE_RENDER_STEREOSEPARATION_PERCENT, this.config.stereoSeparation)
 		libopenmpt._openmpt_module_set_render_param(this.modulePtr, OPENMPT_MODULE_RENDER_INTERPOLATIONFILTER_LENGTH, this.config.interpolationFilter)
+
+		// per-channel note events: read the pattern note column on each row change
+		this.numChannels = libopenmpt._openmpt_module_get_num_channels(this.modulePtr)
+		this.lastRow = -1
+		this.lastPattern = -1
 
 		// post back tracks metadata
 		if (!paused) this.meta()
