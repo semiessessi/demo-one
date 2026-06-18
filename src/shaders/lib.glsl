@@ -58,9 +58,10 @@ vec3 animLightDir(int idx, float t) {
 float lightFadeRate(int idx) {
   return 0.5 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // ~0.5..5.7 /s -> ~2s..~0.18s
 }
-float musicFlare(int idx, float beatTime, float strength, float now) {
+float musicFlare(int idx, float beatTime, float strength, float now, float pitchFactor) {
   float age = now - beatTime;
-  return age < 0.0 ? 0.0 : strength * exp(-age * lightFadeRate(idx));
+  // pitchFactor scales the per-light rate: low-pitch (bass) notes linger, high-pitch decay fast.
+  return age < 0.0 ? 0.0 : strength * exp(-age * lightFadeRate(idx) * pitchFactor);
 }
 // Only a fraction of lights react to the music (so loud beats don't over-brighten the
 // scene); the rest never flare. Static per-light, independent of the band/rate/slot

@@ -64,6 +64,7 @@ export function createWebGLBackend({
     uBeatTime: { value: new Float32Array(32) },
     uBeatStrength: { value: new Float32Array(32) },
     uBeatSeed: { value: new Float32Array(32) },
+    uBeatDecay: { value: new Float32Array(32).fill(1) },
     uScaleNotes: { value: 0 },
     uMusicTime: { value: 0 },
     uNumSegments: { value: NUM_SEGMENTS },
@@ -108,6 +109,7 @@ export function createWebGLBackend({
     uBeatTime: uniforms.uBeatTime,
     uBeatStrength: uniforms.uBeatStrength,
     uBeatSeed: uniforms.uBeatSeed,
+    uBeatDecay: uniforms.uBeatDecay,
     uMusicTime: uniforms.uMusicTime,
     uRipple: uniforms.uRipple,
   }));
@@ -127,12 +129,13 @@ export function createWebGLBackend({
     setTime(t) { uniforms.uTime.value = t; },
     setLightTime(t) { uniforms.uLightTime.value = t; },
     setSpawn(s) { uniforms.uSpawn.value = s; },
-    setMusic(now, beatTime, strength, seed, scaleNotes) {
+    setMusic(now, beatTime, strength, seed, scaleNotes, decay) {
       uniforms.uMusicTime.value = now;
       uniforms.uBeatTime.value.set(beatTime);
       uniforms.uBeatStrength.value.set(strength);
       uniforms.uBeatSeed.value.set(seed);
       uniforms.uScaleNotes.value = scaleNotes;
+      uniforms.uBeatDecay.value.set(decay);
     },
     setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
     setMusicLevel(level) { flycam?.setMusicLevel(level); },

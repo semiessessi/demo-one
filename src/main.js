@@ -62,6 +62,8 @@ function demoSpawnCount(t) {
 // and go dark when it's silent.
 const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader arrays)
 const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
+const slotPitch = new Uint8Array(N_BANDS); // per-slot note pitch (1..120), consumed each frame
+const beatDecay = new Float32Array(N_BANDS).fill(1); // per-slot pulse-decay factor (1 = neutral)
 const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
 const beatSeed = new Float32Array(N_BANDS); // per-slot note seed; re-rolled each note -> a fresh light subset
@@ -81,20 +83,21 @@ let musicClock = 0; // ever-increasing music clock; beat timestamps live in thes
 // the shader then fades each light at its own rate. A light maps to a slot via idx % N_BANDS.
 function updateMusic(dt) {
   musicClock += dt;
-  audio.consumeNotes(slotNote);
+  audio.consumeNotes(slotNote, slotPitch);
   let notes = 0;
   for (let b = 0; b < N_BANDS; b++) {
     if (slotNote[b]) {
       beatTime[b] = musicClock;
       beatStrength[b] = 1.3;
       beatSeed[b] = ++noteCounter; // fresh seed -> a different ~12% subset of this slot flares
+      beatDecay[b] = 0.3 + slotPitch[b] / 120.0 * 1.4; // low pitch (bass) -> slower decay (longer pulse)
       notes++;
     }
   }
   scaleNotes += notes;
   scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
   for (let n = 0; n < notes; n++) morphState.onNote(musicClock); // each note steps ~5% of shapes
-  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase);
+  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase, beatDecay);
   musicLevel = Math.min(1, musicLevel * Math.exp(-dt / 0.4) + notes * 0.25); // busy = loud, calm ~ 0
   backend.setMusicLevel(musicLevel);
   // Loud beat (high note density), throttled to ~the beat rate -> a new ripple. Off in calm patches.
@@ -146,6 +149,7 @@ function setPlaying(next) {
     scaleNotes = 0;
     scalePhase = 0;
     musicLevel = 0;
+    beatDecay.fill(1);
     rippleData.fill(0);
     lastRippleTime = -1;
     morphState.reset();
@@ -254,7 +258,7 @@ if (CAPTURE) {
   beatStrength.fill(1.0); // age 0 (lit); the per-note subset (fixed seed 0) stays deterministic
   beatTime.fill(0.0);
   beatSeed.fill(0.0);
-  backend.setMusic(0, beatTime, beatStrength, beatSeed, 0); // scaleNotes=0 -> static per-object scale
+  backend.setMusic(0, beatTime, beatStrength, beatSeed, 0, beatDecay); // scaleNotes=0 -> static per-object scale
   for (const id of ['controls', 'info', 'toast', 'stats']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';

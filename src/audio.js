@@ -25,6 +25,7 @@ export function createAudioManager() {
   let volume = DEFAULT_VOLUME;
   const N_SLOTS = 32; // light "bands": tracker channels are folded into this many slots
   const noteFlags = new Uint8Array(N_SLOTS); // pending note-ons per slot (set on note, cleared on consume)
+  const notePitch = new Uint8Array(N_SLOTS); // last note pitch (1..120) per slot -> drives pulse decay
   let noteShift = 0; // rotates the channel->slot map each row so every slot cycles even with few tracks
 
   // Fetch the ~3.9 MB module up front (while the info pane is on screen) so the
@@ -68,7 +69,7 @@ export function createAudioManager() {
         const notes = d.notes;
         for (let c = 0; c < notes.length; c++) {
           const note = notes[c];
-          if (note > 0 && note < 254) noteFlags[(c + noteShift) % N_SLOTS] = 1; // real note-on -> rotated slot
+          if (note > 0 && note < 254) { const s = (c + noteShift) % N_SLOTS; noteFlags[s] = 1; notePitch[s] = note; } // real note-on
         }
       });
       player.onError((err) => console.warn('[audio] chiptune error', err));
@@ -164,9 +165,10 @@ export function createAudioManager() {
 
   // Copy the pending per-slot note-on flags into `out` (1 = a note fired in that slot
   // since the last call) and clear them, so each note-on triggers exactly one flash.
-  function consumeNotes(out) {
+  function consumeNotes(out, outPitch) {
     for (let i = 0; i < out.length; i++) {
       out[i] = i < noteFlags.length ? noteFlags[i] : 0;
+      if (outPitch) outPitch[i] = i < notePitch.length ? notePitch[i] : 0;
       if (i < noteFlags.length) noteFlags[i] = 0;
     }
     return out;

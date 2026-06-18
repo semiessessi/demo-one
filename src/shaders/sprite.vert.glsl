@@ -15,6 +15,7 @@ uniform float uLightsPerObject; // lights per object, to map a light to its host
 uniform float uBeatTime[32];     // per-slot last note-on time (uMusicTime units)
 uniform float uBeatStrength[32]; // per-slot last note-on strength
 uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of lights per note
+uniform float uBeatDecay[32];    // per-slot pulse-decay factor (from note pitch; 1 = neutral)
 uniform float uMusicTime;       // music clock for the beat timestamps
 uniform vec4 uRipple[4];         // brightness ripples: (centre.xyz, startTime)
 
@@ -36,7 +37,7 @@ void main() {
   float hostSlot = floor(float(gl_InstanceID) / uLightsPerObject); // this light's host object rank
   // Dark until the host spawns, then flash only on notes — fresh ~MUSIC_FRAC subset per note.
   float emission = step(hostSlot, uSpawn)
-                 * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime)
+                 * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band])
                  * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
   emission += step(hostSlot, uSpawn) * ripplePulse(lightPos, uRipple, uMusicTime); // ride the brightness wave
 
