@@ -20,6 +20,7 @@ import { buildLightSprites } from '../lightSprites.js';
 import { buildNormScaleLUT } from '../normalize.js';
 import { MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
+import { createInstanceCuller } from '../cpuCull.js';
 
 // The original WebGL2 path (RawShaderMaterials + DataTextures + EffectComposer),
 // behind the common backend interface: { name, domElement, camera, setTime,
@@ -84,8 +85,9 @@ export function createWebGLBackend({
 
   const geometry = buildUnifiedGeometry();
   setInstanceAttributes(geometry, objects);
+  const culler = createInstanceCuller(geometry, objects); // CPU frustum cull + compact
   const mesh = new THREE.Mesh(geometry, buildMorphMaterial(uniforms));
-  mesh.frustumCulled = false; // instances span the whole volume
+  mesh.frustumCulled = false; // we cull per-instance ourselves
   scene.add(mesh);
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
@@ -135,6 +137,7 @@ export function createWebGLBackend({
     },
     render() {
       if (flycam) flycam.update(camera);
+      culler.cull(camera); // frustum-cull + compact the instances for this view
       composer.render();
     },
   };

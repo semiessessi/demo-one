@@ -13,6 +13,7 @@ in vec4 aMisc;        // spinSpeed, scale, phaseOffset, _
 in vec3 aColor;
 in vec4 aMaterial;    // rough, metal, lightOffset, lightCount
 in vec4 aLists;       // shadowOffset, shadowCount, reflOffset, reflCount
+in float aOrigIndex;  // original instance id (stable under frustum compaction)
 
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
@@ -34,7 +35,7 @@ flat out int vReflCount;
 
 void main() {
   float spinSpeed = aMisc.x;
-  float scale = aMisc.y * spawnReveal(spawnSlot(gl_InstanceID), uSpawn); // scale in over the intro
+  float scale = aMisc.y * spawnReveal(spawnSlot(int(aOrigIndex + 0.5)), uSpawn); // scale in over the intro
   float phaseOffset = aMisc.z;
   float morphSpeed = aMisc.w;
 
