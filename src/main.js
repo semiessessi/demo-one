@@ -57,32 +57,20 @@ function demoSpawnCount(t) {
 // subset seed, then decay the envelope toward zero so the lights blink with the music
 // and go dark when it's silent.
 const N_BANDS = 8;
-const bandLevel = new Float32Array(N_BANDS); // raw FFT energy per band
-const bandPeak = new Float32Array(N_BANDS); // decaying peak follower per band
-const armed = new Uint8Array(N_BANDS).fill(1); // hysteresis: ready to fire the next beat
-const beatGap = new Float32Array(N_BANDS); // seconds since last beat (short refractory)
-const beatTime = new Float32Array(N_BANDS); // musicClock time of each band's last beat
-const beatStrength = new Float32Array(N_BANDS); // strength of each band's last beat
+const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
+const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
+const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
-// Per-band beat detection via a peak follower + hysteresis: fire when a band rises past
-// 55% of its (slowly decaying) recent peak, then re-arm once it drops below 30%. Unlike a
-// running-average flux test, this keeps firing on a *steady* repetitive beat (an average
-// just adapts to it and goes quiet) and catches notes across the bands -> "flash flash
-// flash". Each beat re-fires that band's lights; the shader fades each at its own rate.
+// Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
+// channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
+// the shader then fades each light at its own rate. A light maps to a slot via idx % N_BANDS.
 function updateMusic(dt) {
   musicClock += dt;
-  audio.sampleBands(bandLevel);
+  audio.consumeNotes(slotNote);
   for (let b = 0; b < N_BANDS; b++) {
-    const e = bandLevel[b];
-    bandPeak[b] = Math.max(e, bandPeak[b] * Math.exp(-dt / 0.6));
-    beatGap[b] += dt;
-    if (armed[b] && beatGap[b] > 0.05 && e >= Math.max(0.03, bandPeak[b] * 0.45)) {
+    if (slotNote[b]) {
       beatTime[b] = musicClock;
-      beatStrength[b] = Math.min(1.4, 0.4 + e * 1.6); // dimmer per beat now that ALL lights flare
-      armed[b] = 0;
-      beatGap[b] = 0;
-    } else if (e <= bandPeak[b] * 0.25) {
-      armed[b] = 1; // dropped back down -> ready for the next hit
+      beatStrength[b] = 1.3;
     }
   }
   backend.setMusic(musicClock, beatTime, beatStrength);

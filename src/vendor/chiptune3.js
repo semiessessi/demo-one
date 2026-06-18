@@ -77,6 +77,10 @@ export class ChiptuneJsPlayer {
 				this.order = msg.data.order
 				this.pattern = msg.data.pattern
 				this.row = msg.data.row
+				if (msg.data.notes) {
+					this.rowNotes = msg.data.notes
+					this.fireEvent('onRow', msg.data)
+				}
 				this.fireEvent('onProgress', msg.data)
 				break
 			case 'end':
@@ -110,6 +114,7 @@ export class ChiptuneJsPlayer {
 	onError(handler) { this.addHandler('onError', handler) }
 	onMetadata(handler) { this.addHandler('onMetadata', handler) }
 	onProgress(handler) { this.addHandler('onProgress', handler) }
+	onRow(handler) { this.addHandler('onRow', handler) }
 	onFullAudioData(handler) { this.addHandler('onFullAudioData', handler) }
 
 	// methods
