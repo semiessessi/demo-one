@@ -37,6 +37,10 @@ export function createMorphState(count) {
       p[i] = s; p0[i] = s; target[i] = s; t0[i] = 0; animating[i] = 0;
       dir[i] = init() < 0.5 ? 1 : -1;
     }
+    // The hero (object 0, the focal object the camera opens on) starts as a dodecahedron: p=8
+    // in the journey (midToDodecaSegment ends at 8). Override after the seeding loop so the RNG
+    // sequence for every other object is unchanged (capture stays deterministic).
+    if (count > 0) { p[0] = 8; p0[0] = 8; target[0] = 8; }
   }
   reset();
 
