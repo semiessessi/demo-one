@@ -36,8 +36,14 @@ float falloff(float dist, float radius) {
   return a * a / (dist * dist + 1.0);
 }
 
+// Dark "night" environment (kept in sync with sky.js).
 vec3 environment(vec3 d) {
-  return mix(vec3(0.010, 0.012, 0.020), vec3(0.05, 0.07, 0.10), 0.5 + 0.5 * d.y);
+  float t = d.y * 0.5 + 0.5;
+  vec3 lower = vec3(0.008, 0.009, 0.013);
+  vec3 horizon = vec3(0.045, 0.050, 0.065);
+  vec3 upper = vec3(0.015, 0.022, 0.045);
+  return mix(mix(lower, horizon, smoothstep(0.0, 0.5, t)),
+             upper, smoothstep(0.5, 1.0, t));
 }
 
 vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist) {

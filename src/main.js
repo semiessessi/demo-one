@@ -18,6 +18,7 @@ import {
 } from './instancedMorph.js';
 import { buildLightSprites } from './lightSprites.js';
 import { buildNormScaleLUT } from './normalize.js';
+import { buildSky } from './sky.js';
 
 // --- Renderer / scene / camera --------------------------------------------
 const app = document.getElementById('app');
@@ -26,10 +27,11 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x050505, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.85;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+scene.add(buildSky());
 const camera = new THREE.PerspectiveCamera(
   50,
   window.innerWidth / window.innerHeight,
@@ -89,9 +91,9 @@ const composer = new EffectComposer(renderer); // half-float render targets
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  TEST ? 0.15 : 0.6, // strength (gentler in the shadow test)
+  TEST ? 0.25 : 0.5, // strength
   0.5, // radius
-  TEST ? 0.9 : 0.7, // luminance threshold (HDR)
+  1.0, // luminance threshold: only HDR > 1 blooms (bright sprite cores), not lit objects
 );
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
@@ -125,6 +127,12 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
+  }
+  if (e.key === 't' || e.key === 'T') {
+    const u = new URL(location.href);
+    if (u.searchParams.has('test')) u.searchParams.delete('test');
+    else u.searchParams.set('test', '');
+    location.href = u.toString(); // reload into/out of the test scene
   }
 });
 

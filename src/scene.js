@@ -95,7 +95,7 @@ export function generateScene() {
       const u = randUnitVec();
       const r = 1.3 * Math.cbrt(rng());
       const rgb = hslToRgb(rng(), 0.8, 0.55);
-      const intensity = rand(0.3, 0.7);
+      const intensity = rand(0.12, 0.35);
       lights.push({
         pos: [pos[0] + u[0] * r, pos[1] + u[1] * r, pos[2] + u[2] * r],
         color: [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity],

@@ -21,5 +21,5 @@ void main() {
   float whiteHot = core * clamp(0.4 + 0.8 * bright, 0.0, 1.0);
   vec3 col = mix(hue, vec3(1.0), whiteHot) * intensity;
 
-  fragColor = vec4(col, 1.0);
+  fragColor = vec4(col * 2.5, 1.0); // HDR so bright cores bloom
 }
