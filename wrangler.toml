@@ -1,5 +1,6 @@
 name = "demo-one"
 compatibility_date = "2026-06-01"
+workers_dev = true
 
 # Static-assets-only Worker: serves the Vite build output (dist/).
 [assets]
