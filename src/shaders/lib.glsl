@@ -47,7 +47,7 @@ vec3 animLightDir(int idx, float t) {
   return dir;
 }
 
-// Music-reactive flare: each light maps to a frequency band (index % 8). A beat in
+// Music-reactive flare: each light maps to a slot (index % 32). A beat in
 // that band re-triggers all of its lights (uBeatTime/uBeatStrength record the band's
 // last beat); each light then fades at one of 8 pseudo-random per-light rates, so some
 // linger far longer than others. Returns the raw flare; the caller folds it into the

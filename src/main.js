@@ -56,7 +56,7 @@ function demoSpawnCount(t) {
 // flux clearly above a running average), flare that band's envelope and re-roll its
 // subset seed, then decay the envelope toward zero so the lights blink with the music
 // and go dark when it's silent.
-const N_BANDS = 8;
+const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader arrays)
 const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
 const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on

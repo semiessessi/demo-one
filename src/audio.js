@@ -23,8 +23,9 @@ export function createAudioManager() {
   let muted = false;
   let failed = false; // audio unavailable — degrade silently
   let volume = DEFAULT_VOLUME;
-  const N_SLOTS = 8; // light "bands": tracker channels are folded into this many slots
+  const N_SLOTS = 32; // light "bands": tracker channels are folded into this many slots
   const noteFlags = new Uint8Array(N_SLOTS); // pending note-ons per slot (set on note, cleared on consume)
+  let noteShift = 0; // rotates the channel->slot map each row so every slot cycles even with few tracks
 
   // Fetch the ~3.9 MB module up front (while the info pane is on screen) so the
   // first play starts immediately rather than waiting on the download.
@@ -63,10 +64,11 @@ export function createAudioManager() {
       // per channel on each row and posts it here; fold those channels into N_SLOTS slots.
       player.onRow((d) => {
         if (muted || paused) return;
+        noteShift = (noteShift + 1) % N_SLOTS; // advance the rotation each row
         const notes = d.notes;
         for (let c = 0; c < notes.length; c++) {
           const note = notes[c];
-          if (note > 0 && note < 254) noteFlags[c % N_SLOTS] = 1; // a real note-on (not off/cut/empty)
+          if (note > 0 && note < 254) noteFlags[(c + noteShift) % N_SLOTS] = 1; // real note-on -> rotated slot
         }
       });
       player.onError((err) => console.warn('[audio] chiptune error', err));

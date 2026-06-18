@@ -18,8 +18,8 @@ uniform float uTime;
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
-uniform float uBeatTime[8];     // per-band timestamp (uMusicTime units) of the last beat
-uniform float uBeatStrength[8]; // per-band strength of the last beat; light picks band = idx % 8
+uniform float uBeatTime[32];     // per-slot time (uMusicTime units) of the last note-on
+uniform float uBeatStrength[32]; // per-slot note-on strength; light picks slot = idx % 32
 uniform float uMusicTime;       // music clock the beat timestamps are measured in
 uniform float uNumSegments;
 uniform float uNormScale[128];
@@ -166,7 +166,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     float lum = max(colRad.r, max(colRad.g, colRad.b));
     // skip lights that can't contribute: back-facing, out of radius, or dark
     if (dot(N, L) <= 0.0 || fall <= 1e-6 || lum <= 0.0) continue;
-    int band = idx % 8;
+    int band = idx % 32;
     float hostSlot = floor(float(idx) / uLightsPerObject); // this light's host object rank
     float emission = (spawnIgnite(hostSlot, uSpawn) // sharp flash-in when the host spawns
                    + step(hostSlot, uSpawn) * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime))
