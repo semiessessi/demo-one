@@ -290,13 +290,29 @@ let statsAcc = 0;
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
 // lil-gui is dynamically imported, so end users off localhost never download it.
 const debugState = { geometry: true, sprites: true };
+const cloudParams = { ...backend.cloudDefaults }; // seeded from the backend's defaults
 let debugGui = null;
 const syncDebugGui = () => debugGui?.controllersRecursive().forEach((c) => c.updateDisplay());
 if (isLocalhost) {
+  window.__backend = backend; // dev hook: drive the camera + cloud params from the console
   const { GUI } = await import('lil-gui');
   debugGui = new GUI({ title: 'debug' });
   debugGui.add(debugState, 'geometry').name('geometry (g)').onChange((v) => backend.setGeometryVisible(v));
   debugGui.add(debugState, 'sprites').name('light sprites (b)').onChange((v) => backend.setSpritesVisible(v));
+  const applyClouds = () => backend.setClouds(cloudParams);
+  const cf = debugGui.addFolder('clouds');
+  cf.add(cloudParams, 'cloudsOn').name('clouds (c)').onChange(applyClouds);
+  cf.add(cloudParams, 'coverage', 0, 1, 0.01).onChange(applyClouds);
+  cf.add(cloudParams, 'density', 0, 3, 0.01).onChange(applyClouds);
+  cf.add(cloudParams, 'base', 0, 110, 1).name('base height').onChange(applyClouds);
+  cf.add(cloudParams, 'thick', 1, 45, 1).name('thickness').onChange(applyClouds);
+  cf.add(cloudParams, 'noiseScale', 0.01, 0.15, 0.001).name('noise scale').onChange(applyClouds);
+  cf.add(cloudParams, 'windX', -3, 3, 0.05).name('wind x').onChange(applyClouds);
+  cf.add(cloudParams, 'windZ', -3, 3, 0.05).name('wind z').onChange(applyClouds);
+  cf.add(cloudParams, 'quality', 8, 120, 1).name('quality (steps)').onChange(applyClouds);
+  const vf = debugGui.addFolder('vortex');
+  vf.add(cloudParams, 'vortex', 0, 1, 0.01).name('amount').onChange(applyClouds);
+  vf.add(cloudParams, 'twist', 0, 0.2, 0.005).name('twist / height').onChange(applyClouds);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -334,6 +350,11 @@ window.addEventListener('keydown', (e) => {
   if (isLocalhost && (e.key === 'b' || e.key === 'B')) {
     debugState.sprites = !debugState.sprites;
     backend.setSpritesVisible(debugState.sprites);
+    syncDebugGui();
+  }
+  if (isLocalhost && (e.key === 'c' || e.key === 'C')) {
+    cloudParams.cloudsOn = !cloudParams.cloudsOn;
+    backend.setClouds(cloudParams);
     syncDebugGui();
   }
 });

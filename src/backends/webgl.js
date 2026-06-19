@@ -37,7 +37,6 @@ export function createWebGLBackend({
   renderer.toneMappingExposure = 0.85;
 
   const scene = new THREE.Scene();
-  scene.add(buildSky());
   const camera = new THREE.PerspectiveCamera(
     50, window.innerWidth / window.innerHeight, 0.1, 300,
   );
@@ -55,6 +54,13 @@ export function createWebGLBackend({
   const occXf = buildOccluderTransforms(objects);
   // Per-object morph position (CPU note-stepped), uploaded each frame via setMorph.
   const morphPTex = floatTexture(new Float32Array(objects.length), objects.length, 1);
+
+  // Volumetric-cloud defaults: single source for both the uniforms below and the
+  // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
+  const cloudDefaults = {
+    cloudsOn: true, coverage: 0.5, density: 0.9, base: 50, thick: 12,
+    noiseScale: 0.05, windX: 0.4, windZ: 0.15, vortex: 0, twist: 0.06, quality: 48,
+  };
 
   const uniforms = {
     uTime: { value: 0 },
@@ -92,6 +98,17 @@ export function createWebGLBackend({
     uMorphPTexW: { value: morphPTex.width },
     uRipple: { value: new Float32Array(16) }, // 4 ripples x (centre.xyz, startTime)
     uThudTime: { value: -1000 }, // last beat time, for the early "thud" pulse
+    // Volumetric clouds (shared by the sky dome + the reflection sky-miss path).
+    uCloudsOn: { value: cloudDefaults.cloudsOn ? 1 : 0 },
+    uCoverage: { value: cloudDefaults.coverage },
+    uCloudDensity: { value: cloudDefaults.density },
+    uCloudBase: { value: cloudDefaults.base },
+    uCloudThick: { value: cloudDefaults.thick },
+    uCloudNoiseScale: { value: cloudDefaults.noiseScale },
+    uCloudWind: { value: new THREE.Vector3(cloudDefaults.windX, 0, cloudDefaults.windZ) },
+    uVortex: { value: cloudDefaults.vortex },
+    uVortexTwist: { value: cloudDefaults.twist },
+    uCloudSteps: { value: cloudDefaults.quality },
   };
 
   const geometry = buildUnifiedGeometry();
@@ -116,6 +133,21 @@ export function createWebGLBackend({
     uThudTime: uniforms.uThudTime,
   });
   scene.add(spritesMesh);
+  // Skydome (+ raymarched clouds). Shares uTime + the cloud uniforms with the morph
+  // material so the sky and the clouds reflected by objects stay identical.
+  scene.add(buildSky({
+    uTime: uniforms.uTime,
+    uCloudsOn: uniforms.uCloudsOn,
+    uCoverage: uniforms.uCoverage,
+    uCloudDensity: uniforms.uCloudDensity,
+    uCloudBase: uniforms.uCloudBase,
+    uCloudThick: uniforms.uCloudThick,
+    uCloudNoiseScale: uniforms.uCloudNoiseScale,
+    uCloudWind: uniforms.uCloudWind,
+    uVortex: uniforms.uVortex,
+    uVortexTwist: uniforms.uVortexTwist,
+    uCloudSteps: uniforms.uCloudSteps,
+  }));
 
   const composer = new EffectComposer(renderer); // half-float render targets
   composer.addPass(new RenderPass(scene, camera));
@@ -146,6 +178,19 @@ export function createWebGLBackend({
     setRipples(data) { uniforms.uRipple.value.set(data); },
     setGeometryVisible(v) { mesh.visible = v; },       // localhost debug toggle
     setSpritesVisible(v) { spritesMesh.visible = v; }, // localhost debug toggle
+    cloudDefaults,
+    setClouds(p) {
+      uniforms.uCloudsOn.value = p.cloudsOn ? 1 : 0;
+      uniforms.uCoverage.value = p.coverage;
+      uniforms.uCloudDensity.value = p.density;
+      uniforms.uCloudBase.value = p.base;
+      uniforms.uCloudThick.value = p.thick;
+      uniforms.uCloudNoiseScale.value = p.noiseScale;
+      uniforms.uCloudWind.value.set(p.windX, 0, p.windZ);
+      uniforms.uVortex.value = p.vortex;
+      uniforms.uVortexTwist.value = p.twist;
+      uniforms.uCloudSteps.value = p.quality;
+    },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose
