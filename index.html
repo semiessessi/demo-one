@@ -248,6 +248,20 @@
         opacity: 0;
         pointer-events: none;
       }
+
+      /* Fade-up from black on load — covers the bundle load + scene build + first frame. */
+      #fade {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: #050505;
+        opacity: 1;
+        pointer-events: none;
+        transition: opacity 1.1s ease;
+      }
+      #fade.gone {
+        opacity: 0;
+      }
     </style>
   </head>
   <body>
@@ -296,6 +310,7 @@
     </aside>
     <div id="toast"><span>Press <kbd>Tab</kbd> for controls</span></div>
     <div id="start" class="hidden">&#128266;&nbsp; click anywhere for sound</div>
+    <div id="fade"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

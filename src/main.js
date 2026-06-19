@@ -14,10 +14,23 @@ const CAPTURE = params.has('capture');
 // Scale knobs for stress testing: ?objects=N (&lpo=N for lights per object).
 const objectsParam = parseInt(params.get('objects'), 10);
 const lpoParam = parseInt(params.get('lpo'), 10);
-const sceneData = TEST ? generateTestScene() : generateScene({
+const genOpts = {
   targetObjects: Number.isFinite(objectsParam) ? objectsParam : undefined,
   lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : undefined,
-});
+};
+// Heavy scene generation runs off the main thread (mirrors sampleDurations.worker.js) so the
+// fade-up stays smooth and the tab never locks while ~5000 objects + their light/occluder/
+// reflection lists are built. TEST/CAPTURE stay synchronous (small / deterministic baselines).
+function runSceneWorker(opts) {
+  return new Promise((resolve) => {
+    const w = new Worker(new URL('./sceneGen.worker.js', import.meta.url), { type: 'module' });
+    w.onmessage = (e) => { w.terminate(); resolve(e.data); };
+    w.postMessage(opts);
+  });
+}
+const sceneData = TEST ? generateTestScene()
+  : CAPTURE ? generateScene(genOpts)
+  : await runSceneWorker(genOpts);
 const { objects, lights } = sceneData;
 // Note-stepped morph: per-object position walks the journey sequence on the music (CPU
 // state); the current p per object is uploaded to the shaders each frame via setMorph.
@@ -31,6 +44,14 @@ const introTarget = objects[0].pos;
 const app = document.getElementById('app');
 const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
 app.appendChild(backend.domElement);
+
+// Fade up from black once the first frame is on screen — covers the bundle load + scene
+// build + first render. The demo autostarts visually, so this just reveals it cleanly.
+const fadeEl = document.getElementById('fade');
+let revealed = false;
+function reveal() { if (revealed) return; revealed = true; fadeEl?.classList.add('gone'); }
+if (CAPTURE) { fadeEl?.style.setProperty('transition', 'none'); reveal(); } // no fade for deterministic captures
+else setTimeout(reveal, 6000); // safety fallback if a frame never lands
 
 if (TEST) backend.setView({ position: [4, 3.5, 9], target: [0, -1, 0] });
 
@@ -362,6 +383,7 @@ function frame() {
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
   if (startEl) startEl.classList.toggle('hidden', !playing || audio.isRunning); // prompt only if audio is blocked
   backend.render();
+  reveal(); // first frame is on screen — start the fade-up from black
 
   // Measure real frame time.
   emaMs = emaMs * 0.9 + (t - lastNow) * 0.1;
