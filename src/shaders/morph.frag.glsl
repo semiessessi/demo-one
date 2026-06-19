@@ -95,6 +95,10 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
 #define SH_NONE 0
 #define SH_CUBE 1
 #define SH_OCTA 2
+#define SH_TETRA 3
+#define SH_RHDOD 4
+#define SH_DODECA 5
+#define SH_ICOSA 6
 
 // One slab |dot(n,x)| <= d (n unit): fold into the running entry(max)/exit(min) interval.
 void slab(vec3 n, vec3 roL, vec3 rdL, float d, inout float tEnter, inout float tExit, inout vec3 enterN) {
@@ -106,6 +110,16 @@ void slab(vec3 n, vec3 roL, vec3 rdL, float d, inout float tEnter, inout float t
   float near = min(ta, tb), far = max(ta, tb);
   if (near > tEnter) { tEnter = near; enterN = (ta < tb) ? n : -n; }
   tExit = min(tExit, far);
+}
+
+// One outward half-space dot(n,x) <= d (n unit): for non-centrally-symmetric solids (tetra).
+void halfspace(vec3 n, vec3 roL, vec3 rdL, float d, inout float tEnter, inout float tExit, inout vec3 enterN) {
+  float denom = dot(n, rdL);
+  float num = d - dot(n, roL);
+  if (abs(denom) < 1e-9) { if (num < 0.0) tExit = -1e9; return; } // parallel + outside -> miss
+  float th = num / denom;
+  if (denom < 0.0) { if (th > tEnter) { tEnter = th; enterN = n; } }
+  else tExit = min(tExit, th);
 }
 
 // Axis-aligned cube, half-extent h (= inradius): branchless 3-slab (pdx-gfx BoxTrace).
@@ -123,9 +137,13 @@ void boxTrace(vec3 roL, vec3 rdL, float h, inout float tEnter, inout float tExit
 
 // Journey p -> exact shape (fixed by the morph sequence in journey.js).
 int shapeAtP(int pInt) {
-  if (pInt == 3) return SH_CUBE;           // p3 = cube
-  if (pInt == 1 || pInt == 5) return SH_OCTA; // p1, p5 = octahedron
-  return SH_NONE;                          // others: fall back to the plane march
+  if (pInt == 0) return SH_TETRA;               // p0 = tetrahedron
+  if (pInt == 1 || pInt == 5) return SH_OCTA;   // p1, p5 = octahedron
+  if (pInt == 2 || pInt == 4) return SH_RHDOD;  // p2, p4 = rhombic dodecahedron
+  if (pInt == 3) return SH_CUBE;                // p3 = cube
+  if (pInt == 6 || pInt == 10) return SH_ICOSA; // p6, p10 = icosahedron
+  if (pInt == 8) return SH_DODECA;              // p8 = dodecahedron
+  return SH_NONE; // p7, p9 (rhombic triacontahedron) + active morphs: plane march
 }
 
 // Convex-hull trace of occluder `oi` against a world ray. Rebuilds the occluder's
@@ -172,12 +190,43 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
     float aEnter = -1e9, aExit = 1e9; vec3 aN = vec3(0.0);
     if (shapeType == SH_CUBE) {
       boxTrace(roL, rdL, d, aEnter, aExit, aN);
-    } else { // SH_OCTA: 4 diagonal slabs (the octahedron's 8 faces are 4 antipodal pairs)
+    } else if (shapeType == SH_OCTA) { // 8 faces = 4 antipodal pairs (cube diagonals)
       float k = inversesqrt(3.0);
       slab(vec3(1.0, 1.0, 1.0) * k, roL, rdL, d, aEnter, aExit, aN);
       slab(vec3(1.0, 1.0, -1.0) * k, roL, rdL, d, aEnter, aExit, aN);
       slab(vec3(1.0, -1.0, 1.0) * k, roL, rdL, d, aEnter, aExit, aN);
       slab(vec3(1.0, -1.0, -1.0) * k, roL, rdL, d, aEnter, aExit, aN);
+    } else if (shapeType == SH_TETRA) { // 4 faces, not centrally symmetric -> 4 half-spaces
+      halfspace(vec3(0.47140, 0.33333, 0.81650), roL, rdL, d, aEnter, aExit, aN);
+      halfspace(vec3(0.94281, -0.33333, 0.0), roL, rdL, d, aEnter, aExit, aN);
+      halfspace(vec3(0.47140, 0.33333, -0.81650), roL, rdL, d, aEnter, aExit, aN);
+      halfspace(vec3(0.0, 1.0, 0.0), roL, rdL, d, aEnter, aExit, aN);
+    } else if (shapeType == SH_RHDOD) { // 12 rhombic faces = 6 antipodal pairs (<110>)
+      float k = inversesqrt(2.0);
+      slab(vec3(0.0, 1.0, 1.0) * k, roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.0, 1.0, -1.0) * k, roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(1.0, 0.0, 1.0) * k, roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(1.0, 0.0, -1.0) * k, roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(1.0, 1.0, 0.0) * k, roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(1.0, -1.0, 0.0) * k, roL, rdL, d, aEnter, aExit, aN);
+    } else if (shapeType == SH_DODECA) { // 12 faces = 6 antipodal pairs
+      slab(vec3(0.0, 0.52573, 0.85065), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.85065, 0.0, 0.52573), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.52573, 0.85065, 0.0), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.85065, 0.0, -0.52573), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.0, 0.52573, -0.85065), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.52573, -0.85065, 0.0), roL, rdL, d, aEnter, aExit, aN);
+    } else { // SH_ICOSA: 20 faces = 10 antipodal pairs
+      slab(vec3(0.57735, 0.57735, 0.57735), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.35682, 0.0, 0.93417), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.0, 0.93417, 0.35682), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.35682, 0.0, -0.93417), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.57735, -0.57735, -0.57735), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.93417, 0.35682, 0.0), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.57735, -0.57735, 0.57735), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.93417, -0.35682, 0.0), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.57735, 0.57735, -0.57735), roL, rdL, d, aEnter, aExit, aN);
+      slab(vec3(0.0, 0.93417, -0.35682), roL, rdL, d, aEnter, aExit, aN);
     }
     if (aEnter <= aExit && aExit > 1e-4) { tHit = aEnter; nW = qrot(q, aN); return true; }
     return false;
