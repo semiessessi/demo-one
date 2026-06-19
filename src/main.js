@@ -172,7 +172,7 @@ function updateMusic(dt) {
   musicLevel = Math.min(1, musicLevel * Math.exp(-dt / 0.4) + notes * 0.25); // busy = loud, calm ~ 0
   backend.setMusicLevel(musicLevel);
   // Loud beat (high note density), throttled to ~the beat rate -> a new ripple. Off in calm patches.
-  if (musicLevel > 0.5 && notes > 0 && musicClock - lastRippleTime > 0.35) {
+  if (musicClock >= 35.0 && musicLevel > 0.5 && notes > 0 && musicClock - lastRippleTime > 0.35) { // hold the expanding-sphere waves until 35s in
     rippleData[rippleHead * 4 + 0] = (Math.random() * 2 - 1) * rippleR;
     rippleData[rippleHead * 4 + 1] = (Math.random() * 2 - 1) * rippleR * 0.5;
     rippleData[rippleHead * 4 + 2] = (Math.random() * 2 - 1) * rippleR;

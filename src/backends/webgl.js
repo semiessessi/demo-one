@@ -62,7 +62,7 @@ export function createWebGLBackend({
     noiseScale: 0.05, windX: 0.4, windZ: 0.15, vortex: 0, twist: 0.06, quality: 48,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
-  const lookDefaults = { lightScale: 0.4, ampGain: 3.0, bloom: test ? 0.25 : 0.35 };
+  const lookDefaults = { lightScale: 0.4, ampGain: 6.0, bloom: test ? 0.25 : 0.35 };
 
   const uniforms = {
     uTime: { value: 0 },
