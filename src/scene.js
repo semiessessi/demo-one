@@ -43,7 +43,7 @@ function makeRng(seed) {
 export function generateScene(opts = {}) {
   const targetObjects = opts.targetObjects ?? TARGET_OBJECTS;
   const lightsPerObject = opts.lightsPerObject ?? LIGHTS_PER_OBJECT;
-  const volume = VOLUME * Math.cbrt(targetObjects / 200); // VOLUME (22) was tuned at 200 objects
+  const volume = VOLUME * Math.cbrt(targetObjects / 200) * 1.24; // x1.24 so the inscribed SPHERE holds the count
 
   const rng = makeRng(SEED);
   const rand = (a, b) => a + rng() * (b - a);
@@ -106,6 +106,7 @@ export function generateScene(opts = {}) {
     const scale = rand(SCALE_MIN, SCALE_MAX);
     const radius = MAX_NORM_CIRCUMRADIUS * scale;
     const pos = [rand(-half, half), rand(-half, half), rand(-half, half)];
+    if (pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2] > half * half) continue; // fill a SPHERE, not a cube
     const cx = gco(pos[0]), cy = gco(pos[1]), cz = gco(pos[2]);
 
     let ok = true;
@@ -203,7 +204,7 @@ export function generateScene(opts = {}) {
   const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
     objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
-  return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
+  return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR: half };
 }
 
 // A minimal scene to verify shadows: one light and two objects (one big, one

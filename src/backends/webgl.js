@@ -27,7 +27,7 @@ import { createInstanceCuller } from '../cpuCull.js';
 // behind the common backend interface: { name, domElement, camera, setTime,
 // setSize, render }.
 export function createWebGLBackend({
-  objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget,
+  objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
 }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio); // native resolution (no cap)
@@ -46,7 +46,7 @@ export function createWebGLBackend({
   // Shared fly camera (three-instance-agnostic). Null in capture mode, where setView
   // pins the camera for deterministic frames. Main scene runs the orbit intro; the
   // test scene starts in free flight from its setView preset (introTarget = null).
-  const flycam = capture ? null : createFlyCam(renderer.domElement, test ? null : introTarget);
+  const flycam = capture ? null : createFlyCam(renderer.domElement, test ? null : introTarget, sphereR);
 
   const lightTex = buildLightTextures(lights, lightIndices);
   const occTex = buildOccluderTextures(objects, occluderIndices);

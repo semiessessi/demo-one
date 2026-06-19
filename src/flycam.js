@@ -18,9 +18,15 @@ const FLY_MIN_FRAC = 0.18; // floor on fly speed (fraction of FLY_SPEED) so it n
 // Climax choreography (seconds since play, ~= music time): go faster + harder with spinning
 // barrel rolls between CLIMAX_START and CLIMAX_END, then decelerate to a level stop.
 const CLIMAX_START = 58.0;
-const CLIMAX_END = 85.0;
-const CLIMAX_SPEED_MULT = 3.0; // peak fly-speed multiplier during the climax
-const ROLL_SPEED = 1.2;        // peak barrel-roll rate (rad/s) -> a few full rolls over the climax
+const CLIMAX_END = 77.0;        // rolls end as the scripted finale begins
+const CLIMAX_SPEED_MULT = 3.0;  // peak fly-speed multiplier during the climax
+const ROLL_SPEED = 1.2;         // peak barrel-roll rate (rad/s) -> a few full rolls over the climax
+// Scripted finale: a wide orbit of the sphere's outside (FINALE_START), pivoting down to its
+// bottom, then a meandering fly up through its middle to FLYUP_END, ending above and looking up.
+const FINALE_START = 77.0;
+const FLYUP_START = 110.0;
+const FLYUP_END = 138.0;
+const TWO_PI = Math.PI * 2.0;
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
@@ -29,7 +35,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (t) => t * t * (3 - 2 * t);
 const MOVE_KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyZ'];
 
-export function createFlyCam(domElement, introTarget) {
+export function createFlyCam(domElement, introTarget, sphereR = 30) {
+  const WIDE_R = sphereR * 1.5; // wide-orbit radius, outside the object sphere
   let px = 24, py = 17, pz = 31; // position (intro overrides immediately)
   let yaw = 0, pitch = 0;
   let mode = introTarget ? 'hold' : 'free'; // 'hold' = static at the orbit start pose until play
@@ -137,7 +144,37 @@ export function createFlyCam(domElement, introTarget) {
       px = opx + (fpx - opx) * blend;
       py = opy + (fpy - opy) * blend;
       pz = opz + (fpz - opz) * blend;
-      aim(otx + (ftx - otx) * blend, oty + (fty - oty) * blend, otz + (ftz - otz) * blend);
+      let lx = otx + (ftx - otx) * blend;
+      let ly = oty + (fty - oty) * blend;
+      let lz = otz + (ftz - otz) * blend;
+      // Finale (FINALE_START..): blend the Lissajous fly into a scripted path — a wide orbit of
+      // the sphere's outside that pivots down to its bottom, then a meandering fly up through its
+      // middle, ending above and looking up.
+      if (introT >= FINALE_START) {
+        let spx, spy, spz, stx, sty, stz;
+        if (introT < FLYUP_START) {
+          const wp = clamp((introT - FINALE_START) / (FLYUP_START - FINALE_START), 0, 1);
+          const dip = smooth(clamp((wp - 0.55) / 0.45, 0, 1)); // stay wide, then pivot to the bottom
+          const wang = 0.9 + wp * 1.5 * TWO_PI;                 // ~1.5 revolutions
+          const wr = WIDE_R * (1.0 - dip);
+          spx = Math.cos(wang) * wr;
+          spy = sphereR * 0.35 - sphereR * 1.65 * dip;          // +0.35R down to -1.3R (the bottom)
+          spz = Math.sin(wang) * wr;
+          stx = 0; sty = 0; stz = 0;                            // look at the centre -> ends looking up
+        } else {
+          const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
+          const fpe = smooth(fp);
+          const meander = sphereR * 0.25;
+          spx = meander * Math.sin(fp * 3.0 * TWO_PI);
+          spy = -sphereR * 1.3 + sphereR * 2.6 * fpe;           // -1.3R up to +1.3R through the middle
+          spz = meander * Math.sin(fp * 2.3 * TWO_PI);
+          stx = spx; sty = spy + sphereR; stz = spz;            // look up, ahead of travel
+        }
+        const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
+        px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
+        lx += (stx - lx) * fb; ly += (sty - ly) * fb; lz += (stz - lz) * fb;
+      }
+      aim(lx, ly, lz);
     }
     if (mode === 'free') {
       const cp = Math.cos(pitch), sp = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);
