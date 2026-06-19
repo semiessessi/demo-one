@@ -41,8 +41,9 @@ for (const line of lines) {
 
   const ra = ((raH + raM / 60 + (raS || 0) / 3600) * 15) * Math.PI / 180;
   const dec = (decSign * (decD + (decM || 0) / 60 + (decS || 0) / 3600)) * Math.PI / 180;
-  // Y-up unit vector on the celestial sphere.
-  pos.push(r5(Math.cos(dec) * Math.cos(ra)), r5(Math.sin(dec)), r5(Math.cos(dec) * Math.sin(ra)));
+  // Y-up unit vector on the celestial sphere. Negate x for the INSIDE-the-sphere view, so the
+  // constellations read as seen from Earth (Orion the right way round), not mirrored like a globe.
+  pos.push(r5(-Math.cos(dec) * Math.cos(ra)), r5(Math.sin(dec)), r5(Math.cos(dec) * Math.sin(ra)));
   mag.push(r3(vmag));
   const rgb = Number.isFinite(bv) ? bvToRgb(bv) : [1, 1, 1];
   col.push(r3(rgb[0]), r3(rgb[1]), r3(rgb[2]));
