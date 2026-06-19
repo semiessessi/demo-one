@@ -21,6 +21,7 @@ uniform float uCloudAmbient;  // sky-ambient fill strength
 uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
+uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 

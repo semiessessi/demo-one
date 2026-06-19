@@ -371,7 +371,7 @@ void main() {
       refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
-      refl = skyClouds(vWorldPos, Rdir, uTime, 12); // reflection ray escaped to sky -> sky + clouds
+      refl = environment(Rdir); // sky background; clouds in front are composited below
     }
     // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
     // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit
@@ -407,6 +407,8 @@ void main() {
       float r = perp / (0.3 + 0.5 * e);
       if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
     }
+    // Volumetric clouds IN FRONT of the reflected geometry (bounded by the reflected hit distance ht).
+    refl = skyCloudsOver(refl, rro, Rdir, uTime, ht, int(uReflCloudSteps));
     lit += refl * envF;
   }
 

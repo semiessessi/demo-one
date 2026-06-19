@@ -172,6 +172,7 @@ export function createWebGLBackend({
     uCloudHG: { value: cloudLightDefaults.hg },
     uCloudPowder: { value: cloudLightDefaults.powder },
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
+    uReflCloudSteps: { value: 10 },
   };
 
   function setCloudLight(p) {
