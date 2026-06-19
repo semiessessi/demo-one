@@ -238,11 +238,10 @@ if (!CAPTURE && !TEST) {
 }
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
-// "Click for sound" prompt: the demo autostarts visually, but audio needs a user gesture.
+// "Click for sound" prompt: shown ONLY while the demo is playing but the browser is still
+// blocking audio (no gesture yet, and autoplay not permitted). Where autoplay is allowed the
+// sound just starts and this never appears. Visibility is driven per-frame in the loop below.
 const startEl = document.getElementById('start');
-if (CAPTURE || TEST) startEl?.classList.add('hidden');
-['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) =>
-  window.addEventListener(ev, () => startEl?.classList.add('hidden'), { once: true, passive: true }));
 
 const statsEl = document.getElementById('stats');
 let statsOn = ['localhost', '127.0.0.1'].includes(location.hostname); // on by default on localhost
@@ -321,6 +320,7 @@ function frame() {
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
+  if (startEl) startEl.classList.toggle('hidden', !playing || audio.isRunning); // prompt only if audio is blocked
   backend.render();
 
   // Measure real frame time.
