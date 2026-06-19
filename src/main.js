@@ -85,10 +85,11 @@ let lastBeatTime = -1000; // time of the last note-on (any slot) -> the early be
 // tables for each instrument's C-5 sample length; once ready, each slot's decay eases from the
 // pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
 let instrumentDur = null;
+let instrumentNames = null;
 const DECAY_FADE_SECS = 30;
 try {
   const sdWorker = new Worker(new URL('./sampleDurations.worker.js', import.meta.url), { type: 'module' });
-  sdWorker.onmessage = (e) => { instrumentDur = e.data; };
+  sdWorker.onmessage = (e) => { instrumentDur = e.data.dur; instrumentNames = e.data.names; };
 } catch (e) { /* enhancement only — stays on the pitch proxy */ }
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -246,6 +247,16 @@ const startEl = document.getElementById('start');
 const statsEl = document.getElementById('stats');
 let statsOn = ['localhost', '127.0.0.1'].includes(location.hostname); // on by default on localhost
 statsEl.style.display = statsOn ? 'block' : 'none';
+// Off localhost: hide all the UI chrome — just let the demo run.
+if (!statsOn) for (const id of ['controls', 'info', 'toast']) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+// 'i' note overlay: shows the tracker note names currently sounding, to find a beat to sync to.
+const notesEl = document.getElementById('notes');
+let notesOn = false;
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const noteName = (v) => (v > 0 ? NOTE_NAMES[(v - 1) % 12] + '-' + Math.floor((v - 1) / 12) : '');
 let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
@@ -262,6 +273,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
+  }
+  if (e.key === 'i' || e.key === 'I') {
+    notesOn = !notesOn;
+    notesEl.style.display = notesOn ? 'block' : 'none';
   }
   if (e.key === 't' || e.key === 'T') {
     const u = new URL(location.href);
@@ -332,6 +347,17 @@ function frame() {
       statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms\n♪ ${musicClock.toFixed(1)}s`;
       statsAcc = 0;
     }
+  }
+  if (notesOn) {
+    const bars = Math.min(28, Math.round(audio.getAmplitude() * 90)); // output RMS -> a level bar
+    let s = `♪ ${musicClock.toFixed(2)}s\namp ${'█'.repeat(bars)}${'░'.repeat(28 - bars)}\n`;
+    for (let b = 0; b < N_BANDS; b++) {
+      if (musicClock - beatTime[b] < 0.4 && slotPitch[b] > 0) {
+        const label = (instrumentNames && instrumentNames[slotInst[b]]) || `inst ${slotInst[b]}`;
+        s += `${noteName(slotPitch[b]).padEnd(5)} ${label}\n`; // note + instrument/sample name
+      }
+    }
+    notesEl.textContent = s;
   }
 
   requestAnimationFrame(frame);

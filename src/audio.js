@@ -177,8 +177,27 @@ export function createAudioManager() {
     return out;
   }
 
+  // RMS amplitude of the audio output (0..~0.4), via an AnalyserNode tapped off the gain.
+  let analyser = null, ampBuf = null;
+  function getAmplitude() {
+    try {
+      if (!analyser && player && player.context && player.gain) {
+        analyser = player.context.createAnalyser();
+        analyser.fftSize = 256;
+        ampBuf = new Uint8Array(analyser.fftSize);
+        player.gain.connect(analyser); // a sink tap — audio still plays to the destination
+      }
+      if (!analyser) return 0;
+      analyser.getByteTimeDomainData(ampBuf);
+      let sum = 0;
+      for (let i = 0; i < ampBuf.length; i++) { const v = (ampBuf[i] - 128) / 128; sum += v * v; }
+      return Math.sqrt(sum / ampBuf.length);
+    } catch (e) { return 0; }
+  }
+
   return {
     prefetch,
+    getAmplitude,
     play,
     restart,
     pause,

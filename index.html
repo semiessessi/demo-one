@@ -107,6 +107,21 @@
         pointer-events: none;
         display: none;
       }
+      #notes {
+        position: fixed;
+        top: 10px;
+        left: 12px;
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #ffd479;
+        text-shadow: 0 0 2px #000;
+        white-space: pre-wrap;
+        max-width: 42vw;
+        pointer-events: none;
+        display: none;
+      }
 
       /* Info / controls pane (toggle with Tab; shown on load) */
       #info {
@@ -234,6 +249,7 @@
   <body>
     <div id="app"></div>
     <pre id="stats"></pre>
+    <pre id="notes"></pre>
     <div id="controls">
       <div id="row">
         <button id="playToggle" title="Play / pause (P)" aria-label="Play or pause">▶</button>
