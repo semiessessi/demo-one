@@ -16,6 +16,8 @@ out vec4 fragColor;
 uniform vec3 cameraPosition;
 uniform float uTime;
 uniform float uLightScale; // global light-brightness multiplier (debug-tunable)
+uniform float uAmplitude;  // measured output RMS — drives the amplitude-reactive light subset
+uniform float uAmpGain;    // how hard that subset reacts
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
@@ -183,11 +185,11 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     if (dot(N, L) <= 0.0 || fallS <= 1e-6 || lum <= 0.0) continue;
     int band = idx % 32;
     float hostSlot = floor(float(idx) / uLightsPerObject); // this light's host object rank
-    // Dark until the host spawns, then flash only on notes — a fresh ~MUSIC_FRAC subset
-    // per note (uBeatSeed re-rolled each note), so few light up and never the same set.
-    float emission = step(hostSlot, uSpawn)
-                   * musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band])
-                   * musicBeatLit(idx, uBeatSeed[band]);
+    // Lights fade in just after their host object; the ~30% amplitude subset uses ONLY the
+    // measured amplitude (no per-note flare), matching their sprites.
+    float reveal = lightSpawnFade(hostSlot, uSpawn);
+    float beat = musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(idx, uBeatSeed[band]);
+    float emission = reveal * mix(beat, uAmplitude * uAmpGain, ampLit(idx));
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < shadowCap) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
     lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist, fallD, fallS) * colRad.rgb * uLightScale * shadow * emission;

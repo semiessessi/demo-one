@@ -39,15 +39,14 @@ void main() {
   // so the sprite has zero size + zero brightness (no dot) when not emitting.
   int band = gl_InstanceID % 32;
   float hostSlot = floor(float(gl_InstanceID) / uLightsPerObject); // this light's host object rank
-  // Dark until the host spawns, then flash only on notes — fresh ~MUSIC_FRAC subset per note.
-  float emission = step(hostSlot, uSpawn)
-                 * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band])
-                 * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
-  emission += step(hostSlot, uSpawn) * ripplePulse(lightPos, uRipple, uMusicTime); // ride the brightness wave
-  emission += step(hostSlot, uSpawn) * thudPulse(uMusicTime, uThudTime); // beat thud dominates the first ~7s
-  // A static ~30% subset rides the measured amplitude: brightness + size breathe with loudness
-  // (emission drives both), on top of the per-note flares.
-  emission += step(hostSlot, uSpawn) * ampLit(gl_InstanceID) * uAmplitude * uAmpGain;
+  // Lights fade in just AFTER their host object, so no stray lights precede the first object.
+  float reveal = lightSpawnFade(hostSlot, uSpawn);
+  // The ~30% amplitude subset is driven ONLY by the measured amplitude (+ this fade-in); every
+  // other light keeps the per-note flares (beat + ripple + thud) and ignores the amplitude.
+  float beat = musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(gl_InstanceID, uBeatSeed[band])
+             + ripplePulse(lightPos, uRipple, uMusicTime)
+             + thudPulse(uMusicTime, uThudTime);
+  float emission = reveal * mix(beat, uAmplitude * uAmpGain, ampLit(gl_InstanceID));
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot

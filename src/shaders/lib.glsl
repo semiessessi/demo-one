@@ -151,6 +151,11 @@ float spawnIgnite(float slot, float spawn) {
   float a = spawn - slot;
   return a <= 0.0 ? 0.0 : 3.0 * exp(-a / 0.25); // sharp bright flash-in (not a slow lerp)
 }
+// A light fades in just AFTER its host object finishes spawning (the object reveals over
+// [hostSlot, hostSlot+0.6]), so no stray lights precede the first object. Smooth, no pop.
+float lightSpawnFade(float hostSlot, float spawn) {
+  return smoothstep(0.0, 0.6, spawn - hostSlot - 0.6);
+}
 // Lights reveal a touch later and slower than objects, via their own derived clock.
 const float LIGHT_SPAWN_DELAY = 2.0; // lights hold back ~2 objects' worth (one or two at first)
 const float LIGHT_SPAWN_SCALE = 0.5; // then trickle in at half the object rate
