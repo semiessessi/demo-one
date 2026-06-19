@@ -21,6 +21,7 @@ uniform float uAmpGain;    // how hard that subset reacts
 uniform int uShadowCap;    // FPS-autoscale caps (min'd with the distance-LOD caps below)
 uniform int uReflCap;
 uniform int uLightCap;
+uniform samplerCube uStarCube; // baked starfield -> real stars in reflections (sampled by direction)
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
@@ -376,7 +377,7 @@ void main() {
       refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
-      refl = environment(Rdir); // sky background; clouds in front are composited below
+      refl = environment(Rdir) + texture(uStarCube, Rdir).rgb; // sky + real stars; clouds composited below
     }
     // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
     // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit

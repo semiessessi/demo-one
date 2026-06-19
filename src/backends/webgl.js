@@ -25,7 +25,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
-import { buildStarfield } from '../starfield.js';
+import { buildStarfield, bakeStarCubemap } from '../starfield.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -42,7 +42,7 @@ class CloudPass extends Pass {
       uCloudNoiseScale: shared.uCloudNoiseScale, uCloudWind: shared.uCloudWind,
       uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
-      uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder,
+      uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -77,6 +77,7 @@ export function createWebGLBackend({
   objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
 }) {
   const renderer = new THREE.WebGLRenderer(); // antialias off: EffectComposer renders to its own non-MSAA targets, so default-buffer MSAA is unused
+  const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: THREE.HalfFloatType }); // baked starfield -> stars in reflections
   renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio)); // cap at 1.5x — big fill-rate win on hi-DPI
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
@@ -105,7 +106,7 @@ export function createWebGLBackend({
   // Volumetric-cloud defaults: single source for both the uniforms below and the
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
-    cloudsOn: true, coverage: 0.5, density: 0.5, base: 24, thick: 12,
+    cloudsOn: true, coverage: 0.55, density: 0.5, base: 24, thick: 32,
     noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
@@ -175,9 +176,11 @@ export function createWebGLBackend({
     uCloudPowder: { value: cloudLightDefaults.powder },
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
     uReflCloudSteps: { value: 10 },
+    uFrame: { value: 0 }, // frame counter for the per-frame cloud dither
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
+    uStarCube: { value: starCubeRT.texture }, // baked real stars, sampled by direction in reflections
   };
 
   function setCloudLight(p) {
@@ -220,8 +223,9 @@ export function createWebGLBackend({
   scene.add(buildSky());
   // Real-star background (async: the catalogue is code-split out of the main bundle). Added when it
   // resolves; the CloudPass then dims the stars where the cloud is thick.
+  let starPoints = null;
   buildStarfield({ uTime: uniforms.uTime, uStarSize: uniforms.uStarSize, uStarTwinkle: uniforms.uStarTwinkle })
-    .then((m) => scene.add(m)).catch(() => {});
+    .then((m) => { bakeStarCubemap(renderer, m, starCubeRT); scene.add(m); starPoints = m; }).catch(() => {});
 
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
@@ -316,6 +320,8 @@ export function createWebGLBackend({
     render() {
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
+      if (starPoints) starPoints.position.copy(camera.position); // keep the starfield centred on the camera -> infinity
+      uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
       cloudPass.setScene(sceneRT);

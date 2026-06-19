@@ -22,6 +22,7 @@ uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
+uniform float uFrame;         // frame counter -> temporal (per-frame) blue-noise dither
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 
@@ -108,7 +109,7 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   float lightStep = uCloudThick * 0.12;     // world-scale spacing of the sun light-march
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
-  float t = t0 + ign(gl_FragCoord.xy) * baseStep; // blue-noise jitter -> no slice banding
+  float t = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * baseStep; // per-frame blue-noise jitter -> no slice banding/layering
   for (int i = 0; i < 192; i++) {
     if (i >= steps || t >= t1 || T < 0.02) break;
     vec3 p = ro + rd * t;

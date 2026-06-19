@@ -10,7 +10,7 @@ const vertexShader = `
 in vec3 position;   // unit direction on the celestial sphere
 in float aMag;      // visual magnitude (lower = brighter)
 in vec3 aColor;     // star colour (B-V -> RGB)
-uniform mat4 viewMatrix;
+uniform mat4 modelViewMatrix; // the mesh follows the camera -> stars sit at infinity (no parallax)
 uniform mat4 projectionMatrix;
 uniform float uTime;
 uniform float uStarSize;
@@ -22,10 +22,11 @@ void main() {
   // brighter stars -> bigger + brighter; clamp the huge magnitude dynamic range.
   float b = clamp(pow(2.0, (5.5 - aMag) * 0.5), 0.35, 6.0);
   float tw = 1.0 + uStarTwinkle * sin(uTime * 3.0 + hash11(aMag + position.x * 131.0) * 6.2831);
-  gl_Position = projectionMatrix * viewMatrix * vec4(position * ${STAR_RADIUS.toFixed(1)}, 1.0);
-  gl_PointSize = max(1.0, uStarSize * b * tw);
+  float fade = smoothstep(-0.04, 0.16, position.y); // ground blocks below the horizon; haze dims near it
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position * ${STAR_RADIUS.toFixed(1)}, 1.0);
+  gl_PointSize = max(1.0, uStarSize * b * tw * fade);
   vColor = aColor;
-  vBright = b * tw;
+  vBright = b * tw * fade;
 }`;
 
 const fragmentShader = `
@@ -62,4 +63,19 @@ export async function buildStarfield(uniforms) {
   points.frustumCulled = false;
   points.renderOrder = 2; // over the gradient dome (renderOrder 1), behind nothing
   return points;
+}
+
+// Bake the (origin-centred) starfield into a cubemap once, so reflections can sample the real stars
+// by direction. The vertex horizon-fade is baked in too, so reflected stars are blocked by the ground
+// just like the background. Renders the Points from the origin into the 6 cube faces.
+export function bakeStarCubemap(renderer, points, cubeRT) {
+  const scene = new THREE.Scene();
+  scene.add(points); // points.position is still origin here -> cube captures stars by world direction
+  const cam = new THREE.CubeCamera(0.1, 300.0, cubeRT);
+  const prevColor = renderer.getClearColor(new THREE.Color());
+  const prevAlpha = renderer.getClearAlpha();
+  renderer.setClearColor(0x000000, 1); // stars on black -> added over environment() in reflections
+  cam.update(renderer, scene);
+  renderer.setClearColor(prevColor, prevAlpha);
+  scene.remove(points); // hand the Points back for the live (camera-following) background
 }
