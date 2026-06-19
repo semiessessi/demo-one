@@ -60,7 +60,7 @@ vec3 animLightDir(int idx, float t, float kick) {
 // linger far longer than others. Returns the raw flare; the caller folds it into the
 // spawn emission below. Keep in sync with gpu/orbit.js (wgLightEmission).
 float lightFadeRate(int idx) {
-  return 1.5 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // 3x faster: ~1.5..17 /s (less persistent)
+  return 3.0 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // ~3..34 /s — flashes fade fast (don't linger)
 }
 float musicFlare(int idx, float beatTime, float strength, float now, float pitchFactor) {
   float age = now - beatTime;
