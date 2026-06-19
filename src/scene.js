@@ -25,9 +25,11 @@ const PACK_MARGIN = 0.35; // extra gap between object spheres (tighter = denser 
 const ORBIT_MARGIN = 0.15; // min gap from the object surface to the orbit sphere (tighter for density)
 const ORBIT_SPREAD = 0.15; // per-light random extra orbit radius (reach 0.30 < PACK_MARGIN 0.35)
 const BUCKETS_PER_AXIS = 10;
+const LIGHT_BUCKETS_PER_AXIS = 24; // finer grid for the ~200k lights so per-object queries don't over-scan (the coarse object grid stays for the 5k-object lists)
 const R_PROXY = 1.0; // shadow/reflection sphere-proxy radius factor (× scale)
 const SHADOW_CAP = 64; // max occluders per object for shadows (nearest kept)
 const REFLECTION_CAP = 1024; // max occluders per object for reflections (hero needs lots)
+const REFL_ROUGHNESS_MAX = 0.35; // matches the shader: only objects below this trace reflections, so only they need a reflection list
 const REFLECTION_REACH = 26.0; // gather radius to reach ~1024 nearest occluders at this density
 const SEED = 0x1234abcd;
 const CAM_CLEARANCE = 0.8; // small gap, so the camera makes near-misses past objects (shows off reflections)
@@ -207,7 +209,8 @@ export function generateScene(opts = {}) {
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
-    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
+    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount',
+    (o) => o.rough < REFL_ROUGHNESS_MAX); // only reflective objects trace reflections -> skip the rest
   return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR: half };
 }
 
@@ -250,7 +253,8 @@ export function generateTestScene() {
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
-    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount');
+    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount',
+    (o) => o.rough < REFL_ROUGHNESS_MAX); // only reflective objects trace reflections -> skip the rest
   return { objects, lights, lightIndices, occluderIndices, reflectionIndices };
 }
 
@@ -261,11 +265,21 @@ function buildOccluderLists(objects, maxOrbit) {
     objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount');
 }
 
+// Reusable scratch for the gather hot loops below — avoids allocating a {index, d2} object per
+// candidate (millions per scene -> heavy GC). The nearest `cap` are selected via an index sort.
+let _gIdx = new Int32Array(8192);
+let _gD2 = new Float64Array(8192);
+let _gOrd = new Uint32Array(8192);
+function growGatherScratch(n) {
+  let s = _gIdx.length; while (s < n) s *= 2;
+  _gIdx = new Int32Array(s); _gD2 = new Float64Array(s); _gOrd = new Uint32Array(s);
+}
+
 // Generic per-object nearby-object lists via the bucket grid. An object j is
 // included for O when their separation is within reachFn(O) + j.proxyRadius;
 // nearest `cap` are kept. Writes O[offsetKey]/O[countKey] and returns the flat
 // index array. Objects are treated as sphere proxies.
-function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey) {
+function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeFn) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const o of objects)
@@ -288,28 +302,30 @@ function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey) {
 
   const indices = [];
   objects.forEach((o, self) => {
+    if (includeFn && !includeFn(o)) { o[offsetKey] = indices.length; o[countKey] = 0; return; } // never traces -> no list needed
     const reach = reachFn(o);
-    const bucketReach = reach + maxProxy;
-    const c = o.pos;
-    const x0 = coord(c[0] - bucketReach, 0), x1 = coord(c[0] + bucketReach, 0);
-    const y0 = coord(c[1] - bucketReach, 1), y1 = coord(c[1] + bucketReach, 1);
-    const z0 = coord(c[2] - bucketReach, 2), z1 = coord(c[2] + bucketReach, 2);
-    const cands = [];
+    const lim = reach + maxProxy; // conservative sphere-overlap bound (>= per-candidate reach + proxyRadius), hoisted out of the loop
+    const lim2 = lim * lim;
+    const cx = o.pos[0], cy = o.pos[1], cz = o.pos[2];
+    const x0 = coord(cx - lim, 0), x1 = coord(cx + lim, 0);
+    const y0 = coord(cy - lim, 1), y1 = coord(cy + lim, 1);
+    const z0 = coord(cz - lim, 2), z1 = coord(cz + lim, 2);
+    let nc = 0;
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++)
           for (const j of buckets[key(x, y, z)]) {
             if (j === self) continue;
-            const oc = objects[j];
-            const dx = c[0] - oc.pos[0], dy = c[1] - oc.pos[1], dz = c[2] - oc.pos[2];
+            const p = objects[j].pos;
+            const dx = cx - p[0], dy = cy - p[1], dz = cz - p[2];
             const d2 = dx * dx + dy * dy + dz * dz;
-            const lim = reach + oc.proxyRadius;
-            if (d2 <= lim * lim) cands.push({ j, d2 });
+            if (d2 <= lim2) { if (nc >= _gIdx.length) growGatherScratch(nc + 1); _gIdx[nc] = j; _gD2[nc] = d2; nc++; }
           }
-    cands.sort((a, b) => a.d2 - b.d2);
+    for (let i = 0; i < nc; i++) _gOrd[i] = i;
+    _gOrd.subarray(0, nc).sort((a, b) => _gD2[a] - _gD2[b]); // nearest first
     o[offsetKey] = indices.length;
-    const count = Math.min(cands.length, cap);
-    for (let k = 0; k < count; k++) indices.push(cands[k].j);
+    const count = Math.min(nc, cap);
+    for (let k = 0; k < count; k++) indices.push(_gIdx[_gOrd[k]]);
     o[countKey] = count;
   });
   return new Float32Array(indices);
@@ -327,8 +343,8 @@ function buildLightLists(objects, lights) {
       hi[a] = Math.max(hi[a], l.pos[a]);
     }
   const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3;
-  const bucketSize = extent / BUCKETS_PER_AXIS;
-  const B = BUCKETS_PER_AXIS;
+  const B = LIGHT_BUCKETS_PER_AXIS; // finer than the object grid so 200k-light queries don't over-scan oversized buckets
+  const bucketSize = extent / B;
   const coord = (p, a) => Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
   const idx = (x, y, z) => (x * B + y) * B + z;
 
@@ -351,24 +367,25 @@ function buildLightLists(objects, lights) {
   for (const o of objects) {
     o.lightOffset = indices.length;
     const reach = o.radius + maxOrbit + maxFalloff;
-    const c = o.pos;
-    const x0 = coord(c[0] - reach, 0), x1 = coord(c[0] + reach, 0);
-    const y0 = coord(c[1] - reach, 1), y1 = coord(c[1] + reach, 1);
-    const z0 = coord(c[2] - reach, 2), z1 = coord(c[2] + reach, 2);
-    const found = [];
+    const reach2 = reach * reach; // each light's own lim (radius+orbit+falloff) <= reach, so reach2 is a conservative superset; hoisted out of the candidate loop
+    const cx = o.pos[0], cy = o.pos[1], cz = o.pos[2];
+    const x0 = coord(cx - reach, 0), x1 = coord(cx + reach, 0);
+    const y0 = coord(cy - reach, 1), y1 = coord(cy + reach, 1);
+    const z0 = coord(cz - reach, 2), z1 = coord(cz + reach, 2);
+    let nc = 0;
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++)
           for (const li of buckets[idx(x, y, z)]) {
-            const l = lights[li];
-            const dx = c[0] - l.pos[0], dy = c[1] - l.pos[1], dz = c[2] - l.pos[2];
+            const p = lights[li].pos;
+            const dx = cx - p[0], dy = cy - p[1], dz = cz - p[2];
             const d2 = dx * dx + dy * dy + dz * dz;
-            const lim = o.radius + l.orbitRadius + l.radius;
-            if (d2 <= lim * lim) found.push({ li, d2 });
+            if (d2 <= reach2) { if (nc >= _gIdx.length) growGatherScratch(nc + 1); _gIdx[nc] = li; _gD2[nc] = d2; nc++; }
           }
-    found.sort((a, b) => a.d2 - b.d2); // nearest first, so the shader shades + shadows the closest
-    const n = Math.min(found.length, MAX_LIGHTS_PER_OBJECT); // keep the nearest N (neighbour + field)
-    for (let k = 0; k < n; k++) indices.push(found[k].li);
+    for (let i = 0; i < nc; i++) _gOrd[i] = i;
+    _gOrd.subarray(0, nc).sort((a, b) => _gD2[a] - _gD2[b]); // nearest first, so the shader shades + shadows the closest
+    const n = Math.min(nc, MAX_LIGHTS_PER_OBJECT); // keep the nearest N (neighbour + field)
+    for (let k = 0; k < n; k++) indices.push(_gIdx[_gOrd[k]]);
     o.lightCount = n;
   }
   return new Float32Array(indices);
