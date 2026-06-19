@@ -47,7 +47,7 @@ function makeRng(seed) {
 // opts.targetObjects / opts.lightsPerObject override the defaults for scale
 // testing; the volume grows with the cube root of the object count so packing
 // density (and thus the look) stays roughly constant.
-export function generateScene(opts = {}) {
+export function generateBase(opts = {}) {
   const targetObjects = opts.targetObjects ?? TARGET_OBJECTS;
   const lightsPerObject = opts.lightsPerObject ?? LIGHTS_PER_OBJECT;
   const volume = VOLUME * Math.cbrt(targetObjects / 200) * 1.24; // x1.24 so the inscribed SPHERE holds the count
@@ -207,12 +207,42 @@ export function generateScene(opts = {}) {
   }
 
   const maxOrbit = lights.reduce((m, l) => Math.max(m, l.orbitRadius), 0);
+  return { objects, lights, maxOrbit, sphereR: half };
+}
+
+// Build the per-object light/occluder/reflection lists. Single-threaded path (also used for
+// ?test/?capture): gathers every object. The parallel path (sceneGen.worker.js) calls
+// gatherChunk() per object slice across workers and merges in main.js.
+export function generateScene(opts = {}) {
+  const base = generateBase(opts);
+  const { objects, lights, maxOrbit, sphereR } = base;
   const lightIndices = buildLightLists(objects, lights);
   const occluderIndices = buildOccluderLists(objects, maxOrbit);
   const reflectionIndices = buildNeighborLists(
     objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount',
     (o) => o.rough < REFL_ROUGHNESS_MAX); // only reflective objects trace reflections -> skip the rest
-  return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR: half };
+  return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR };
+}
+
+// Gather lists for objects [start, end) only (one worker's slice). Returns the slice's flat
+// index arrays + per-object counts; main.js concatenates the slices and re-derives the global
+// offsets. The base scene is regenerated deterministically per worker (same SEED), so every
+// worker's `objects`/`lights` are identical.
+export function gatherChunk(base, start, end) {
+  const { objects, lights, maxOrbit } = base;
+  const lightIndices = buildLightLists(objects, lights, start, end);
+  const occluderIndices = buildOccluderLists(objects, maxOrbit, start, end);
+  const reflectionIndices = buildNeighborLists(
+    objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount',
+    (o) => o.rough < REFL_ROUGHNESS_MAX, start, end);
+  const n = end - start;
+  const lightCounts = new Int32Array(n), shadowCounts = new Int32Array(n), reflCounts = new Int32Array(n);
+  for (let i = start; i < end; i++) {
+    lightCounts[i - start] = objects[i].lightCount;
+    shadowCounts[i - start] = objects[i].shadowCount;
+    reflCounts[i - start] = objects[i].reflCount;
+  }
+  return { start, end, lightIndices, lightCounts, occluderIndices, shadowCounts, reflectionIndices, reflCounts };
 }
 
 // A minimal scene to verify shadows: one light and two objects (one big, one
@@ -261,9 +291,9 @@ export function generateTestScene() {
 
 // Shadow occluder lists: reach covers the object plus the orbit + falloff of the
 // lights that can reach it, so casters between a surface and a moving light are kept.
-function buildOccluderLists(objects, maxOrbit) {
+function buildOccluderLists(objects, maxOrbit, start = 0, end = objects.length) {
   return buildNeighborLists(
-    objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount');
+    objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount', null, start, end);
 }
 
 // Reusable scratch for the gather hot loops below — avoids allocating a {index, d2} object per
@@ -280,7 +310,7 @@ function growGatherScratch(n) {
 // included for O when their separation is within reachFn(O) + j.proxyRadius;
 // nearest `cap` are kept. Writes O[offsetKey]/O[countKey] and returns the flat
 // index array. Objects are treated as sphere proxies.
-function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeFn) {
+function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeFn, start = 0, end = objects.length) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const o of objects)
@@ -302,8 +332,9 @@ function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeF
   });
 
   const indices = [];
-  objects.forEach((o, self) => {
-    if (includeFn && !includeFn(o)) { o[offsetKey] = indices.length; o[countKey] = 0; return; } // never traces -> no list needed
+  for (let self = start; self < end; self++) {
+    const o = objects[self];
+    if (includeFn && !includeFn(o)) { o[offsetKey] = indices.length; o[countKey] = 0; continue; } // never traces -> no list needed
     const reach = reachFn(o);
     const lim = reach + maxProxy; // conservative sphere-overlap bound (>= per-candidate reach + proxyRadius), hoisted out of the loop
     const lim2 = lim * lim;
@@ -328,14 +359,14 @@ function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeF
     const count = Math.min(nc, cap);
     for (let k = 0; k < count; k++) indices.push(_gIdx[_gOrd[k]]);
     o[countKey] = count;
-  });
+  }
   return new Float32Array(indices);
 }
 
 // pdx-gfx-style bucket grid: bin lights into a uniform 3D grid, then for each
 // object gather candidates from the buckets its reach overlaps and keep those
 // whose spheres actually overlap. Writes lightOffset/lightCount onto objects.
-function buildLightLists(objects, lights) {
+function buildLightLists(objects, lights, start = 0, end = objects.length) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const l of lights)
@@ -365,7 +396,8 @@ function buildLightLists(objects, lights) {
   });
 
   const indices = [];
-  for (const o of objects) {
+  for (let i = start; i < end; i++) {
+    const o = objects[i];
     o.lightOffset = indices.length;
     const reach = o.radius + maxOrbit + maxFalloff;
     const reach2 = reach * reach; // each light's own lim (radius+orbit+falloff) <= reach, so reach2 is a conservative superset; hoisted out of the candidate loop

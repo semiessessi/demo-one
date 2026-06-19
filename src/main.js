@@ -23,11 +23,38 @@ const genOpts = {
 // fade-up stays smooth and the tab never locks while ~5000 objects + their light/occluder/
 // reflection lists are built. TEST/CAPTURE stay synchronous (small / deterministic baselines).
 function runSceneWorker(opts) {
-  return new Promise((resolve) => {
+  const N = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)); // one worker per core (the gather is the bottleneck)
+  return Promise.all(Array.from({ length: N }, (_, c) => new Promise((resolve) => {
     const w = new Worker(new URL('./sceneGen.worker.js', import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); resolve(e.data); };
-    w.postMessage(opts);
-  });
+    w.postMessage({ opts, chunk: c, chunks: N });
+  }))).then(mergeSceneParts);
+}
+
+// Concatenate the per-worker object slices and re-derive the global offsets onto the base objects
+// (regenerated identically by every worker; chunk 0 returned the canonical set). Verified
+// bit-identical to single-threaded generateScene().
+function mergeSceneParts(parts) {
+  parts.sort((a, b) => a.start - b.start);
+  const { objects, lights, sphereR } = parts.find((p) => p.base).base;
+  const merge = (idxKey, cntKey, offP, cntP) => {
+    let total = 0; for (const p of parts) total += p[idxKey].length;
+    const out = new Float32Array(total); let off = 0;
+    for (const p of parts) {
+      out.set(p[idxKey], off);
+      let local = off;
+      for (let i = 0; i < p[cntKey].length; i++) {
+        const o = objects[p.start + i];
+        o[offP] = local; o[cntP] = p[cntKey][i]; local += p[cntKey][i];
+      }
+      off += p[idxKey].length;
+    }
+    return out;
+  };
+  const lightIndices = merge('lightIndices', 'lightCounts', 'lightOffset', 'lightCount');
+  const occluderIndices = merge('occluderIndices', 'shadowCounts', 'shadowOffset', 'shadowCount');
+  const reflectionIndices = merge('reflectionIndices', 'reflCounts', 'reflOffset', 'reflCount');
+  return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR };
 }
 const sceneData = TEST ? generateTestScene()
   : CAPTURE ? generateScene(genOpts)
