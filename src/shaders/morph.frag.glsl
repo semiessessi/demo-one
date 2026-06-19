@@ -304,7 +304,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     // measured amplitude (no per-note flare), matching their sprites.
     float reveal = lightSpawnFade(hostSlot, uSpawn);
     float beat = musicFlare(idx, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(idx, uBeatSeed[band]);
-    float emission = reveal * mix(beat, uAmplitude * uAmpGain, ampLit(idx));
+    float emission = reveal * (mix(beat, uAmplitude * uAmpGain, ampLit(idx)) + (k < BATH_LIGHTS ? AMP_BASE : 0.0));
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < shadowCap) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
     lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist, fallD, fallS) * colRad.rgb * uLightScale * shadow * emission;
@@ -383,7 +383,7 @@ void main() {
       if (tL <= 0.02 || tL > ht) continue; // in front of the surface, before the reflected hit
       int lband = li % 32;
       float lhost = floor(float(li) / uLightsPerObject);
-      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime) + (k < BATH_LIGHTS ? AMP_BASE : 0.0));
       if (e <= 1e-4) continue;
       float perp = length(toL - Rdir * tL);
       float r = perp / (0.3 + 0.5 * e);
@@ -398,7 +398,7 @@ void main() {
       if (tL <= 0.5) continue;
       int lband = li % 32;
       float lhost = floor(float(li) / uLightsPerObject);
-      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime) + (k < BATH_LIGHTS ? AMP_BASE : 0.0));
       if (e <= 1e-4) continue;
       float perp = length(toL - Rdir * tL);
       float r = perp / (0.3 + 0.5 * e);

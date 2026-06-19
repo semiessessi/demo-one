@@ -82,6 +82,8 @@ float musicBeatLit(int idx, float seed) {
 // amplitude (uAmplitude), pulsing their brightness + sprite size with the music's
 // loudness on top of the per-note flares. Independent of the flare hashes.
 const float AMP_FRAC = 0.30; // fraction of lights that ride the amplitude
+const float AMP_BASE = 0.5;  // steady fill the nearest BATH_LIGHTS emit, so near objects stay bathed in + reflect their closest lights (not just the few flaring)
+const int BATH_LIGHTS = 32;  // only each object's NEAREST N lights stay steadily lit -> bounded BRDF cost; the full list still loops for the per-note flares
 float ampLit(int idx) { return hashUnit(hash(uint(idx) * 374761393u + 11u)) < AMP_FRAC ? 1.0 : 0.0; }
 // Per-note orbit "kick": the same fresh subset that flares (musicBeatLit) also gets a decaying
 // boost to its orbit angle, so against the slow base drift the lights lurch on their notes.
