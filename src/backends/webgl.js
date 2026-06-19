@@ -102,7 +102,7 @@ export function createWebGLBackend({
   scene.add(mesh);
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
-  scene.add(buildLightSprites(lights, {
+  const spritesMesh = buildLightSprites(lights, {
     uSpriteSize: { value: 0.0375 }, // 75% of 0.05 (smaller sprites again)
     uLightTime: uniforms.uLightTime,
     uSpawn: uniforms.uSpawn,
@@ -114,7 +114,8 @@ export function createWebGLBackend({
     uMusicTime: uniforms.uMusicTime,
     uRipple: uniforms.uRipple,
     uThudTime: uniforms.uThudTime,
-  }));
+  });
+  scene.add(spritesMesh);
 
   const composer = new EffectComposer(renderer); // half-float render targets
   composer.addPass(new RenderPass(scene, camera));
@@ -143,6 +144,8 @@ export function createWebGLBackend({
     setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
     setMusicLevel(level) { flycam?.setMusicLevel(level); },
     setRipples(data) { uniforms.uRipple.value.set(data); },
+    setGeometryVisible(v) { mesh.visible = v; },       // localhost debug toggle
+    setSpritesVisible(v) { spritesMesh.visible = v; }, // localhost debug toggle
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose

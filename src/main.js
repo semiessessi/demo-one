@@ -270,10 +270,11 @@ if (!CAPTURE && !TEST) {
 const startEl = document.getElementById('start');
 
 const statsEl = document.getElementById('stats');
-let statsOn = ['localhost', '127.0.0.1'].includes(location.hostname); // on by default on localhost
+const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
+let statsOn = isLocalhost; // stats on by default on localhost
 statsEl.style.display = statsOn ? 'block' : 'none';
 // Off localhost: hide all the UI chrome — just let the demo run.
-if (!statsOn) for (const id of ['controls', 'info', 'toast']) {
+if (!isLocalhost) for (const id of ['controls', 'info', 'toast']) {
   const el = document.getElementById(id);
   if (el) el.style.display = 'none';
 }
@@ -285,6 +286,19 @@ const noteName = (v) => (v > 0 ? NOTE_NAMES[(v - 1) % 12] + '-' + Math.floor((v 
 let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
+
+// --- Localhost-only debug controls: toggle the geometry + light sprites -----
+// lil-gui is dynamically imported, so end users off localhost never download it.
+const debugState = { geometry: true, sprites: true };
+let debugGui = null;
+const syncDebugGui = () => debugGui?.controllersRecursive().forEach((c) => c.updateDisplay());
+if (isLocalhost) {
+  const { GUI } = await import('lil-gui');
+  debugGui = new GUI({ title: 'debug' });
+  debugGui.add(debugState, 'geometry').name('geometry (g)').onChange((v) => backend.setGeometryVisible(v));
+  debugGui.add(debugState, 'sprites').name('light sprites (b)').onChange((v) => backend.setSpritesVisible(v));
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P') {
     // Start/resume if the audio isn't actually running (e.g. a silent autoplay before a
@@ -311,6 +325,16 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'l' || e.key === 'L') {
     setLightsMoving(!lightsMoving);
+  }
+  if (isLocalhost && (e.key === 'g' || e.key === 'G')) {
+    debugState.geometry = !debugState.geometry;
+    backend.setGeometryVisible(debugState.geometry);
+    syncDebugGui();
+  }
+  if (isLocalhost && (e.key === 'b' || e.key === 'B')) {
+    debugState.sprites = !debugState.sprites;
+    backend.setSpritesVisible(debugState.sprites);
+    syncDebugGui();
   }
 });
 
