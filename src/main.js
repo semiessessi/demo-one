@@ -1,4 +1,4 @@
-import { generateScene, generateTestScene } from './scene.js';
+import { generateScene, generateTestScene, generateBase, gatherChunk } from './scene.js';
 import { NUM_SEGMENTS } from './journey.js';
 import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
@@ -22,21 +22,23 @@ const genOpts = {
 // Heavy scene generation runs off the main thread (mirrors sampleDurations.worker.js) so the
 // fade-up stays smooth and the tab never locks while ~5000 objects + their light/occluder/
 // reflection lists are built. TEST/CAPTURE stay synchronous (small / deterministic baselines).
-function runSceneWorker(opts) {
-  const N = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)); // one worker per core (the gather is the bottleneck)
-  return Promise.all(Array.from({ length: N }, (_, c) => new Promise((resolve) => {
+function gatherInWorkers(opts, chunks) {
+  return Promise.all(Array.from({ length: chunks }, (_, c) => new Promise((resolve) => {
     const w = new Worker(new URL('./sceneGen.worker.js', import.meta.url), { type: 'module' });
     w.onmessage = (e) => { w.terminate(); resolve(e.data); };
-    w.postMessage({ opts, chunk: c, chunks: N });
-  }))).then(mergeSceneParts);
+    w.postMessage({ opts, chunk: c, chunks });
+  })));
 }
+// (scene generation is staged below: a first batch synchronously on main for a fast first frame,
+// then the rest gathered in background workers and hot-swapped via backend.updateScene.)
 
 // Concatenate the per-worker object slices and re-derive the global offsets onto the base objects
 // (regenerated identically by every worker; chunk 0 returned the canonical set). Verified
 // bit-identical to single-threaded generateScene().
-function mergeSceneParts(parts) {
+function mergeSceneParts(base, parts) {
   parts.sort((a, b) => a.start - b.start);
-  const { objects, lights, sphereR } = parts.find((p) => p.base).base;
+  const { objects, lights, sphereR } = base;
+  for (const o of objects) { o.lightOffset = o.lightCount = o.shadowOffset = o.shadowCount = o.reflOffset = o.reflCount = 0; } // objects outside the gathered slices stay empty (progressive: not yet gathered)
   const merge = (idxKey, cntKey, offP, cntP) => {
     let total = 0; for (const p of parts) total += p[idxKey].length;
     const out = new Float32Array(total); let off = 0;
@@ -56,9 +58,16 @@ function mergeSceneParts(parts) {
   const reflectionIndices = merge('reflectionIndices', 'reflCounts', 'reflOffset', 'reflCount');
   return { objects, lights, lightIndices, occluderIndices, reflectionIndices, sphereR };
 }
+// Progressive load: regenerate the (deterministic) base, then gather only a first batch of objects
+// on the main thread so the FIRST FRAME lands fast (clouds + the first objects + their lights). The
+// rest is gathered in background workers and hot-swapped in below — objects spawn in gradually, so
+// the full lighting arrives long before most are visible.
+const progressiveBase = (TEST || CAPTURE) ? null : generateBase(genOpts);
+const FIRST_BATCH = 200; // objects lit before the first frame (well ahead of the early spawn-in)
+const WORKERS = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8));
 const sceneData = TEST ? generateTestScene()
   : CAPTURE ? generateScene(genOpts)
-  : await runSceneWorker(genOpts);
+  : mergeSceneParts(progressiveBase, [gatherChunk(progressiveBase, 0, Math.min(FIRST_BATCH, progressiveBase.objects.length))]);
 const { objects, lights } = sceneData;
 // Note-stepped morph: per-object position walks the journey sequence on the music (CPU
 // state); the current p per object is uploaded to the shaders each frame via setMorph.
@@ -73,6 +82,15 @@ const app = document.getElementById('app');
 const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
 app.appendChild(backend.domElement);
 window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
+
+// Finish the scene in the background: gather every object's lists across workers, then hot-swap the
+// light/occluder/reflection buffers in. Until this lands only the first batch is lit (which is all
+// that has spawned yet).
+if (progressiveBase) {
+  gatherInWorkers(genOpts, WORKERS)
+    .then((parts) => backend.updateScene(mergeSceneParts(progressiveBase, parts)))
+    .catch((e) => console.warn('[scene] background gather failed; first batch stays', e));
+}
 
 // Fade up from black once the first frame is on screen — covers the bundle load + scene
 // build + first render. The demo autostarts visually, so this just reveals it cleanly.
