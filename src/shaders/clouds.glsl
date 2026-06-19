@@ -15,10 +15,13 @@ uniform vec3  uCloudWind;     // world units/sec the noise field drifts
 uniform float uVortex;        // 0 = flat band, 1 = full swirl
 uniform float uVortexTwist;   // radians of twist per world unit of height
 uniform float uCloudSteps;    // march iteration budget (quality)
+uniform vec3  uSunDir;        // moonlight direction (the cloud key light)
+uniform vec3  uSunColor;      // moonlight colour * intensity
+uniform float uCloudAmbient;  // sky-ambient fill strength
+uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
+uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
-const vec3 CLOUD_LIT  = vec3(0.22, 0.25, 0.32); // lit face — dim + cool for the night palette
-const vec3 CLOUD_DARK = vec3(0.015, 0.025, 0.05); // self-shadowed core (close to the sky)
 
 // --- value-noise fbm ------------------------------------------------------
 float cloudHash(vec3 p) {
@@ -39,6 +42,11 @@ float cloudFbm(vec3 p) {
   for (int i = 0; i < 4; i++) { s += a * cloudNoise(p); p *= 2.02; a *= 0.5; }
   return s;
 }
+
+// Henyey-Greenstein phase (forward scattering -> silver lining toward the moon).
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566370614 * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5)); }
+// Interleaved-gradient (blue-noise-like) dither, texture-free.
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
 // IQ opTwist: rotate xz about the vortex axis by an angle that grows with height.
 vec3 cloudTwist(vec3 p) {
@@ -81,21 +89,30 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
 
   float baseStep = (t1 - t0) / float(steps);
-  vec3 sunDir = normalize(vec3(0.35, 0.85, 0.25)); // key light, for self-shadowing
-  vec3 bg = environment(rd);                       // local sky tint folded into the cloud colour
+  float cosT = dot(rd, uSunDir);
+  float lightStep = uCloudThick * 0.12;     // world-scale spacing of the sun light-march
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
-  float t = t0;
+  float t = t0 + ign(gl_FragCoord.xy) * baseStep; // blue-noise jitter -> no slice banding
   for (int i = 0; i < 192; i++) {
     if (i >= steps || t >= t1 || T < 0.02) break;
     vec3 p = ro + rd * t;
     float dens = cloudDensity(p, time);
     if (dens <= 0.002) { t += baseStep * 1.5; continue; } // coarse-step empty patches
-    float ls = cloudDensity(p + sunDir * 2.0, time) + 0.5 * cloudDensity(p + sunDir * 5.0, time);
-    float sun = exp(-ls * 1.6);
-    vec3 col = mix(CLOUD_DARK, CLOUD_LIT, sun) + bg * 0.45; // sit in the local sky colour
+    // 6-tap light-march toward the moon (increasing spacing) -> optical depth to the sun.
+    float sunDensity = 0.0;
+    for (int j = 1; j <= 6; j++) sunDensity += cloudDensity(p + uSunDir * lightStep * float(j), time);
+    // multiple scattering: a few octaves of Beer * phase, so shadowed cores aren't black.
+    vec3 lum = vec3(0.0);
+    float a = 1.0, b = 1.0, c = 1.0;
+    for (int o = 0; o < 3; o++) {
+      lum += a * uSunColor * exp(-sunDensity * 0.9 * b) * hg(cosT, uCloudHG * c);
+      a *= 0.5; b *= 0.5; c *= 0.6;
+    }
+    lum *= mix(1.0, 1.0 - exp(-dens * 2.0), uCloudPowder); // Beer-Powder: dark thin edges
+    vec3 S = lum + environment(rd) * uCloudAmbient + 0.025; // sky ambient + non-black floor
     float dT = exp(-dens * baseStep * 1.5);
-    scat += T * (1.0 - dT) * col;
+    scat += T * (1.0 - dT) * S;
     T *= dT;
     t += baseStep;
   }

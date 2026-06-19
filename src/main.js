@@ -372,6 +372,15 @@ if (isLocalhost) {
   lf.add(lookParams, 'lightScale', 0, 1, 0.01).name('light brightness').onChange(applyLook);
   lf.add(lookParams, 'ampGain', 0, 10, 0.1).name('amp drive (30%)').onChange(applyLook);
   lf.add(lookParams, 'bloom', 0, 1, 0.01).name('bloom').onChange(applyLook);
+  const clParams = { ...backend.cloudLightDefaults };
+  const applyCloudLight = () => backend.setCloudLight(clParams);
+  const clf = debugGui.addFolder('cloud light');
+  clf.add(clParams, 'sunElev', -10, 90, 1).name('moon elevation').onChange(applyCloudLight);
+  clf.add(clParams, 'sunAzim', 0, 360, 1).name('moon azimuth').onChange(applyCloudLight);
+  clf.add(clParams, 'sunIntensity', 0, 4, 0.05).name('moon intensity').onChange(applyCloudLight);
+  clf.add(clParams, 'ambient', 0, 3, 0.05).onChange(applyCloudLight);
+  clf.add(clParams, 'hg', 0, 0.95, 0.01).name('phase (silver)').onChange(applyCloudLight);
+  clf.add(clParams, 'powder', 0, 1, 0.01).onChange(applyCloudLight);
 }
 
 window.addEventListener('keydown', (e) => {

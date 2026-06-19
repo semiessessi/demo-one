@@ -40,6 +40,8 @@ class CloudPass extends Pass {
       uCloudDensity: shared.uCloudDensity, uCloudBase: shared.uCloudBase, uCloudThick: shared.uCloudThick,
       uCloudNoiseScale: shared.uCloudNoiseScale, uCloudWind: shared.uCloudWind,
       uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
+      uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
+      uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -102,11 +104,14 @@ export function createWebGLBackend({
   // Volumetric-cloud defaults: single source for both the uniforms below and the
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
-    cloudsOn: true, coverage: 0.5, density: 0.9, base: 50, thick: 12,
-    noiseScale: 0.05, windX: 0.4, windZ: 0.15, vortex: 0, twist: 0.06, quality: 48,
+    cloudsOn: true, coverage: 0.5, density: 0.5, base: 24, thick: 12,
+    noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
-  const lookDefaults = { lightScale: 0.4, ampGain: 6.0, bloom: test ? 0.25 : 0.35 };
+  const lookDefaults = { lightScale: 0.4, ampGain: 6.0, bloom: test ? 0.25 : 0.2 };
+  // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
+  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7 };
+  const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
 
   const uniforms = {
     uTime: { value: 0 },
@@ -160,7 +165,23 @@ export function createWebGLBackend({
     uLightScale: { value: lookDefaults.lightScale },
     uAmplitude: { value: 0 },
     uAmpGain: { value: lookDefaults.ampGain },
+    // Cloud moonlight (rich lighting) — populated by setCloudLight() below.
+    uSunDir: { value: new THREE.Vector3() },
+    uSunColor: { value: new THREE.Vector3() },
+    uCloudAmbient: { value: cloudLightDefaults.ambient },
+    uCloudHG: { value: cloudLightDefaults.hg },
+    uCloudPowder: { value: cloudLightDefaults.powder },
   };
+
+  function setCloudLight(p) {
+    const el = p.sunElev * Math.PI / 180, az = p.sunAzim * Math.PI / 180;
+    uniforms.uSunDir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
+    uniforms.uSunColor.value.set(MOON_BASE.r * p.sunIntensity, MOON_BASE.g * p.sunIntensity, MOON_BASE.b * p.sunIntensity);
+    uniforms.uCloudAmbient.value = p.ambient;
+    uniforms.uCloudHG.value = p.hg;
+    uniforms.uCloudPowder.value = p.powder;
+  }
+  setCloudLight(cloudLightDefaults);
 
   const geometry = buildUnifiedGeometry();
   setInstanceAttributes(geometry, objects);
@@ -250,6 +271,8 @@ export function createWebGLBackend({
       uniforms.uAmpGain.value = p.ampGain;
       bloomPass.strength = p.bloom;
     },
+    cloudLightDefaults,
+    setCloudLight,
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose
