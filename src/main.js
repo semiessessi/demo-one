@@ -254,8 +254,10 @@ if (!CAPTURE && !TEST) {
   // Also auto-start after 1s of idle — audible only where the browser allows autoplay;
   // otherwise it runs silently until the first gesture, which then starts it for real.
   let kicked = false;
-  // First gesture only un-mutes the audio (no restart) — the autostarted animation keeps running.
-  const kickoff = () => { if (kicked) return; kicked = true; audio.resume(); };
+  // First gesture (re)starts the demo from the top WITH audio, so the music + visuals stay in
+  // sync (the silent autostart before this is just a preview). Only fires if audio isn't already
+  // running, so an allowed-autoplay session that's already synced isn't needlessly restarted.
+  const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
   ['pointerdown', 'touchstart', 'wheel'].forEach((ev) =>
     window.addEventListener(ev, kickoff, { once: true, passive: true }));
   setTimeout(() => { if (!playing) setPlaying(true); }, 1000);
