@@ -81,6 +81,7 @@ const rippleR = objects.reduce((m, o) => Math.max(m, Math.abs(o.pos[0]), Math.ab
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 let synthBeat = 0; // accumulator for the synthetic beat that drives the no-audio autostart
 let lastBeatTime = -1000; // time of the last note-on (any slot) -> the early beat "thud"
+let beatTickCounter = 0; // marches beat-sample pulses (basstick/thumper) through the light slots
 // Real sample-length decay (off the main thread): a worker parses the .it's sample/instrument
 // tables for each instrument's C-5 sample length; once ready, each slot's decay eases from the
 // pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
@@ -123,6 +124,26 @@ function updateMusic(dt) {
     }
   }
   scaleNotes += notes;
+  // Beat samples drive a marching light pulse: "basstick" is emphasised early (fades by ~15s),
+  // "thumper" is an important later beat. Each hit pulses a different slot (scrambled %32 march)
+  // with a fresh light subset, so a long, non-repeating set of lights reacts to the beat.
+  const tickBoost = musicClock < 12 ? 1 : (musicClock > 15 ? 0 : 1 - (musicClock - 12) / 3);
+  if (instrumentNames) {
+    for (let b = 0; b < N_BANDS; b++) {
+      if (!slotNote[b]) continue;
+      const label = instrumentNames[slotInst[b]] || '';
+      let boost = 0;
+      if (label.includes('basstick')) boost = tickBoost; // early-focused
+      else if (label.includes('thumper')) boost = 1.0;    // important throughout (plays later)
+      if (boost > 0) {
+        const target = (beatTickCounter * 13) % N_BANDS; // scrambled march through the slots
+        beatTickCounter++;
+        beatTime[target] = musicClock;
+        beatStrength[target] = 2.5 + boost * 5.0;        // boosted pulse on a fresh slot
+        beatSeed[target] = ++noteCounter;                // a fresh light subset each hit
+      }
+    }
+  }
   scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
   for (let n = 0; n < notes; n++) morphState.onNote(musicClock); // each note steps ~5% of shapes
   if (notes > 0) lastBeatTime = musicClock; // last beat (any slot) drives the early thud
@@ -182,6 +203,7 @@ function setPlaying(next) {
     rippleData.fill(0);
     lastRippleTime = -1;
     synthBeat = 0;
+    beatTickCounter = 0;
     morphState.reset();
     scrub.value = '0';
     backend.setTime(0);
