@@ -103,7 +103,7 @@ export function createWebGLBackend({
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
   scene.add(buildLightSprites(lights, {
-    uSpriteSize: { value: 0.05 }, // dialed down ~30% (lights were too bright with ripples)
+    uSpriteSize: { value: 0.0375 }, // 75% of 0.05 (smaller sprites again)
     uLightTime: uniforms.uLightTime,
     uSpawn: uniforms.uSpawn,
     uLightsPerObject: uniforms.uLightsPerObject,
