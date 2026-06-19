@@ -114,6 +114,16 @@ float ripplePulse(vec3 worldPos, vec4 ripples[N_RIPPLES], float now) {
   return sum * 2.5;                                       // RIPPLE_BRIGHT
 }
 
+// Early "thud": for the first ~7s every beat pulses ALL the (spawned) lights together, so the
+// opening is dominated by the beat, then it fades to the normal sparse flares. uThudTime is the
+// last note-on time (any slot); now is the music clock.
+float thudPulse(float now, float thudTime) {
+  float gate = 1.0 - smoothstep(5.0, 7.0, now); // full until ~5s, gone by ~7s
+  if (gate <= 0.0) return 0.0;
+  float age = now - thudTime;
+  return age < 0.0 ? 0.0 : gate * 1.5 * exp(-age * 5.0); // bright, tight pulse on each beat
+}
+
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash
 // (spawnIgnite) then settle to music-reactive. Keep in sync with gpu/orbit.js.

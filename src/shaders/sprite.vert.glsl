@@ -18,6 +18,7 @@ uniform float uBeatSeed[32];     // per-slot note seed; picks a fresh subset of 
 uniform float uBeatDecay[32];    // per-slot pulse-decay factor (from note pitch; 1 = neutral)
 uniform float uMusicTime;       // music clock for the beat timestamps
 uniform vec4 uRipple[4];         // brightness ripples: (centre.xyz, startTime)
+uniform float uThudTime;         // last note-on time (any slot) -> early beat "thud"
 
 out vec2 vCorner;
 out vec3 vColor;
@@ -40,6 +41,7 @@ void main() {
                  * musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band])
                  * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
   emission += step(hostSlot, uSpawn) * ripplePulse(lightPos, uRipple, uMusicTime); // ride the brightness wave
+  emission += step(hostSlot, uSpawn) * thudPulse(uMusicTime, uThudTime); // beat thud dominates the first ~7s
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot

@@ -91,6 +91,7 @@ export function createWebGLBackend({
     uMorphPTex: { value: morphPTex.tex },
     uMorphPTexW: { value: morphPTex.width },
     uRipple: { value: new Float32Array(16) }, // 4 ripples x (centre.xyz, startTime)
+    uThudTime: { value: -1000 }, // last beat time, for the early "thud" pulse
   };
 
   const geometry = buildUnifiedGeometry();
@@ -112,6 +113,7 @@ export function createWebGLBackend({
     uBeatDecay: uniforms.uBeatDecay,
     uMusicTime: uniforms.uMusicTime,
     uRipple: uniforms.uRipple,
+    uThudTime: uniforms.uThudTime,
   }));
 
   const composer = new EffectComposer(renderer); // half-float render targets
@@ -129,13 +131,14 @@ export function createWebGLBackend({
     setTime(t) { uniforms.uTime.value = t; },
     setLightTime(t) { uniforms.uLightTime.value = t; },
     setSpawn(s) { uniforms.uSpawn.value = s; },
-    setMusic(now, beatTime, strength, seed, scaleNotes, decay) {
+    setMusic(now, beatTime, strength, seed, scaleNotes, decay, thudTime) {
       uniforms.uMusicTime.value = now;
       uniforms.uBeatTime.value.set(beatTime);
       uniforms.uBeatStrength.value.set(strength);
       uniforms.uBeatSeed.value.set(seed);
       uniforms.uScaleNotes.value = scaleNotes;
       uniforms.uBeatDecay.value.set(decay);
+      uniforms.uThudTime.value = thudTime;
     },
     setMorph(p) { morphPTex.tex.image.data.set(p); morphPTex.tex.needsUpdate = true; },
     setMusicLevel(level) { flycam?.setMusicLevel(level); },

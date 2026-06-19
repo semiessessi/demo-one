@@ -80,6 +80,7 @@ let lastRippleTime = -1;
 const rippleR = objects.reduce((m, o) => Math.max(m, Math.abs(o.pos[0]), Math.abs(o.pos[2])), 0) * 0.6;
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
 let synthBeat = 0; // accumulator for the synthetic beat that drives the no-audio autostart
+let lastBeatTime = -1000; // time of the last note-on (any slot) -> the early beat "thud"
 // Real sample-length decay (off the main thread): a worker parses the .it's sample/instrument
 // tables for each instrument's C-5 sample length; once ready, each slot's decay eases from the
 // pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
@@ -123,7 +124,8 @@ function updateMusic(dt) {
   scaleNotes += notes;
   scalePhase += (scaleNotes - scalePhase) * (1 - Math.exp(-12 * dt)); // pdx NoteChase = 12
   for (let n = 0; n < notes; n++) morphState.onNote(musicClock); // each note steps ~5% of shapes
-  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase, beatDecay);
+  if (notes > 0) lastBeatTime = musicClock; // last beat (any slot) drives the early thud
+  backend.setMusic(musicClock, beatTime, beatStrength, beatSeed, scalePhase, beatDecay, lastBeatTime);
   musicLevel = Math.min(1, musicLevel * Math.exp(-dt / 0.4) + notes * 0.25); // busy = loud, calm ~ 0
   backend.setMusicLevel(musicLevel);
   // Loud beat (high note density), throttled to ~the beat rate -> a new ripple. Off in calm patches.
@@ -296,7 +298,7 @@ if (CAPTURE) {
   beatStrength.fill(1.0); // age 0 (lit); the per-note subset (fixed seed 0) stays deterministic
   beatTime.fill(0.0);
   beatSeed.fill(0.0);
-  backend.setMusic(0, beatTime, beatStrength, beatSeed, 0, beatDecay); // scaleNotes=0 -> static per-object scale
+  backend.setMusic(0, beatTime, beatStrength, beatSeed, 0, beatDecay, -1000); // scaleNotes=0 -> static scale; no thud
   for (const id of ['controls', 'info', 'toast', 'stats']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
