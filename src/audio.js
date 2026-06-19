@@ -6,6 +6,7 @@
 // bundle so its relative worklet imports resolve cleanly in dev and prod).
 
 import { ChiptuneJsPlayer } from './vendor/chiptune3.js';
+import { N_BANDS } from './constants.js';
 
 const MODULE_URL = '/x-engage.it';
 const DEFAULT_VOLUME = 0.7;
@@ -23,7 +24,7 @@ export function createAudioManager() {
   let muted = false;
   let failed = false; // audio unavailable — degrade silently
   let volume = DEFAULT_VOLUME;
-  const N_SLOTS = 32; // light "bands": tracker channels are folded into this many slots
+  const N_SLOTS = N_BANDS; // light "bands": tracker channels folded into this many slots (shared constant)
   const noteFlags = new Uint8Array(N_SLOTS); // pending note-ons per slot (set on note, cleared on consume)
   const notePitch = new Uint8Array(N_SLOTS); // last note pitch (1..120) per slot -> drives pulse decay
   const noteInst = new Uint8Array(N_SLOTS);  // last note instrument per slot -> sample-length decay

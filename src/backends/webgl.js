@@ -29,8 +29,8 @@ import { createInstanceCuller } from '../cpuCull.js';
 export function createWebGLBackend({
   objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
 }) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio); // native resolution (no cap)
+  const renderer = new THREE.WebGLRenderer(); // antialias off: EffectComposer renders to its own non-MSAA targets, so default-buffer MSAA is unused
+  renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio)); // cap at 1.5x — big fill-rate win on hi-DPI
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
@@ -161,9 +161,10 @@ export function createWebGLBackend({
 
   const composer = new EffectComposer(renderer); // half-float render targets
   composer.addPass(new RenderPass(scene, camera));
+  // Bloom at half resolution — it's a blur, so half-res looks the same and costs ~4x less.
   const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    lookDefaults.bloom, 0.6, 1.0, // softer radius (0.6) + tamed strength (was 0.5)
+    new THREE.Vector2(window.innerWidth * 0.5, window.innerHeight * 0.5),
+    lookDefaults.bloom, 0.6, 1.0, // tamed strength (lookDefaults) + softer radius
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -223,6 +224,7 @@ export function createWebGLBackend({
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       composer.setSize(w, h);
+      bloom.setSize(w * 0.5, h * 0.5); // keep bloom half-res after composer.setSize resets it
     },
     render() {
       if (flycam) flycam.update(camera);
