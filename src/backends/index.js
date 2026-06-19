@@ -1,10 +1,7 @@
-// The demo runs on WebGL2 — the supported, proven path. A WebGPU backend still exists
-// under ./webgpu.js + ../gpu/ but is intentionally DISABLED (it hit storage-buffer limits
-// at this feature set); re-enable by restoring the ?force-webgpu branch below. Both
-// implement: { name, domElement, camera, setTime(s), setView(v), setSize(w,h), render() }.
+// The demo runs on WebGL2. createBackend returns the single backend implementation:
+// { name, domElement, camera, setTime(s), setView(v), setSize(w,h), render(), ... }.
 import { createWebGLBackend } from './webgl.js';
 
 export async function createBackend(data) {
-  console.info('[backend] using WebGL2');
   return createWebGLBackend(data);
 }

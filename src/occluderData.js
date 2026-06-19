@@ -66,8 +66,7 @@ function matchFaces(starts, ends, startVerts, endVerts) {
 // the shader/main don't change (a "tri" entry is now a face slot).
 // Raw per-segment face-plane data (renderer-independent): a Float32Array of
 // 2 RGBA slots per face ([n.xyz, d] start, then end), plus the per-segment start
-// offset + count. Consumed by both the WebGL plane texture and the WebGPU storage
-// buffer.
+// offset + count. Consumed by the WebGL plane texture.
 export function buildPlaneData() {
   const segs = buildJourneySegments();
   const segSlots = segs.map((s) =>

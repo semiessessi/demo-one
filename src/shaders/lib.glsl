@@ -22,8 +22,7 @@ float pingpong(float x, float n) {
 
 // pdx-gfx integer hash + per-light orbit parameterisation (test_vert.hlsl). Lights
 // orbit their host object on a sphere: position = center + orbitRadius * animLightDir.
-// ORBIT_SPEED (0.125) and the P/Q/R frequency caps MUST match the WGSL ports in
-// gpu/morphMaterial.js and gpu/spriteMaterial.js (cross-backend pixel parity).
+// ORBIT_SPEED (0.125) and the P/Q/R frequency caps set each light's orbit path.
 uint hash(uint seed) {
   seed ^= 2747636419u;
   seed *= 2654435769u;
@@ -58,7 +57,7 @@ vec3 animLightDir(int idx, float t, float kick) {
 // that band re-triggers all of its lights (uBeatTime/uBeatStrength record the band's
 // last beat); each light then fades at one of 8 pseudo-random per-light rates, so some
 // linger far longer than others. Returns the raw flare; the caller folds it into the
-// spawn emission below. Keep in sync with gpu/orbit.js (wgLightEmission).
+// spawn emission below.
 float lightFadeRate(int idx) {
   return 3.0 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // ~3..34 /s — flashes fade fast (don't linger)
 }
@@ -69,12 +68,12 @@ float musicFlare(int idx, float beatTime, float strength, float now, float pitch
 }
 // Only a fraction of lights react to the music (so loud beats don't over-brighten the
 // scene); the rest never flare. Static per-light, independent of the band/rate/slot
-// hashes. Keep MUSIC_LIT in sync with gpu/orbit.js.
+// hashes.
 const float MUSIC_LIT = 1.0; // fraction of lights that react (1.0 = all of them)
 float musicLit(int idx) { return hashUnit(hash(uint(idx) * 2246822519u)) < MUSIC_LIT ? 1.0 : 0.0; }
 // Per-NOTE participation: each note writes a fresh seed to its slot (uBeatSeed), so a
 // different ~MUSIC_FRAC subset of the slot's lights flares each note (few, and never the
-// same set). Replaces the static musicLit gate for the flare. Sync with gpu/orbit.js.
+// same set). Replaces the static musicLit gate for the flare.
 const float MUSIC_FRAC = 0.25; // fraction of a slot's lights that flare per note (more = livelier)
 float musicBeatLit(int idx, float seed) {
   return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
@@ -97,7 +96,7 @@ float spinKick(int idx, float beatTime, float seed, float now) {
 }
 
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
-// count), easing between random per-object scales in [0.2,1.0]. Sync with wgMusicScale.
+// count), easing between random per-object scales in [0.2,1.0].
 float musicScale(int i, float notes) {
   float off = hashUnit(hash(uint(i) * 5u + 7u)) * 100.0; // NotesPerChange = 100 (5x less frequent)
   float prog = (notes + off) / 100.0;
@@ -137,7 +136,7 @@ float thudPulse(float now, float thudTime) {
 
 // Spawn-in intro: a global, ever-increasing spawn clock (uSpawn) sweeps past each
 // item's slot. Objects scale in via spawnReveal; lights ignite with a one-shot flash
-// (spawnIgnite) then settle to music-reactive. Keep in sync with gpu/orbit.js.
+// (spawnIgnite) then settle to music-reactive.
 float spawnSlot(int i) { return hashUnit(hash(uint(i) * 2654435761u + 12345u)); }
 float spawnReveal(float slot, float spawn) {
   float a = spawn - slot;

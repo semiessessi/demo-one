@@ -14,7 +14,7 @@ const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;
 const PACK_MARGIN = 0.35; // extra gap between object spheres (tighter = denser field); > orbit reach
 // Lights orbit their host object on a sphere just outside it, animated entirely
-// in-shader (see animLightDir in shaders/lib.glsl + the WGSL ports). orbitRadius is
+// in-shader (see animLightDir in shaders/lib.glsl). orbitRadius is
 // per-light: object.radius + ORBIT_MARGIN + rng()*ORBIT_SPREAD (always > object.radius,
 // so the light stays outside its host). PACK_MARGIN >= ORBIT_MARGIN + ORBIT_SPREAD so a
 // light never sweeps into a neighbouring object (their light clouds may still overlap).

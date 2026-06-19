@@ -27,7 +27,7 @@ const morphState = createMorphState(objects.length);
 // the spawn rank: index 0 spawns first and is the intro camera's focal object.
 const introTarget = objects[0].pos;
 
-// --- Backend (WebGPU if available, else WebGL2; ?force-webgl to force) ------
+// --- Backend (WebGL2) -----------------------------------------------------
 const app = document.getElementById('app');
 const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
 app.appendChild(backend.domElement);

@@ -1,5 +1,4 @@
-// Renderer-independent invariants for the pure data/geometry layer. These must
-// not change across the WebGPU migration (the same builders feed both renderers).
+// Renderer-independent invariants for the pure data/geometry layer.
 // Run: node scripts/data-tests.mjs
 import { buildJourneySegments, NUM_SEGMENTS } from '../src/journey.js';
 import { buildNormScaleLUT, NORM_LUT_SIZE } from '../src/normalize.js';

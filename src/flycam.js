@@ -1,6 +1,5 @@
 // Shared fly camera + pdx-style intro. Operates on a camera through .position and
-// .rotation only, so it works with either three instance (core 'three' or
-// 'three/webgpu') — no three import here, no cross-instance math objects.
+// .rotation only — no three import here, no cross-instance math objects.
 //
 // Free flight: WASD move, Q/Z up/down, Shift sprint, click-drag mouse look (cursor stays
 // visible — no pointer lock), non-inverted Y.
