@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import lib from './shaders/lib.glsl?raw';
 import vertexShaderSrc from './shaders/morph.vert.glsl?raw';
 import fragmentShaderSrc from './shaders/morph.frag.glsl?raw';
+import clouds from './shaders/clouds.glsl?raw';
 import { buildJourneySegments, NUM_SEGMENTS } from './journey.js';
 
 const vertexShader = `${lib}\n${vertexShaderSrc}`;
-const fragmentShader = `${lib}\n${fragmentShaderSrc}`;
+// clouds.glsl gives the fragment skyClouds(), so reflection rays that escape to sky
+// show the same volumetric clouds as the dome.
+const fragmentShader = `${lib}\n${clouds}\n${fragmentShaderSrc}`;
 
 // One InstancedBufferGeometry holding every segment's triangles concatenated.
 // `position` = each vertex's start position, `aEnd` = its end position, and
