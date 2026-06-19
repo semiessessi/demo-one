@@ -25,6 +25,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
+import { buildStarfield } from '../starfield.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -112,6 +113,7 @@ export function createWebGLBackend({
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
+  const starDefaults = { size: 2.0, twinkle: 0.4 };
 
   const uniforms = {
     uTime: { value: 0 },
@@ -173,6 +175,8 @@ export function createWebGLBackend({
     uCloudPowder: { value: cloudLightDefaults.powder },
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
     uReflCloudSteps: { value: 10 },
+    uStarSize: { value: starDefaults.size },
+    uStarTwinkle: { value: starDefaults.twinkle },
   };
 
   function setCloudLight(p) {
@@ -213,6 +217,10 @@ export function createWebGLBackend({
   scene.add(spritesMesh);
   // Gradient backdrop dome (clouds are now the fullscreen CloudPass, composited over this + scene).
   scene.add(buildSky());
+  // Real-star background (async: the catalogue is code-split out of the main bundle). Added when it
+  // resolves; the CloudPass then dims the stars where the cloud is thick.
+  buildStarfield({ uTime: uniforms.uTime, uStarSize: uniforms.uStarSize, uStarTwinkle: uniforms.uStarTwinkle })
+    .then((m) => scene.add(m)).catch(() => {});
 
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
@@ -276,6 +284,8 @@ export function createWebGLBackend({
     },
     cloudLightDefaults,
     setCloudLight,
+    starDefaults,
+    setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose
