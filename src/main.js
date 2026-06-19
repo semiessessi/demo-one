@@ -94,6 +94,10 @@ const volume = document.getElementById('volume');
 const info = document.getElementById('info');
 const toast = document.getElementById('toast');
 let playing = false; // demo loads paused, with the controls pane open
+// "Click for sound" is shown only after audio has been *trying* to start for this long and
+// still isn't running — so sessions where the browser permits autoplay never flash the prompt.
+const AUDIO_PROMPT_GRACE_MS = 900;
+let audioAttemptAt = Infinity; // performance.now() of the last audio (re)start attempt
 let morphTime = 0;
 let lightTime = 0; // separate clock for the orbiting lights (advances when lightsMoving)
 let lightsMoving = true; // light orbit on by default; toggle with the ✦ button or L
@@ -259,6 +263,7 @@ function setPlaying(next) {
     backend.setLightTime(0);
     backend.startIntro(); // replay the orbit-and-pull-back camera intro
     audio.restart(); // restart the music from the beginning
+    audioAttemptAt = performance.now(); // start the grace clock for the "click for sound" prompt
     if (firstPlay) {
       firstPlay = false;
       info.classList.remove('open');
@@ -296,26 +301,23 @@ orbitToggle.addEventListener('click', () => setLightsMoving(!lightsMoving));
 // Reveal the controls pane shortly after load so it animates in.
 if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 
-// Auto-play the demo after ~1s of idling at the skybox (camera held at the start pose).
-// Any pointer/key/wheel input cancels it — the user is in control and can press play.
+// The demo plays on its own. It autostarts shortly after load (so it's already running by the
+// time the opening fade clears) and the music comes with it WHEREVER the browser permits
+// autoplay. Where audio is blocked until a user gesture, the demo still runs — silently — and
+// the "click for sound" prompt asks for one; the first interaction of ANY kind (tap, click,
+// key, scroll) then (re)starts it from the top WITH sound, so music and visuals stay in sync.
 if (!CAPTURE && !TEST) {
-  // Start the demo on the first interaction (the audio needs a user gesture to be audible).
-  // Also auto-start after 1s of idle — audible only where the browser allows autoplay;
-  // otherwise it runs silently until the first gesture, which then starts it for real.
   let kicked = false;
-  // First gesture (re)starts the demo from the top WITH audio, so the music + visuals stay in
-  // sync (the silent autostart before this is just a preview). Only fires if audio isn't already
-  // running, so an allowed-autoplay session that's already synced isn't needlessly restarted.
   const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
-  ['pointerdown', 'touchstart', 'wheel'].forEach((ev) =>
+  ['pointerdown', 'touchstart', 'wheel', 'keydown', 'click'].forEach((ev) =>
     window.addEventListener(ev, kickoff, { once: true, passive: true }));
-  setTimeout(() => { if (!playing) setPlaying(true); }, 1000);
+  setTimeout(() => { if (!playing) setPlaying(true); }, 600); // autostart promptly, right behind the fade
 }
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
 // "Click for sound" prompt: shown ONLY while the demo is playing but the browser is still
-// blocking audio (no gesture yet, and autoplay not permitted). Where autoplay is allowed the
-// sound just starts and this never appears. Visibility is driven per-frame in the loop below.
+// blocking audio after the grace window (no gesture yet, and autoplay not permitted). Where
+// autoplay is allowed the sound just starts and this never appears. Driven per-frame below.
 const startEl = document.getElementById('start');
 
 const statsEl = document.getElementById('stats');
@@ -463,7 +465,13 @@ function frame() {
   backend.setLightTime(lightTime);
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
   if (!CAPTURE) backend.setAmplitude(audio.getAmplitude()); // measured RMS -> amplitude-reactive lights
-  if (startEl) startEl.classList.toggle('hidden', !playing || audio.isRunning); // prompt only if audio is blocked
+  // Prompt for a click ONLY if audio is genuinely blocked: we're playing, the context still
+  // isn't running, and it's had its grace window to autostart — so allowed-autoplay sessions
+  // (where the music just starts) never flash the prompt.
+  if (startEl) {
+    const audioBlocked = playing && !audio.isRunning && performance.now() - audioAttemptAt > AUDIO_PROMPT_GRACE_MS;
+    startEl.classList.toggle('hidden', !audioBlocked);
+  }
   backend.render();
   reveal(); // first frame is on screen — start the fade-up from black
 
