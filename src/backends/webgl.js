@@ -328,6 +328,20 @@ export function createWebGLBackend({
       cloudPass.setCamera(camera); // matrixWorld is current after the render above
       composer.render(); // CloudPass (clouds over the scene) -> bloom -> output
     },
+    // Hot-swap the progressively-gathered full light/occluder/reflection lists in: rebuild the index
+    // + instance textures and re-upload the per-object offsets/counts. The lights themselves are
+    // unchanged, so uLightsTex is kept (only the index into it grows).
+    updateScene(data) {
+      const lt = buildLightTextures(data.lights, data.lightIndices);
+      uniforms.uLightIndexTex.value = lt.lightIndexTex; uniforms.uIndexTexW.value = lt.indexTexW;
+      const ot = buildOccluderTextures(data.objects, data.occluderIndices);
+      uniforms.uOccluderTex.value = ot.occluderTex; uniforms.uOccluderTexW.value = ot.occluderTexW;
+      uniforms.uShadowIndexTex.value = ot.shadowIndexTex; uniforms.uShadowIndexW.value = ot.shadowIndexW;
+      const rt = buildReflectionData(data.objects, data.reflectionIndices);
+      uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
+      uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
+      setInstanceAttributes(geometry, data.objects);
+    },
     dispose() { flycam?.dispose(); composer.dispose?.(); renderer.dispose(); }, // free input listeners + GPU resources (e.g. on bfcache pagehide)
   };
 }

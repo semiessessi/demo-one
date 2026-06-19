@@ -49,6 +49,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   let climaxRoll = 0;             // accumulated barrel-roll angle during the climax
   let rollSmooth = 0;             // smoothed camera roll (3rd euler)
   let musicLevel = 0;             // 0..1 music amplitude (note density), set by setMusicLevel
+  let sox = 0, soy = 0, soz = 0, lookSmoothInit = false; // smoothed look-offset -> calms the auto-camera's view swings
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
   function aim(tx, ty, tz) {
@@ -172,7 +173,14 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
         lx += (stx - lx) * fb; ly += (sty - ly) * fb; lz += (stz - lz) * fb;
       }
-      aim(lx, ly, lz);
+      // The look target follows the fly velocity, which swings fast near the Lissajous low-speed
+      // corners — reading as the whole view spinning. Low-pass the look OFFSET from the camera (not
+      // the world point, so it never looks backwards as the camera moves) for a calm auto-pan.
+      const ox = lx - px, oy = ly - py, oz = lz - pz;
+      if (!lookSmoothInit) { sox = ox; soy = oy; soz = oz; lookSmoothInit = true; }
+      const lsa = 1.0 - Math.exp(-dt / 0.5);
+      sox += (ox - sox) * lsa; soy += (oy - soy) * lsa; soz += (oz - soz) * lsa;
+      aim(px + sox, py + soy, pz + soz);
     }
     if (mode === 'free') {
       const cp = Math.cos(pitch), sp = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);
@@ -211,6 +219,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     speedMultSmooth = 1;
     climaxRoll = 0;
     rollSmooth = 0;
+    sox = soy = soz = 0; lookSmoothInit = false;
     mode = 'intro';
   }
   function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }
