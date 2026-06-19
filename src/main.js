@@ -3,6 +3,7 @@ import { NUM_SEGMENTS } from './journey.js';
 import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
 import { createMorphState } from './morphState.js';
+import { N_BANDS } from './constants.js';
 
 // --- Generate the static volume -------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -81,7 +82,6 @@ function demoSpawnCount(t) {
 // flux clearly above a running average), flare that band's envelope and re-roll its
 // subset seed, then decay the envelope toward zero so the lights blink with the music
 // and go dark when it's silent.
-const N_BANDS = 32; // light slots (must match N_SLOTS in audio.js + the shader arrays)
 const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed each frame
 const slotPitch = new Uint8Array(N_BANDS); // per-slot note pitch (1..120), consumed each frame
 const slotInst = new Uint8Array(N_BANDS);  // per-slot note instrument, consumed each frame
