@@ -68,8 +68,9 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float NdotV = max(dot(N, V), 1e-4);
   float NdotH = max(dot(N, H), 0.0);
   float LdotH = max(dot(L, H), 0.0);
-  float alpha = roughness * roughness;
-  float wAlpha = clamp(alpha + 0.12 / (3.0 * dist), 0.0, 1.0);
+  float specRough = min(roughness, 0.10); // clamp -> tight, sprite-like highlights even on rough surfaces
+  float alpha = specRough * specRough;
+  float wAlpha = clamp(alpha + 0.03 / (3.0 * dist), 0.0, 1.0); // less light-size widening -> tighter
   float wAlpha2 = wAlpha * wAlpha;
   float energy = (alpha / wAlpha) * (alpha / wAlpha);
   float dDen = NdotH * NdotH * (wAlpha2 - 1.0) + 1.0;
@@ -79,7 +80,7 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
-  return (diffuseAlbedo + D * Vis * F * 5.0) * NdotL; // specular x5 (boosted: the 75% light dim cut it too)
+  return (diffuseAlbedo + D * Vis * F * 10.0) * NdotL; // tight (clamped roughness) + bright x10 to match the sprites
 }
 
 // Convex-hull trace of occluder `oi` against a world ray. Rebuilds the occluder's
