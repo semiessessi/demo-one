@@ -9,10 +9,11 @@ import { cameraPathPoints } from './flycam.js';
 const TARGET_OBJECTS = 5000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
 const LIGHTS_PER_OBJECT = 40;
-// Each object is lit + shadowed by its nearest N lights (its own + neighbouring objects' +
-// field lights), sorted nearest-first. The bucket gather returns ~800 within reach; this caps
-// the per-object shading loop. The analytic occluder traces keep the nearest-16 shadows cheap.
-const MAX_LIGHTS_PER_OBJECT = 128;
+// Hard ceiling on each object's light list (its own + neighbouring objects' + field lights,
+// sorted nearest-first). The bucket gather returns a median of ~800 within reach, so this rarely
+// binds — it's the quality ceiling; a dynamic FPS controller can scale the *shaded* count down
+// later. The analytic occluder traces keep the nearest-16 shadows cheap.
+const MAX_LIGHTS_PER_OBJECT = 1024;
 const LIGHT_RADIUS = 4.5; // light falloff radius (bigger reach; sprite size is decoupled from it)
 const SCALE_MIN = 0.45;
 const SCALE_MAX = 0.62;

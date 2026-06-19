@@ -364,7 +364,7 @@ void main() {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
-      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2, 12);
+      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 4, 32);
       refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
@@ -374,7 +374,7 @@ void main() {
     // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit
     // object's lights around it.
     vec3 rro = vWorldPos + N * 0.02;
-    for (int k = 0; k < vLightCount && k < lightCap && k < 32; k++) {
+    for (int k = 0; k < vLightCount && k < lightCap && k < 128; k++) {
       int li = int(texelFetch(uLightIndexTex, texel(vLightOffset + k, uIndexTexW), 0).r + 0.5);
       vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
       vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
@@ -389,7 +389,7 @@ void main() {
       float r = perp / (0.3 + 0.5 * e);
       if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
     }
-    for (int k = 0; reflLo >= 0 && k < reflLc && k < 24; k++) {
+    for (int k = 0; reflLo >= 0 && k < reflLc && k < 128; k++) {
       int li = int(texelFetch(uLightIndexTex, texel(reflLo + k, uIndexTexW), 0).r + 0.5);
       vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
       vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
