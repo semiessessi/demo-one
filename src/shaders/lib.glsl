@@ -42,9 +42,12 @@ vec3 animLightDir(int idx, float t, float kick) {
   float Q = 1.0 + floor(hashUnit(hash(i * 3u + 1u)) * 7.0);  // 1..7
   float R = 1.0 + floor(hashUnit(hash(i * 3u + 2u)) * 4.0);  // 1..4
   float phase = hashUnit(hash(i * 3u + 7u)) * 6.28318530718;
-  float speed = 0.019 + hashUnit(hash(i * 2654435761u + 99u)) * 0.031; // 1/16th: slow drift, notes kick it
+  // Normalize by the path's frequency magnitude so every light has a SIMILAR visible speed:
+  // no near-static low-frequency ones, and the busy high-frequency ones don't zip (~0.15..0.25 rad/s).
+  float freqMag = sqrt(P * P + Q * Q + R * R);
+  float speed = 0.15 + hashUnit(hash(i * 2654435761u + 99u)) * 0.10;
   float sgn = hashUnit(hash(i * 2654435761u + 777u)) < 0.5 ? 1.0 : -1.0; // ~half orbit the opposite way
-  float A = (t * speed + kick) * sgn + phase; // base drift + per-note kick, both in the light's direction
+  float A = ((t * speed + kick) / freqMag) * sgn + phase; // uniform-speed drift + per-note kick
   float th = P * A, ph = Q * A, ps = R * A;
   vec3 dir = vec3(sin(th) * cos(ph), sin(th) * sin(ph), cos(th));
   dir.xy = vec2(dir.x * cos(ps) - dir.y * sin(ps), dir.x * sin(ps) + dir.y * cos(ps));
