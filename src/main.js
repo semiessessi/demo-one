@@ -337,6 +337,10 @@ const noteName = (v) => (v > 0 ? NOTE_NAMES[(v - 1) % 12] + '-' + Math.floor((v 
 let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
+// FPS autoscaler state (runs for everyone; the localhost GUI tunes target/auto).
+let qualityScale = 1;
+let lastQAdjust = 0;
+const perf = { auto: true, targetFps: 60 };
 
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
 // lil-gui is dynamically imported, so end users off localhost never download it.
@@ -387,6 +391,9 @@ if (isLocalhost) {
   const sf = debugGui.addFolder('stars');
   sf.add(stParams, 'size', 0, 6, 0.1).name('star size').onChange(applyStars);
   sf.add(stParams, 'twinkle', 0, 1, 0.01).onChange(applyStars);
+  const pf = debugGui.addFolder('perf');
+  pf.add(perf, 'auto').name('fps autoscale');
+  pf.add(perf, 'targetFps', 30, 120, 1).name('target fps');
 }
 
 window.addEventListener('keydown', (e) => {
@@ -493,6 +500,15 @@ function frame() {
   // Measure real frame time.
   emaMs = emaMs * 0.9 + (t - lastNow) * 0.1;
   lastNow = t;
+  // FPS autoscaler: hold the target fps by shedding the heaviest work (cloud steps + shadow/
+  // reflection/light caps) when slow, restoring it when there's headroom.
+  if (perf.auto && t - lastQAdjust > 500) {
+    lastQAdjust = t;
+    const fps = 1000 / emaMs;
+    if (fps < perf.targetFps - 6) qualityScale = Math.max(0.3, qualityScale - 0.12);
+    else if (fps > perf.targetFps + 8) qualityScale = Math.min(1, qualityScale + 0.06);
+    backend.setQualityScale(qualityScale);
+  }
   if (statsOn) {
     statsAcc += 1;
     if (statsAcc >= 8) {

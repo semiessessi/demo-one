@@ -18,6 +18,9 @@ uniform float uTime;
 uniform float uLightScale; // global light-brightness multiplier (debug-tunable)
 uniform float uAmplitude;  // measured output RMS — drives the amplitude-reactive light subset
 uniform float uAmpGain;    // how hard that subset reacts
+uniform int uShadowCap;    // FPS-autoscale caps (min'd with the distance-LOD caps below)
+uniform int uReflCap;
+uniform int uLightCap;
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
@@ -341,9 +344,9 @@ void main() {
   // Distance LOD: far surfaces trace fewer shadow lights + reflection occluders (helps fps;
   // the close hero keeps its full counts).
   float lod = clamp((distance(vWorldPos, cameraPosition) - 8.0) / 40.0, 0.0, 1.0);
-  int shadowCap = int(mix(float(SHADOW_LIGHTS), 2.0, lod));
-  int reflCap = int(mix(float(vReflCount), 8.0, lod));
-  int lightCap = int(mix(float(vLightCount), 12.0, lod)); // far surfaces shade fewer (nearest) lights
+  int shadowCap = min(int(mix(float(SHADOW_LIGHTS), 2.0, lod)), uShadowCap);
+  int reflCap = min(int(mix(float(vReflCount), 8.0, lod)), uReflCap);
+  int lightCap = min(int(mix(float(vLightCount), 12.0, lod)), uLightCap); // far surfaces shade fewer; the autoscaler caps further
 
   vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
 

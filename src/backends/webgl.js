@@ -177,6 +177,7 @@ export function createWebGLBackend({
     uReflCloudSteps: { value: 10 },
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
+    uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
   };
 
   function setCloudLight(p) {
@@ -286,6 +287,13 @@ export function createWebGLBackend({
     setCloudLight,
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
+    setQualityScale(s) {
+      uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
+      uniforms.uReflCloudSteps.value = Math.max(4, Math.round(12 * s));
+      uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
+      uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
+      uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
+    },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose
