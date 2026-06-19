@@ -109,7 +109,7 @@ export function createWebGLBackend({
     noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
-  const lookDefaults = { lightScale: 0.4, ampGain: 6.0, bloom: test ? 0.25 : 0.2 };
+  const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);

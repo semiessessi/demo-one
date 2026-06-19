@@ -370,7 +370,7 @@ if (isLocalhost) {
   const applyLook = () => backend.setLook(lookParams);
   const lf = debugGui.addFolder('look');
   lf.add(lookParams, 'lightScale', 0, 1, 0.01).name('light brightness').onChange(applyLook);
-  lf.add(lookParams, 'ampGain', 0, 10, 0.1).name('amp drive (30%)').onChange(applyLook);
+  lf.add(lookParams, 'ampGain', 0, 30, 0.1).name('amp drive (30%)').onChange(applyLook);
   lf.add(lookParams, 'bloom', 0, 1, 0.01).name('bloom').onChange(applyLook);
   const clParams = { ...backend.cloudLightDefaults };
   const applyCloudLight = () => backend.setCloudLight(clParams);

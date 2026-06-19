@@ -41,12 +41,12 @@ void main() {
   float hostSlot = floor(float(gl_InstanceID) / uLightsPerObject); // this light's host object rank
   // Lights fade in just AFTER their host object, so no stray lights precede the first object.
   float reveal = lightSpawnFade(hostSlot, uSpawn);
-  // The ~30% amplitude subset is driven ONLY by the measured amplitude (+ this fade-in); every
-  // other light keeps the per-note flares (beat + ripple + thud) and ignores the amplitude.
-  float beat = musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(gl_InstanceID, uBeatSeed[band])
-             + ripplePulse(lightPos, uRipple, uMusicTime)
-             + thudPulse(uMusicTime, uThudTime);
-  float emission = reveal * mix(beat, AMP_BASE + uAmplitude * uAmpGain, ampLit(gl_InstanceID));
+  // The ~30% amplitude subset is driven ONLY by the measured amplitude (+ this fade-in). Every other
+  // light: the per-note flares (beat + thud) at HALF brightness plus the pulse waves (ripple) at full.
+  float other = 0.5 * (musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(gl_InstanceID, uBeatSeed[band])
+              + thudPulse(uMusicTime, uThudTime))
+              + ripplePulse(lightPos, uRipple, uMusicTime);
+  float emission = reveal * mix(other, AMP_BASE + uAmplitude * uAmpGain, ampLit(gl_InstanceID));
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot
