@@ -196,7 +196,7 @@ export function createWebGLBackend({
 
   const geometry = buildUnifiedGeometry();
   setInstanceAttributes(geometry, objects);
-  const culler = createInstanceCuller(geometry, objects); // CPU frustum cull + compact
+  let culler = createInstanceCuller(geometry, objects); // CPU frustum cull + compact
   const mesh = new THREE.Mesh(geometry, buildMorphMaterial(uniforms));
   mesh.frustumCulled = false; // we cull per-instance ourselves
   scene.add(mesh);
@@ -341,6 +341,7 @@ export function createWebGLBackend({
       uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
       uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
       setInstanceAttributes(geometry, data.objects);
+      culler = createInstanceCuller(geometry, data.objects); // re-sync the culler: setInstanceAttributes rewrote the instance buffers full-order, so the culler's cached src + aOrigIndex must be rebuilt (else slots desync -> objects spin on every camera move)
     },
     dispose() { flycam?.dispose(); composer.dispose?.(); renderer.dispose(); }, // free input listeners + GPU resources (e.g. on bfcache pagehide)
   };
