@@ -62,15 +62,15 @@ float falloff(float dist, float radius) {
   return a * a / (dist * dist + 1.0);
 }
 
-vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist) {
+vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist, float fallD, float fallS) {
   vec3 H = normalize(V + L);
   float NdotL = max(dot(N, L), 0.0);
   float NdotV = max(dot(N, V), 1e-4);
   float NdotH = max(dot(N, H), 0.0);
   float LdotH = max(dot(L, H), 0.0);
-  float specRough = min(roughness, 0.10); // clamp -> tight, sprite-like highlights even on rough surfaces
+  float specRough = min(roughness, 0.06); // clamp -> very tight, sprite-reflection-like highlights
   float alpha = specRough * specRough;
-  float wAlpha = clamp(alpha + 0.03 / (3.0 * dist), 0.0, 1.0); // less light-size widening -> tighter
+  float wAlpha = clamp(alpha + 0.015 / (3.0 * dist), 0.0, 1.0); // minimal light-size widening -> tighter still
   float wAlpha2 = wAlpha * wAlpha;
   float energy = (alpha / wAlpha) * (alpha / wAlpha);
   float dDen = NdotH * NdotH * (wAlpha2 - 1.0) + 1.0;
@@ -80,7 +80,9 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
-  return (diffuseAlbedo + D * Vis * F * 10.0) * NdotL; // tight (clamped roughness) + bright x10 to match the sprites
+  // Diffuse uses the normal falloff; the specular highlight reaches 4x further (fallS) and is
+  // brighter, so it reads as a tight bright reflection of the light sprite.
+  return (diffuseAlbedo * fallD + D * Vis * F * 20.0 * fallS) * NdotL;
 }
 
 // Convex-hull trace of occluder `oi` against a world ray. Rebuilds the occluder's
@@ -173,10 +175,11 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     vec3 L = lightPos - p;
     float dist = length(L);
     L /= max(dist, 1e-4);
-    float fall = falloff(dist, colRad.w);
+    float fallD = falloff(dist, colRad.w);           // diffuse: normal radius
+    float fallS = falloff(dist, colRad.w * 4.0);     // specular: reaches 4x the radius
     float lum = max(colRad.r, max(colRad.g, colRad.b));
-    // skip lights that can't contribute: back-facing, out of radius, or dark
-    if (dot(N, L) <= 0.0 || fall <= 1e-6 || lum <= 0.0) continue;
+    // skip lights that can't contribute: back-facing, beyond the specular reach, or dark
+    if (dot(N, L) <= 0.0 || fallS <= 1e-6 || lum <= 0.0) continue;
     int band = idx % 32;
     float hostSlot = floor(float(idx) / uLightsPerObject); // this light's host object rank
     // Dark until the host spawns, then flash only on notes — a fresh ~MUSIC_FRAC subset
@@ -186,7 +189,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
                    * musicBeatLit(idx, uBeatSeed[band]);
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < shadowCap) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
-    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist) * colRad.rgb * fall * shadow * emission;
+    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist, fallD, fallS) * colRad.rgb * shadow * emission;
   }
   return lit;
 }
