@@ -65,7 +65,7 @@ const slotNote = new Uint8Array(N_BANDS); // per-slot note-on flags, consumed ea
 const slotPitch = new Uint8Array(N_BANDS); // per-slot note pitch (1..120), consumed each frame
 const slotInst = new Uint8Array(N_BANDS);  // per-slot note instrument, consumed each frame
 const beatDecay = new Float32Array(N_BANDS).fill(1); // per-slot pulse-decay factor (1 = neutral)
-const beatTime = new Float32Array(N_BANDS); // musicClock time of each slot's last note-on
+const beatTime = new Float32Array(N_BANDS).fill(-1000); // last note-on time; far-negative = no flare yet
 const beatStrength = new Float32Array(N_BANDS); // flare strength of each slot's last note-on
 const beatSeed = new Float32Array(N_BANDS); // per-slot note seed; re-rolled each note -> a fresh light subset
 let noteCounter = 0; // ever-increasing; stamped into beatSeed[slot] on each note-on
@@ -79,6 +79,7 @@ let rippleHead = 0;
 let lastRippleTime = -1;
 const rippleR = objects.reduce((m, o) => Math.max(m, Math.abs(o.pos[0]), Math.abs(o.pos[2])), 0) * 0.6;
 let musicClock = 0; // ever-increasing music clock; beat timestamps live in these units
+let synthBeat = 0; // accumulator for the synthetic beat that drives the no-audio autostart
 // Real sample-length decay (off the main thread): a worker parses the .it's sample/instrument
 // tables for each instrument's C-5 sample length; once ready, each slot's decay eases from the
 // pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
@@ -94,6 +95,12 @@ try {
 function updateMusic(dt) {
   musicClock += dt;
   audio.consumeNotes(slotNote, slotPitch, slotInst);
+  if (playing && !audio.isRunning) {
+    // Autostart before a user gesture (audio can't play yet): synthesise a beat so the demo
+    // plays visually — shapes spawn, morph + lights flash — until the user clicks for sound.
+    synthBeat += dt;
+    if (synthBeat >= 0.3) { synthBeat = 0; for (let n = 0; n < 3; n++) slotNote[(Math.random() * N_BANDS) | 0] = 1; }
+  }
   let notes = 0;
   for (let b = 0; b < N_BANDS; b++) {
     if (slotNote[b]) {
@@ -161,7 +168,7 @@ function setPlaying(next) {
     morphTime = 0;
     lightTime = 0;
     musicClock = 0;
-    beatTime.fill(0);
+    beatTime.fill(-1000); // far in the past so nothing flares at musicClock 0 (no weird startup lights)
     beatStrength.fill(0);
     beatSeed.fill(0);
     noteCounter = 0;
@@ -171,6 +178,7 @@ function setPlaying(next) {
     beatDecay.fill(1);
     rippleData.fill(0);
     lastRippleTime = -1;
+    synthBeat = 0;
     morphState.reset();
     scrub.value = '0';
     backend.setTime(0);
@@ -228,6 +236,12 @@ if (!CAPTURE && !TEST) {
 }
 
 // --- FPS / frame-time overlay (off by default, toggle with 'f') ------------
+// "Click for sound" prompt: the demo autostarts visually, but audio needs a user gesture.
+const startEl = document.getElementById('start');
+if (CAPTURE || TEST) startEl?.classList.add('hidden');
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) =>
+  window.addEventListener(ev, () => startEl?.classList.add('hidden'), { once: true, passive: true }));
+
 const statsEl = document.getElementById('stats');
 let statsOn = ['localhost', '127.0.0.1'].includes(location.hostname); // on by default on localhost
 statsEl.style.display = statsOn ? 'block' : 'none';
