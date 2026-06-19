@@ -24,6 +24,9 @@ uniform sampler2D uMorphPTex; // per-object morph position (CPU note-stepped), i
 uniform highp int uMorphPTexW; // highp: shared with the fragment stage, must match precision
 uniform float uNumSegments;
 uniform float uNormScale[128]; // phase -> mean-radius normalization scale
+uniform float uBeatTime[32];   // per-slot last note-on time (for the beat-reactive spin kick)
+uniform float uBeatSeed[32];   // per-slot note seed (which objects kick this note)
+uniform float uMusicTime;      // music clock for the beat timestamps
 
 out vec3 vWorldPos;
 out vec3 vColor;
@@ -57,7 +60,8 @@ void main() {
   int i1 = min(i0 + 1, 127);
   local *= mix(uNormScale[i0], uNormScale[i1], fp - float(i0));
 
-  vec4 spin = quatAxisAngle(aSpinAxis, uTime * spinSpeed);
+  int oslot = int(aOrigIndex) % 32; // music slot -> beat-reactive spin kick
+  vec4 spin = quatAxisAngle(aSpinAxis, uTime * spinSpeed + spinKick(int(aOrigIndex), uBeatTime[oslot], uBeatSeed[oslot], uMusicTime));
   vec4 q = qmul(spin, aQuat);
   vec3 world = aInstancePos + qrot(q, local * scale);
 

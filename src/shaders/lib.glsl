@@ -87,6 +87,14 @@ float lightKick(int idx, float beatTime, float seed, float now) {
   float x = age * 2.5;
   return musicBeatLit(idx, seed) * 0.35 * x * exp(1.0 - x); // smooth bump (no snap), peak ~0.35 rad at ~0.4s
 }
+// Beat-reactive object spin: the fresh subset (musicBeatLit) that flares on a note also gets a
+// smooth spin lurch on top of its steady rotation. Used by the vertex + the occluder hull.
+float spinKick(int idx, float beatTime, float seed, float now) {
+  float age = now - beatTime;
+  if (age < 0.0) return 0.0;
+  float x = age * 2.5;
+  return musicBeatLit(idx, seed) * 0.9 * x * exp(1.0 - x); // smooth spin bump on the object's notes
+}
 
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
 // count), easing between random per-object scales in [0.2,1.0]. Sync with wgMusicScale.
