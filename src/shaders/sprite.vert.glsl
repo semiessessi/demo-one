@@ -46,7 +46,7 @@ void main() {
   float beat = musicFlare(gl_InstanceID, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]) * musicBeatLit(gl_InstanceID, uBeatSeed[band])
              + ripplePulse(lightPos, uRipple, uMusicTime)
              + thudPulse(uMusicTime, uThudTime);
-  float emission = reveal * mix(beat, uAmplitude * uAmpGain, ampLit(gl_InstanceID));
+  float emission = reveal * mix(beat, AMP_BASE + uAmplitude * uAmpGain, ampLit(gl_InstanceID));
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot
