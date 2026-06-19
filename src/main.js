@@ -72,6 +72,7 @@ const introTarget = objects[0].pos;
 const app = document.getElementById('app');
 const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
 app.appendChild(backend.domElement);
+window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
 
 // Fade up from black once the first frame is on screen — covers the bundle load + scene
 // build + first render. The demo autostarts visually, so this just reveals it cleanly.
@@ -138,7 +139,7 @@ let instrumentNames = null;
 const DECAY_FADE_SECS = 30;
 try {
   const sdWorker = new Worker(new URL('./sampleDurations.worker.js', import.meta.url), { type: 'module' });
-  sdWorker.onmessage = (e) => { instrumentDur = e.data.dur; instrumentNames = e.data.names; };
+  sdWorker.onmessage = (e) => { instrumentDur = e.data.dur; instrumentNames = e.data.names; sdWorker.terminate(); }; // one-shot: free the worker once it has posted the durations
 } catch (e) { /* enhancement only — stays on the pitch proxy */ }
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;

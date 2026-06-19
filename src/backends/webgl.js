@@ -231,5 +231,6 @@ export function createWebGLBackend({
       culler.cull(camera); // frustum-cull + compact the instances for this view
       composer.render();
     },
+    dispose() { flycam?.dispose(); composer.dispose?.(); renderer.dispose(); }, // free input listeners + GPU resources (e.g. on bfcache pagehide)
   };
 }
