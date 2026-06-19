@@ -350,6 +350,9 @@ void main() {
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
   // Full ambient/environment term (no AO): shadowing it hid the soft env reflection.
   lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
+  // Directional moonlight on the scene, occluded by the clouds -> the field dapples under cover.
+  lit += diffuseAlbedo * uSunColor * uMoonStrength * (0.3 + 0.7 * max(dot(N, uSunDir), 0.0))
+       * cloudShadow(vWorldPos, uSunDir, uTime) * uLightScale;
 
   if (vRough < REFL_ROUGHNESS_MAX) {
     vec3 F0 = mix(vec3(0.04), vColor, vMetal);

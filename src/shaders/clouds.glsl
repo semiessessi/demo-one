@@ -20,6 +20,7 @@ uniform vec3  uSunColor;      // moonlight colour * intensity
 uniform float uCloudAmbient;  // sky-ambient fill strength
 uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
+uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 
@@ -67,6 +68,19 @@ float cloudDensity(vec3 p, float time) {
   vec3 np = (q + uCloudWind * time) * uCloudNoiseScale;
   float shape = cloudFbm(np) * h - (1.0 - uCoverage);
   return clamp(shape, 0.0, 1.0) * uCloudDensity;
+}
+
+// Cloud shadow for the SCENE: optical depth from a world point up toward the moon through the
+// band -> Beer transmittance, so objects dapple under cloud cover (morph.frag moonlight term).
+float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
+  if (uCloudsOn < 0.5 || sunDir.y <= 0.01) return 1.0;
+  float yLo = uCloudBase - uCloudThick, yHi = uCloudBase + uCloudThick;
+  float tA = (yLo - worldPos.y) / sunDir.y, tB = (yHi - worldPos.y) / sunDir.y;
+  float t0 = max(min(tA, tB), 0.0), t1 = max(tA, tB);
+  if (t1 <= t0) return 1.0; // the up-ray doesn't cross the band
+  float dt = (t1 - t0) / 4.0, dens = 0.0;
+  for (int i = 0; i < 4; i++) dens += cloudDensity(worldPos + sunDir * (t0 + dt * (float(i) + 0.5)), time);
+  return exp(-dens * dt * 1.2);
 }
 
 // Core march: premultiplied in-scatter (rgb) + transmittance (a), bounded by tMax (depth/hit

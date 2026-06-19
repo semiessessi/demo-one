@@ -381,6 +381,7 @@ if (isLocalhost) {
   clf.add(clParams, 'ambient', 0, 3, 0.05).onChange(applyCloudLight);
   clf.add(clParams, 'hg', 0, 0.95, 0.01).name('phase (silver)').onChange(applyCloudLight);
   clf.add(clParams, 'powder', 0, 1, 0.01).onChange(applyCloudLight);
+  clf.add(clParams, 'moonStrength', 0, 3, 0.05).name('moon on scene').onChange(applyCloudLight);
 }
 
 window.addEventListener('keydown', (e) => {

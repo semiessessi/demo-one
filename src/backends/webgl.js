@@ -110,7 +110,7 @@ export function createWebGLBackend({
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 6.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7 };
+  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
 
   const uniforms = {
@@ -171,6 +171,7 @@ export function createWebGLBackend({
     uCloudAmbient: { value: cloudLightDefaults.ambient },
     uCloudHG: { value: cloudLightDefaults.hg },
     uCloudPowder: { value: cloudLightDefaults.powder },
+    uMoonStrength: { value: cloudLightDefaults.moonStrength },
   };
 
   function setCloudLight(p) {
@@ -180,6 +181,7 @@ export function createWebGLBackend({
     uniforms.uCloudAmbient.value = p.ambient;
     uniforms.uCloudHG.value = p.hg;
     uniforms.uCloudPowder.value = p.powder;
+    uniforms.uMoonStrength.value = p.moonStrength;
   }
   setCloudLight(cloudLightDefaults);
 
