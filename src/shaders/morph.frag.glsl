@@ -79,7 +79,7 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
-  return (diffuseAlbedo + D * Vis * F * 3.0) * NdotL; // specular x3 (increment 1) so light reflections read
+  return (diffuseAlbedo + D * Vis * F * 5.0) * NdotL; // specular x5 (boosted: the 75% light dim cut it too)
 }
 
 // Convex-hull trace of occluder `oi` against a world ray. Rebuilds the occluder's
@@ -244,32 +244,45 @@ void main() {
       vec3 hp = vWorldPos + ht * Rdir;
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
-      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2, 6);
+      refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 2, 12);
       refl += m0.rgb * environment(hN) * 0.3;
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
       refl = environment(Rdir);
     }
-    // Reflect the sprites of the lights AROUND the reflected object: the reflection ray points
-    // outward at the hit object, so a mirror should show that object's glowing light blobs (the
-    // surface's own nearby lights are behind the ray, which is why they didn't show before).
-    if (reflLo >= 0) {
-      vec3 rro = vWorldPos + N * 0.02;
-      for (int k = 0; k < reflLc && k < 24; k++) {
-        int li = int(texelFetch(uLightIndexTex, texel(reflLo + k, uIndexTexW), 0).r + 0.5);
-        vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
-        vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
-        vec3 toL = lp - rro;
-        float tL = dot(toL, Rdir);
-        if (tL <= 0.5) continue; // in front of the surface
-        int lband = li % 32;
-        float lhost = floor(float(li) / uLightsPerObject);
-        float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
-        if (e <= 1e-4) continue;
-        float perp = length(toL - Rdir * tL);
-        float r = perp / (0.3 + 0.5 * e); // bigger blob -> easier to see in the reflection
-        if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
-      }
+    // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
+    // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit
+    // object's lights around it.
+    vec3 rro = vWorldPos + N * 0.02;
+    for (int k = 0; k < vLightCount && k < lightCap && k < 32; k++) {
+      int li = int(texelFetch(uLightIndexTex, texel(vLightOffset + k, uIndexTexW), 0).r + 0.5);
+      vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
+      vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
+      vec3 toL = lp - rro;
+      float tL = dot(toL, Rdir);
+      if (tL <= 0.02 || tL > ht) continue; // in front of the surface, before the reflected hit
+      int lband = li % 32;
+      float lhost = floor(float(li) / uLightsPerObject);
+      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+      if (e <= 1e-4) continue;
+      float perp = length(toL - Rdir * tL);
+      float r = perp / (0.3 + 0.5 * e);
+      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
+    }
+    for (int k = 0; reflLo >= 0 && k < reflLc && k < 24; k++) {
+      int li = int(texelFetch(uLightIndexTex, texel(reflLo + k, uIndexTexW), 0).r + 0.5);
+      vec4 lc0 = texelFetch(uLightsTex, texel(li * 2, uLightsTexW), 0);
+      vec3 lp = lc0.xyz + lc0.w * animLightDir(li, uLightTime, lightKick(li, uBeatTime[li % 32], uBeatSeed[li % 32], uMusicTime));
+      vec3 toL = lp - rro;
+      float tL = dot(toL, Rdir);
+      if (tL <= 0.5) continue;
+      int lband = li % 32;
+      float lhost = floor(float(li) / uLightsPerObject);
+      float e = step(lhost, uSpawn) * (musicFlare(li, uBeatTime[lband], uBeatStrength[lband], uMusicTime, uBeatDecay[lband]) * musicBeatLit(li, uBeatSeed[lband]) + ripplePulse(lp, uRipple, uMusicTime));
+      if (e <= 1e-4) continue;
+      float perp = length(toL - Rdir * tL);
+      float r = perp / (0.3 + 0.5 * e);
+      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
     }
     lit += refl * envF;
   }
