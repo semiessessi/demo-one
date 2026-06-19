@@ -116,6 +116,14 @@ export function createAudioManager() {
     }
   }
 
+  // Resume the AudioContext (un-mute a silent autoplay) WITHOUT restarting the module — so the
+  // first user gesture makes sound audible while the animation just keeps running.
+  function resume() {
+    try {
+      if (player && player.context && player.context.state === 'suspended') player.context.resume().catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
+
   // Restart the module from the very beginning (used when the demo sequence is
   // restarted). On the first call this is just a normal start; afterwards it
   // replays the module from row 0.
@@ -199,6 +207,7 @@ export function createAudioManager() {
     prefetch,
     getAmplitude,
     play,
+    resume,
     restart,
     pause,
     setVolume,

@@ -254,7 +254,8 @@ if (!CAPTURE && !TEST) {
   // Also auto-start after 1s of idle — audible only where the browser allows autoplay;
   // otherwise it runs silently until the first gesture, which then starts it for real.
   let kicked = false;
-  const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
+  // First gesture only un-mutes the audio (no restart) — the autostarted animation keeps running.
+  const kickoff = () => { if (kicked) return; kicked = true; audio.resume(); };
   ['pointerdown', 'touchstart', 'wheel'].forEach((ev) =>
     window.addEventListener(ev, kickoff, { once: true, passive: true }));
   setTimeout(() => { if (!playing) setPlaying(true); }, 1000);

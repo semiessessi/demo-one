@@ -70,7 +70,6 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   const onMouseDown = (e) => {
     if (e.button !== 0) return; // left button
     dragging = true;
-    mode = 'free'; // looking skips the intro
     domElement.style.cursor = 'grabbing';
     e.preventDefault();
   };
