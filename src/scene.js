@@ -6,7 +6,7 @@
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 import { cameraPathPoints } from './flycam.js';
 
-const TARGET_OBJECTS = 5000;
+const TARGET_OBJECTS = 3000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
 const LIGHTS_PER_OBJECT = 40;
 // Hard ceiling on each object's light list (its own + neighbouring objects' + field lights,
