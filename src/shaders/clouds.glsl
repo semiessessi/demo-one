@@ -1,18 +1,9 @@
-// Distance-field volumetric clouds, raymarched. Shared by the sky dome (sky.js)
-// and the reflection sky-miss path (morph.frag.glsl), so reflections show the very
-// same clouds as the sky. lib.glsl (which defines environment()) is prepended
-// before this file; ro / rd / time arrive as arguments, so this file declares no
-// uTime / cameraPosition and never clashes with the shaders it is pasted into.
-//
-// Technique (per the references):
-//   - An analytic slab is the bounding distance field: a ray-slab intersection
-//     skips everything outside the cloud band, and we coarse-step empty patches
-//     inside it (the cheap "step further when there's nothing here" idea from
-//     uhawkvr's SDF clouds — without the precomputed 3D SDF texture, a follow-on).
-//   - fbm value noise is the density inside the band (IQ dynclouds), lit cheaply by
-//     a couple of taps up the key-light ray (Beer's law self-shadowing).
-//   - The vortex is IQ's opTwist: rotate the xz domain by an angle that grows with
-//     height, so raising uVortex swirls the band into a funnel.
+// Distance-field volumetric clouds, raymarched. The core march `marchClouds` returns
+// premultiplied in-scatter + transmittance bounded by `tMax`, so the caller composites it over
+// whatever is behind: the fullscreen CloudPass composites over the rendered scene (tMax = scene
+// depth) so clouds sit IN FRONT of geometry; reflections composite over the reflected colour.
+// lib.glsl (environment + precision) is prepended before this; ro/rd/time arrive as args so this
+// file declares no uTime/cameraPosition and never clashes with the shaders it is pasted into.
 
 uniform float uCloudsOn;      // 0/1 master switch
 uniform float uCoverage;      // 0..1 — how much of the band is cloud (threshold)
@@ -29,7 +20,7 @@ const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 const vec3 CLOUD_LIT  = vec3(0.22, 0.25, 0.32); // lit face — dim + cool for the night palette
 const vec3 CLOUD_DARK = vec3(0.015, 0.025, 0.05); // self-shadowed core (close to the sky)
 
-// --- value-noise fbm (IQ) --------------------------------------------------
+// --- value-noise fbm ------------------------------------------------------
 float cloudHash(vec3 p) {
   p = fract(p * 0.3183099 + 0.1);
   p *= 17.0;
@@ -59,8 +50,7 @@ vec3 cloudTwist(vec3 p) {
   return vec3(r.x, p.y, r.y);
 }
 
-// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by
-// coverage. 0 = clear sky, up to uCloudDensity = thick cloud.
+// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage.
 float cloudDensity(vec3 p, float time) {
   float h = 1.0 - abs(p.y - uCloudBase) / max(uCloudThick, 1e-3); // 1 centre -> 0 at band edge
   if (h <= 0.0) return 0.0;
@@ -71,18 +61,15 @@ float cloudDensity(vec3 p, float time) {
   return clamp(shape, 0.0, 1.0) * uCloudDensity;
 }
 
-// Raymarch the band along the ray and composite over the environment() sky.
-vec3 skyClouds(vec3 ro, vec3 rd, float time, int steps) {
-  vec3 bg = environment(rd);
-  if (uCloudsOn < 0.5) return bg;
-
-  // Ray-slab intersection = the analytic bounding distance field: clip the march to
-  // where the ray actually crosses the [base +/- thick] band.
+// Core march: premultiplied in-scatter (rgb) + transmittance (a), bounded by tMax (depth/hit
+// stop). Composite over the background behind via `bg*a + rgb` (see skyCloudsOver).
+vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
+  if (uCloudsOn < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
   float yLo = uCloudBase - uCloudThick;
   float yHi = uCloudBase + uCloudThick;
   float t0, t1;
   if (abs(rd.y) < 1e-4) {
-    if (ro.y < yLo || ro.y > yHi) return bg; // parallel to a band it isn't in
+    if (ro.y < yLo || ro.y > yHi) return vec4(0.0, 0.0, 0.0, 1.0); // parallel to a band it isn't in
     t0 = 0.1; t1 = 180.0;
   } else {
     float ta = (yLo - ro.y) / rd.y;
@@ -90,20 +77,20 @@ vec3 skyClouds(vec3 ro, vec3 rd, float time, int steps) {
     t0 = max(min(ta, tb), 0.0);
     t1 = max(ta, tb);
   }
-  if (t1 <= t0) return bg;
-  t1 = min(t1, t0 + 200.0); // cap the march length
+  t1 = min(t1, min(t0 + 200.0, tMax)); // cap by march length AND the depth/hit stop
+  if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
 
   float baseStep = (t1 - t0) / float(steps);
   vec3 sunDir = normalize(vec3(0.35, 0.85, 0.25)); // key light, for self-shadowing
+  vec3 bg = environment(rd);                       // local sky tint folded into the cloud colour
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
   float t = t0;
-  for (int i = 0; i < 160; i++) {
+  for (int i = 0; i < 192; i++) {
     if (i >= steps || t >= t1 || T < 0.02) break;
     vec3 p = ro + rd * t;
     float dens = cloudDensity(p, time);
     if (dens <= 0.002) { t += baseStep * 1.5; continue; } // coarse-step empty patches
-    // toward-light Beer self-shadow: two short taps up the sun ray.
     float ls = cloudDensity(p + sunDir * 2.0, time) + 0.5 * cloudDensity(p + sunDir * 5.0, time);
     float sun = exp(-ls * 1.6);
     vec3 col = mix(CLOUD_DARK, CLOUD_LIT, sun) + bg * 0.45; // sit in the local sky colour
@@ -112,5 +99,15 @@ vec3 skyClouds(vec3 ro, vec3 rd, float time, int steps) {
     T *= dT;
     t += baseStep;
   }
-  return bg * T + scat;
+  return vec4(scat, T);
+}
+
+// Composite the cloud march over a given background colour (used by reflections).
+vec3 skyCloudsOver(vec3 bg, vec3 ro, vec3 rd, float time, float tMax, int steps) {
+  vec4 c = marchClouds(ro, rd, time, tMax, steps);
+  return bg * c.a + c.rgb;
+}
+// Unbounded clouds composited over the environment() sky (reflections call this).
+vec3 skyClouds(vec3 ro, vec3 rd, float time, int steps) {
+  return skyCloudsOver(environment(rd), ro, rd, time, 1e9, steps);
 }

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { createFlyCam } from '../flycam.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildSky } from '../sky.js';
@@ -22,6 +21,51 @@ import { MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
 import { floatTexture } from '../textures.js';
 import { createInstanceCuller } from '../cpuCull.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import libGlsl from '../shaders/lib.glsl?raw';
+import cloudsGlsl from '../shaders/clouds.glsl?raw';
+import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
+
+// Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
+// clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
+// frame via setScene(); camera matrices (for per-pixel ray reconstruction) via setCamera().
+class CloudPass extends Pass {
+  constructor(shared) {
+    super();
+    const u = {
+      tColor: { value: null }, tDepth: { value: null },
+      uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() },
+      uCamPos: { value: new THREE.Vector3() }, uCamNear: { value: 0.1 }, uCamFar: { value: 300 },
+      uTime: shared.uTime, uCloudsOn: shared.uCloudsOn, uCoverage: shared.uCoverage,
+      uCloudDensity: shared.uCloudDensity, uCloudBase: shared.uCloudBase, uCloudThick: shared.uCloudThick,
+      uCloudNoiseScale: shared.uCloudNoiseScale, uCloudWind: shared.uCloudWind,
+      uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
+    };
+    this.u = u;
+    this.material = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: u,
+      vertexShader: 'in vec3 position;\nin vec2 uv;\nout vec2 vUv;\nvoid main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `${libGlsl}\n${cloudsGlsl}\n${cloudPassFrag}`,
+      depthTest: false, depthWrite: false,
+    });
+    this.fsQuad = new FullScreenQuad(this.material);
+  }
+  setScene(rt) { this.u.tColor.value = rt.texture; this.u.tDepth.value = rt.depthTexture; }
+  setCamera(cam) {
+    this.u.uInvProj.value.copy(cam.projectionMatrixInverse);
+    this.u.uCamWorld.value.copy(cam.matrixWorld);
+    this.u.uCamPos.value.setFromMatrixPosition(cam.matrixWorld);
+    this.u.uCamNear.value = cam.near; this.u.uCamFar.value = cam.far;
+  }
+  render(renderer, writeBuffer) {
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    if (this.clear) renderer.clear();
+    this.fsQuad.render(renderer);
+  }
+  setSize() {}
+  dispose() { this.material.dispose(); this.fsQuad.dispose(); }
+}
 
 // The original WebGL2 path (RawShaderMaterials + DataTextures + EffectComposer),
 // behind the common backend interface: { name, domElement, camera, setTime,
@@ -143,24 +187,20 @@ export function createWebGLBackend({
     uAmpGain: uniforms.uAmpGain,
   });
   scene.add(spritesMesh);
-  // Skydome (+ raymarched clouds). Shares uTime + the cloud uniforms with the morph
-  // material so the sky and the clouds reflected by objects stay identical.
-  scene.add(buildSky({
-    uTime: uniforms.uTime,
-    uCloudsOn: uniforms.uCloudsOn,
-    uCoverage: uniforms.uCoverage,
-    uCloudDensity: uniforms.uCloudDensity,
-    uCloudBase: uniforms.uCloudBase,
-    uCloudThick: uniforms.uCloudThick,
-    uCloudNoiseScale: uniforms.uCloudNoiseScale,
-    uCloudWind: uniforms.uCloudWind,
-    uVortex: uniforms.uVortex,
-    uVortexTwist: uniforms.uVortexTwist,
-    uCloudSteps: uniforms.uCloudSteps,
-  }));
+  // Gradient backdrop dome (clouds are now the fullscreen CloudPass, composited over this + scene).
+  scene.add(buildSky());
 
+  // The scene renders into our own target so the CloudPass can read its depth and composite the
+  // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
+  const makeSceneRT = (w, h) => new THREE.WebGLRenderTarget(Math.max(1, w | 0), Math.max(1, h | 0), {
+    type: THREE.HalfFloatType,
+    depthTexture: new THREE.DepthTexture(Math.max(1, w | 0), Math.max(1, h | 0)),
+  });
+  let sceneRT = makeSceneRT(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+
+  const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
   const composer = new EffectComposer(renderer); // half-float render targets
-  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(cloudPass);
   // Bloom at half resolution — it's a blur, so half-res looks the same and costs ~4x less.
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth * 0.5, window.innerHeight * 0.5),
@@ -224,12 +264,19 @@ export function createWebGLBackend({
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       composer.setSize(w, h);
-      bloom.setSize(w * 0.5, h * 0.5); // keep bloom half-res after composer.setSize resets it
+      bloomPass.setSize(w * 0.5, h * 0.5); // keep bloom half-res after composer.setSize resets it
+      const p = renderer.getPixelRatio();
+      sceneRT.dispose();
+      sceneRT = makeSceneRT(w * p, h * p);
     },
     render() {
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
-      composer.render();
+      renderer.setRenderTarget(sceneRT);
+      renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
+      cloudPass.setScene(sceneRT);
+      cloudPass.setCamera(camera); // matrixWorld is current after the render above
+      composer.render(); // CloudPass (clouds over the scene) -> bloom -> output
     },
     dispose() { flycam?.dispose(); composer.dispose?.(); renderer.dispose(); }, // free input listeners + GPU resources (e.g. on bfcache pagehide)
   };
