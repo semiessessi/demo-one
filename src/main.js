@@ -297,6 +297,8 @@ if (isLocalhost) {
   window.__backend = backend; // dev hook: drive the camera + cloud params from the console
   const { GUI } = await import('lil-gui');
   debugGui = new GUI({ title: 'debug' });
+  debugGui.domElement.style.left = '0px';
+  debugGui.domElement.style.right = 'auto'; // top-left, clear of the top-right fps overlay
   debugGui.add(debugState, 'geometry').name('geometry (g)').onChange((v) => backend.setGeometryVisible(v));
   debugGui.add(debugState, 'sprites').name('light sprites (b)').onChange((v) => backend.setSpritesVisible(v));
   const applyClouds = () => backend.setClouds(cloudParams);
