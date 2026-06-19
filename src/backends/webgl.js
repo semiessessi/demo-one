@@ -61,6 +61,8 @@ export function createWebGLBackend({
     cloudsOn: true, coverage: 0.5, density: 0.9, base: 50, thick: 12,
     noiseScale: 0.05, windX: 0.4, windZ: 0.15, vortex: 0, twist: 0.06, quality: 48,
   };
+  // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
+  const lookDefaults = { lightScale: 0.4, ampGain: 3.0, bloom: test ? 0.25 : 0.35 };
 
   const uniforms = {
     uTime: { value: 0 },
@@ -109,6 +111,11 @@ export function createWebGLBackend({
     uVortex: { value: cloudDefaults.vortex },
     uVortexTwist: { value: cloudDefaults.twist },
     uCloudSteps: { value: cloudDefaults.quality },
+    // Lighting look: global brightness + amplitude-reactive subset (used by the sprites;
+    // uLightScale also dims the morph lighting/specular).
+    uLightScale: { value: lookDefaults.lightScale },
+    uAmplitude: { value: 0 },
+    uAmpGain: { value: lookDefaults.ampGain },
   };
 
   const geometry = buildUnifiedGeometry();
@@ -131,6 +138,9 @@ export function createWebGLBackend({
     uMusicTime: uniforms.uMusicTime,
     uRipple: uniforms.uRipple,
     uThudTime: uniforms.uThudTime,
+    uLightScale: uniforms.uLightScale,
+    uAmplitude: uniforms.uAmplitude,
+    uAmpGain: uniforms.uAmpGain,
   });
   scene.add(spritesMesh);
   // Skydome (+ raymarched clouds). Shares uTime + the cloud uniforms with the morph
@@ -151,10 +161,11 @@ export function createWebGLBackend({
 
   const composer = new EffectComposer(renderer); // half-float render targets
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(
+  const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    test ? 0.25 : 0.5, 0.5, 1.0,
-  ));
+    lookDefaults.bloom, 0.6, 1.0, // softer radius (0.6) + tamed strength (was 0.5)
+  );
+  composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
 
   return {
@@ -190,6 +201,13 @@ export function createWebGLBackend({
       uniforms.uVortex.value = p.vortex;
       uniforms.uVortexTwist.value = p.twist;
       uniforms.uCloudSteps.value = p.quality;
+    },
+    lookDefaults,
+    setAmplitude(a) { uniforms.uAmplitude.value = a; },
+    setLook(p) {
+      uniforms.uLightScale.value = p.lightScale;
+      uniforms.uAmpGain.value = p.ampGain;
+      bloomPass.strength = p.bloom;
     },
     setView({ position, target }) {
       if (flycam) {

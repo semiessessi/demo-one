@@ -78,6 +78,11 @@ const float MUSIC_FRAC = 0.25; // fraction of a slot's lights that flare per not
 float musicBeatLit(int idx, float seed) {
   return hashUnit(hash(uint(idx) ^ uint(seed))) < MUSIC_FRAC ? 1.0 : 0.0;
 }
+// Amplitude-reactive subset: a static ~AMP_FRAC of lights ride the measured output
+// amplitude (uAmplitude), pulsing their brightness + sprite size with the music's
+// loudness on top of the per-note flares. Independent of the flare hashes.
+const float AMP_FRAC = 0.30; // fraction of lights that ride the amplitude
+float ampLit(int idx) { return hashUnit(hash(uint(idx) * 374761393u + 11u)) < AMP_FRAC ? 1.0 : 0.0; }
 // Per-note orbit "kick": the same fresh subset that flares (musicBeatLit) also gets a decaying
 // boost to its orbit angle, so against the slow base drift the lights lurch on their notes.
 float lightKick(int idx, float beatTime, float seed, float now) {

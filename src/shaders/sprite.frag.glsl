@@ -12,8 +12,10 @@ void main() {
   if (r > 1.0) discard;
 
   float fall = 1.0 - r;
-  float core = pow(fall, 8.0);
-  float halo = 0.4 * pow(fall, 3.0);
+  // Soft, round falloff: the old tight pow(fall,8) core was a near-pixel hot point that
+  // bloomed into a boxy UnrealBloom artifact. A broader core + wider halo read as a round glow.
+  float core = pow(fall, 3.5);
+  float halo = 0.6 * pow(fall, 1.7);
   float intensity = clamp(core + halo, 0.0, 1.0);
 
   float bright = max(vColor.r, max(vColor.g, vColor.b));

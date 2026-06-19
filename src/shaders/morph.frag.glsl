@@ -15,6 +15,7 @@ out vec4 fragColor;
 
 uniform vec3 cameraPosition;
 uniform float uTime;
+uniform float uLightScale; // global light-brightness multiplier (debug-tunable)
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
@@ -189,7 +190,7 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
                    * musicBeatLit(idx, uBeatSeed[band]);
     if (emission <= 1e-5) continue; // not emitting (pre-reveal or between beats) -> skip shadow + BRDF
     float shadow = (doShadow && k < shadowCap) ? traceShadow(p + N * 0.02, L, dist) : 1.0;
-    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist, fallD, fallS) * colRad.rgb * shadow * emission;
+    lit += brdf(N, V, L, diffuseAlbedo, F0, rough, dist, fallD, fallS) * colRad.rgb * uLightScale * shadow * emission;
   }
   return lit;
 }

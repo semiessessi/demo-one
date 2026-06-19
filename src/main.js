@@ -315,6 +315,12 @@ if (isLocalhost) {
   const vf = debugGui.addFolder('vortex');
   vf.add(cloudParams, 'vortex', 0, 1, 0.01).name('amount').onChange(applyClouds);
   vf.add(cloudParams, 'twist', 0, 0.2, 0.005).name('twist / height').onChange(applyClouds);
+  const lookParams = { ...backend.lookDefaults };
+  const applyLook = () => backend.setLook(lookParams);
+  const lf = debugGui.addFolder('look');
+  lf.add(lookParams, 'lightScale', 0, 1, 0.01).name('light brightness').onChange(applyLook);
+  lf.add(lookParams, 'ampGain', 0, 10, 0.1).name('amp drive (30%)').onChange(applyLook);
+  lf.add(lookParams, 'bloom', 0, 1, 0.01).name('bloom').onChange(applyLook);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -407,6 +413,7 @@ function frame() {
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
+  if (!CAPTURE) backend.setAmplitude(audio.getAmplitude()); // measured RMS -> amplitude-reactive lights
   if (startEl) startEl.classList.toggle('hidden', !playing || audio.isRunning); // prompt only if audio is blocked
   backend.render();
 

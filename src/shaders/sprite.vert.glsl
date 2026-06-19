@@ -19,6 +19,9 @@ uniform float uBeatDecay[32];    // per-slot pulse-decay factor (from note pitch
 uniform float uMusicTime;       // music clock for the beat timestamps
 uniform vec4 uRipple[4];         // brightness ripples: (centre.xyz, startTime)
 uniform float uThudTime;         // last note-on time (any slot) -> early beat "thud"
+uniform float uLightScale;       // global light-brightness multiplier (debug-tunable)
+uniform float uAmplitude;        // measured output RMS (0..~0.4)
+uniform float uAmpGain;          // how hard the amplitude subset reacts
 
 out vec2 vCorner;
 out vec3 vColor;
@@ -42,12 +45,15 @@ void main() {
                  * musicBeatLit(gl_InstanceID, uBeatSeed[band]);
   emission += step(hostSlot, uSpawn) * ripplePulse(lightPos, uRipple, uMusicTime); // ride the brightness wave
   emission += step(hostSlot, uSpawn) * thudPulse(uMusicTime, uThudTime); // beat thud dominates the first ~7s
+  // A static ~30% subset rides the measured amplitude: brightness + size breathe with loudness
+  // (emission drives both), on top of the per-note flares.
+  emission += step(hostSlot, uSpawn) * ampLit(gl_InstanceID) * uAmplitude * uAmpGain;
 
   vec2 corner = position.xy;
   float size = uSpriteSize * emission; // decoupled from falloff radius; 0 emission -> 0 size -> no dot
   vec3 world = lightPos + size * (corner.x * right + corner.y * up);
 
   vCorner = corner;
-  vColor = aLightColor * emission;
+  vColor = aLightColor * emission * uLightScale;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
