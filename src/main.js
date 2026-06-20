@@ -112,7 +112,7 @@ try {
 app.appendChild(backend.domElement);
 backend.domElement.addEventListener('webglcontextlost', (ev) => { ev.preventDefault(); showError(new Error('WebGL context lost — the GPU process crashed or ran out of memory (the scene may be too heavy for this device).')); }, { once: true });
 window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
-if (SAFE) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); // ?safe: clouds off to isolate the cloud raymarcher
+if (SAFE || isMobile) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); // the fullscreen cloud raymarcher is the big mobile fill-rate cost -> off on mobile / ?safe
 
 // Finish the scene in the background: gather every object's lists across workers, then hot-swap the
 // light/occluder/reflection buffers in. Until this lands only the first batch is lit (which is all
@@ -354,10 +354,12 @@ if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 // the "click for sound" prompt asks for one; the first interaction of ANY kind (tap, click,
 // key, scroll) then (re)starts it from the top WITH sound, so music and visuals stay in sync.
 if (!CAPTURE && !TEST) {
-  let kicked = false;
-  const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
-  ['pointerdown', 'touchstart', 'wheel', 'keydown', 'click'].forEach((ev) =>
-    window.addEventListener(ev, kickoff, { once: true, passive: true }));
+  // Start playing on the first gesture, then resume the audio context on EVERY gesture until it's
+  // actually running — iOS needs the resume() inside a tap, and a single autostart-created context
+  // stays suspended, so one-shot handlers (and the prior `kicked` guard) left iPad silent on tap.
+  const kickoff = () => { if (!playing) setPlaying(true); audio.resumeContext(); };
+  ['pointerdown', 'touchstart', 'click', 'keydown', 'wheel'].forEach((ev) =>
+    window.addEventListener(ev, kickoff, { passive: true }));
   setTimeout(() => { if (!playing) setPlaying(true); }, 600); // autostart promptly, right behind the fade
 }
 

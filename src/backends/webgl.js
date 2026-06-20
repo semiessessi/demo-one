@@ -87,6 +87,12 @@ export function createWebGLBackend({
   const gl = renderer.getContext();
   const halfFloatRenderable = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
   const rtType = (halfFloatRenderable && !forceLdr) ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  // Surface a shader compile/link failure (the likely "sprites render but NO geometry on iOS" case —
+  // the big morph shader exceeding a mobile compiler limit) instead of three silently logging it.
+  renderer.debug.onShaderError = (glc, program, vs, fs) => {
+    const slog = (s) => glc.getShaderInfoLog(s) || '';
+    onError?.(new Error(`Shader failed on this device:\n${glc.getProgramInfoLog(program) || ''}\n--- fragment ---\n${slog(fs)}\n--- vertex ---\n${slog(vs)}`));
+  };
   const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: rtType }); // baked starfield -> stars in reflections
   renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
