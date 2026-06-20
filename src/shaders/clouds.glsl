@@ -23,6 +23,10 @@ uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
 uniform float uFrame;         // frame counter -> temporal (per-frame) blue-noise dither
+uniform float uCloudLightStrength; // topmost-lights cloud glow strength (base * music pulse, set on CPU)
+uniform int   uCloudLightCount;    // how many topmost lights scatter into the volume (autoscaled)
+uniform vec4  uCloudLightPos[16];  // xyz = world position (static orbit centre), w = per-light brightness
+uniform vec3  uCloudLightColor[16];// per-light colour
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 
@@ -127,6 +131,14 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     }
     lum *= mix(1.0, 1.0 - exp(-dens * 2.0), uCloudPowder); // Beer-Powder: dark thin edges
     vec3 S = lum + environment(rd) * uCloudAmbient + 0.025; // sky ambient + non-black floor
+    // Topmost orbiting lights scatter into the volume: a soft coloured glow near the lit objects up
+    // in the band, pulsing with the music (uCloudLightStrength). Objects don't translate, so the
+    // orbit centres are static and orbit radius << cloud scale -> no per-sample orbit math needed.
+    for (int k = 0; k < 16; k++) {
+      if (k >= uCloudLightCount) break;
+      vec3 dl = uCloudLightPos[k].xyz - p;
+      S += uCloudLightColor[k] * (uCloudLightPos[k].w * uCloudLightStrength / (1.0 + dot(dl, dl) * 0.12));
+    }
     float dT = exp(-dens * baseStep * 1.5);
     scat += T * (1.0 - dT) * S;
     T *= dT;

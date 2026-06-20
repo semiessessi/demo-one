@@ -43,6 +43,8 @@ class CloudPass extends Pass {
       uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
       uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
+      uCloudLightStrength: shared.uCloudLightStrength, uCloudLightCount: shared.uCloudLightCount,
+      uCloudLightPos: shared.uCloudLightPos, uCloudLightColor: shared.uCloudLightColor,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -112,9 +114,33 @@ export function createWebGLBackend({
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5 };
+  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
+
+  // Topmost, spatially-distinct lights that scatter into the cloud volume (static orbit centres,
+  // since objects don't translate). Highest y first, deduped to >5u apart so the budget spreads.
+  const CLOUD_LIGHTS_MAX = 16;
+  const cloudLightSel = (() => {
+    const order = lights.map((_, i) => i).sort((a, b) => lights[b].pos[1] - lights[a].pos[1]);
+    const sel = [], picked = [];
+    for (const i of order) {
+      const p = lights[i].pos;
+      if (picked.some((q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2 < 25)) continue;
+      sel.push(i); picked.push(p);
+      if (sel.length >= CLOUD_LIGHTS_MAX) break;
+    }
+    return sel;
+  })();
+  const cloudLightPos = new Float32Array(CLOUD_LIGHTS_MAX * 4);
+  const cloudLightCol = new Float32Array(CLOUD_LIGHTS_MAX * 3);
+  cloudLightSel.forEach((li, k) => {
+    const l = lights[li];
+    cloudLightPos[k * 4] = l.pos[0]; cloudLightPos[k * 4 + 1] = l.pos[1];
+    cloudLightPos[k * 4 + 2] = l.pos[2]; cloudLightPos[k * 4 + 3] = 3.0; // per-light brightness
+    cloudLightCol[k * 3] = l.color[0]; cloudLightCol[k * 3 + 1] = l.color[1]; cloudLightCol[k * 3 + 2] = l.color[2];
+  });
+  let cloudLightBase = cloudLightDefaults.lightScatter; // GUI base; * music pulse -> uCloudLightStrength
 
   const uniforms = {
     uTime: { value: 0 },
@@ -181,6 +207,10 @@ export function createWebGLBackend({
     uStarTwinkle: { value: starDefaults.twinkle },
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
     uStarCube: { value: starCubeRT.texture }, // baked real stars, sampled by direction in reflections
+    uCloudLightStrength: { value: cloudLightBase * 0.15 }, // base * music pulse (updated in setAmplitude)
+    uCloudLightCount: { value: cloudLightSel.length },
+    uCloudLightPos: { value: cloudLightPos },
+    uCloudLightColor: { value: cloudLightCol },
   };
 
   function setCloudLight(p) {
@@ -191,6 +221,7 @@ export function createWebGLBackend({
     uniforms.uCloudHG.value = p.hg;
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
+    cloudLightBase = p.lightScatter;
   }
   setCloudLight(cloudLightDefaults);
 
@@ -281,7 +312,10 @@ export function createWebGLBackend({
       uniforms.uCloudSteps.value = p.quality;
     },
     lookDefaults,
-    setAmplitude(a) { uniforms.uAmplitude.value = a; },
+    setAmplitude(a) {
+      uniforms.uAmplitude.value = a;
+      uniforms.uCloudLightStrength.value = cloudLightBase * (0.15 + a * 1.5); // cloud light-glow pulses with volume
+    },
     setLook(p) {
       uniforms.uLightScale.value = p.lightScale;
       uniforms.uAmpGain.value = p.ampGain;
@@ -297,6 +331,7 @@ export function createWebGLBackend({
       uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
+      uniforms.uCloudLightCount.value = Math.min(cloudLightSel.length, Math.round(CLOUD_LIGHTS_MAX * s));
     },
     setView({ position, target }) {
       if (flycam) {
