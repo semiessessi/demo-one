@@ -55,14 +55,16 @@ float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566370614
 // Interleaved-gradient (blue-noise-like) dither, texture-free.
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
-// IQ opTwist: rotate xz about the vortex axis by an angle that grows with height.
-vec3 cloudTwist(vec3 p) {
+// Vortex: rotate xz about the axis by an angle that tightens toward the centre (bounded ~1/r),
+// winds with height, and spins over time -> a swirling funnel, not a gentle barber-pole twist.
+vec3 cloudTwist(vec3 p, float time) {
   if (uVortex <= 0.0) return p;
   vec2 q = p.xz - VORTEX_AXIS;
-  float ang = uVortex * (p.y - uCloudBase) * uVortexTwist;
+  float r = length(q);
+  float ang = uVortex * (uVortexTwist * (p.y - uCloudBase) + time * 0.6 + 7.0 / (r + 1.5));
   float c = cos(ang), s = sin(ang);
-  vec2 r = mat2(c, -s, s, c) * q + VORTEX_AXIS;
-  return vec3(r.x, p.y, r.y);
+  vec2 rot = mat2(c, -s, s, c) * q + VORTEX_AXIS;
+  return vec3(rot.x, p.y, rot.y);
 }
 
 // Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage.
@@ -70,10 +72,22 @@ float cloudDensity(vec3 p, float time) {
   float h = 1.0 - abs(p.y - uCloudBase) / max(uCloudThick, 1e-3); // 1 centre -> 0 at band edge
   if (h <= 0.0) return 0.0;
   h = smoothstep(0.0, 0.5, h); // feather the top and bottom of the band
-  vec3 q = cloudTwist(p);
+  vec3 q = cloudTwist(p, time);
   vec3 np = (q + uCloudWind * time) * uCloudNoiseScale;
   float shape = cloudFbm(np) * h - (1.0 - uCoverage);
-  return clamp(shape, 0.0, 1.0) * uCloudDensity;
+  float dens = clamp(shape, 0.0, 1.0) * uCloudDensity;
+  // Vortex: a clear conical eye up the axis + spiral arms winding into it, spinning over time.
+  if (uVortex > 0.0) {
+    vec2 qv = p.xz - VORTEX_AXIS;
+    float rr = length(qv);
+    float eyeR = 2.0 + max(p.y - (uCloudBase - uCloudThick), 0.0) * 0.25;
+    dens *= mix(1.0, smoothstep(eyeR - 1.5, eyeR + 5.0, rr), uVortex); // clear conical eye
+    float theta = atan(qv.y, qv.x);
+    float spiral = cos(2.0 * theta - log(rr + 1.0) * 5.0 - time * 0.8); // 2-arm log spiral, spinning
+    float arm = smoothstep(0.2, 0.85, spiral) * exp(-rr * 0.05) * smoothstep(eyeR, eyeR + 4.0, rr);
+    dens += uVortex * arm * uCloudDensity * 1.5; // denser spiral arms -> whirlpool reads even in fog
+  }
+  return dens;
 }
 
 // Cloud shadow for the SCENE: optical depth from a world point up toward the moon through the
