@@ -124,7 +124,7 @@ export function createWebGLBackend({
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
   // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
-  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
+  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
 
@@ -226,7 +226,7 @@ export function createWebGLBackend({
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
   let moonTargetElev = cloudLightDefaults.sunElev, moonAzim = cloudLightDefaults.sunAzim;
-  const moonrise = { on: true, dur: 60 }; // elevation eases from -10deg to the target over `dur` music-seconds
+  const moonrise = { on: true, dur: 150 }; // elevation eases from -10deg to the target over `dur` demo-seconds (uTime) -> a slow ~2.5min rise
   function applySunDir(elevDeg) {
     const el = elevDeg * Math.PI / 180, az = moonAzim * Math.PI / 180;
     uniforms.uSunDir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();

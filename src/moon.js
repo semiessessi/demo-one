@@ -16,14 +16,14 @@ uniform vec3 cameraPosition;
 uniform vec3 uSunDir;     // moon direction (shared with the cloud moonlight)
 uniform float uMoonSize;  // disc half-size at MOON_DIST
 out vec2 vUv;
-out float vVis;
+out float vElevY;
 void main() {
   vUv = uv;
-  vVis = smoothstep(-0.06, 0.12, uSunDir.y); // hidden below the horizon, fades in as it rises
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]); // camera basis from the view matrix
   vec3 up    = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
   vec3 center = cameraPosition + uSunDir * ${MOON_DIST.toFixed(1)};        // always MOON_DIST from the camera
   vec3 wp = center + (position.x * right + position.y * up) * uMoonSize;   // billboard, faces the camera
+  vElevY = normalize(wp - cameraPosition).y; // this corner's elevation (sine) -> per-fragment horizon cut
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
   gl_Position.z = gl_Position.w * 0.999999; // far plane: behind objects + dimmed by clouds, never escaped
 }`;
@@ -31,14 +31,16 @@ void main() {
 const fragmentShader = `
 precision highp float;
 in vec2 vUv;
-in float vVis;
+in float vElevY;
 uniform sampler2D uMoonTex;
 uniform vec3 uSunColor; // moonlight colour, so the disc matches the light it casts
 out vec4 fragColor;
 void main() {
+  // The horizon ("ground") cuts the bottom of the disc; a soft fade through the bright horizon-fog
+  // band just above it -> the moon emerges OVER the horizon like a real moonrise as uSunDir climbs.
+  float vis = smoothstep(0.0, 0.06, vElevY);
   vec3 moon = texture(uMoonTex, vUv).rgb;
-  // Additive over the sky: the photo's black background contributes nothing, the disc glows.
-  fragColor = vec4(moon * uSunColor * 1.6 * vVis, 1.0);
+  fragColor = vec4(moon * uSunColor * 1.6 * vis, 1.0); // additive: black background + below-horizon drop out
 }`;
 
 // Async: loads the moon texture, then resolves to a billboard mesh to add to the scene.
