@@ -143,6 +143,9 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   float baseStep = (t1 - t0) / float(steps);
   float cosT = dot(rd, uSunDir);
   float lightStep = uCloudThick * 0.12;     // world-scale spacing of the sun light-march
+  // Per-ray constants, hoisted out of the march (they don't vary per step):
+  float phase = 0.35 + 1.4 * hg(cosT, uCloudHG); // isotropic base + forward HG lobe (silver lining)
+  vec3 ambient = environment(rd) * uCloudAmbient + 0.03; // sky fill + non-black floor
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
   float t = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * baseStep; // per-frame blue-noise jitter -> no slice banding/layering
@@ -154,13 +157,11 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     // 6-tap light-march toward the moon (increasing spacing) -> optical depth to the sun.
     float sunDensity = 0.0;
     for (int j = 1; j <= 6; j++) sunDensity += cloudDensity(p + uSunDir * lightStep * float(j), time);
-    // Phase: an isotropic base + a forward HG lobe (silver lining), so the cloud is lit from ALL
-    // angles, not just looking toward the moon. Beer octaves keep strong self-shadow contrast (form).
-    float phase = 0.35 + 1.4 * hg(cosT, uCloudHG);
+    // Beer octaves of the sun optical depth keep strong self-shadow contrast (form).
     float beer = exp(-sunDensity * 1.2) + 0.45 * exp(-sunDensity * 0.45) + 0.2 * exp(-sunDensity * 0.18);
     vec3 lum = uSunColor * (phase * beer * 1.6);
     lum *= mix(1.0, 1.0 - exp(-dens * 2.0), uCloudPowder); // Beer-Powder: dark thin edges
-    vec3 S = lum + environment(rd) * uCloudAmbient + 0.03; // sky ambient + non-black floor
+    vec3 S = lum + ambient;
     // Topmost orbiting lights scatter into the volume: a soft coloured glow near the lit objects up
     // in the band, pulsing with the music (uCloudLightStrength). Objects don't translate, so the
     // orbit centres are static and orbit radius << cloud scale -> no per-sample orbit math needed.
