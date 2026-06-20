@@ -122,7 +122,9 @@ export function createWebGLBackend({
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 7.0 };
+  // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
+  // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
+  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
 
