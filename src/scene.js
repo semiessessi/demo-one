@@ -85,7 +85,11 @@ export function generateBase(opts = {}) {
   // is unchanged, so placement stays deterministic and identical to the brute-force result.
   const cell = 2 * MAX_NORM_CIRCUMRADIUS * SCALE_MAX + PACK_MARGIN + 1e-3;
   const grid = new Map();
-  const gkey = (x, y, z) => x + ',' + y + ',' + z;
+  // Integer cell key (avoids a per-call string alloc + string hashing in the hottest load-time
+  // loop). Collision-free while |cell coord| < GK_BIAS, which holds for any sane object count
+  // (cells span ~half/cell ≈ ±20 at the default). Placement test is unchanged -> deterministic.
+  const GK_BIAS = 1024, GK_STRIDE = 2048;
+  const gkey = (x, y, z) => ((x + GK_BIAS) * GK_STRIDE + (y + GK_BIAS)) * GK_STRIDE + (z + GK_BIAS);
   const gco = (p) => Math.floor(p / cell);
 
   // The camera's hero object: placed first at the origin so it's guaranteed objects[0]
