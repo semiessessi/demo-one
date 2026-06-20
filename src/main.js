@@ -395,6 +395,7 @@ if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobi
 const debugState = { geometry: true, sprites: true };
 const cloudParams = { ...backend.cloudDefaults }; // seeded from the backend's defaults
 let debugGui = null;
+let debugFrameHook = null; // per-frame debug-only update (live moon-elevation readout)
 const syncDebugGui = () => debugGui?.controllersRecursive().forEach((c) => c.updateDisplay());
 if (isLocalhost) {
   window.__backend = backend; // dev hook: drive the camera + cloud params from the console
@@ -438,6 +439,11 @@ if (isLocalhost) {
   clf.add(clParams, 'moonSize', 0, 20, 0.5).name('moon size').onChange(applyCloudLight);
   const mrParams = { moonrise: true };
   clf.add(mrParams, 'moonrise').name('moonrise (-10->elev)').onChange((v) => backend.setMoonrise(v));
+  // Live readout of the CURRENT moon elevation (the rise animates it from -10 up to 'moon elevation').
+  // Read-only; confirms the moon disc + cloud moonlight track the same rising uSunDir.
+  const moonLive = { elev: clParams.sunElev };
+  const moonLiveCtrl = clf.add(moonLive, 'elev', -10, 90, 0.1).name('elevation (live)').disable();
+  debugFrameHook = () => { moonLive.elev = Math.round(backend.sunElevDeg() * 10) / 10; moonLiveCtrl.updateDisplay(); };
   const stParams = { ...backend.starDefaults };
   const applyStars = () => backend.setStars(stParams);
   const sf = debugGui.addFolder('stars');
@@ -548,6 +554,7 @@ function frame() {
   }
   backend.render();
   reveal(); // first frame is on screen — start the fade-up from black
+  debugFrameHook?.(); // live moon-elevation readout (localhost debug GUI only)
 
   // Measure real frame time.
   emaMs = emaMs * 0.9 + (t - lastNow) * 0.1;

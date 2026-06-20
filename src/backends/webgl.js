@@ -226,8 +226,10 @@ export function createWebGLBackend({
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
   let moonTargetElev = cloudLightDefaults.sunElev, moonAzim = cloudLightDefaults.sunAzim;
+  let liveMoonElev = cloudLightDefaults.sunElev; // the CURRENT (animated) elevation — drives the disc + cloud light; read by the debug GUI
   const moonrise = { on: true, dur: 150 }; // elevation eases from -10deg to the target over `dur` demo-seconds (uTime) -> a slow ~2.5min rise
   function applySunDir(elevDeg) {
+    liveMoonElev = elevDeg; // single source: the moon disc AND the cloud moonlight both read uSunDir, set from this
     const el = elevDeg * Math.PI / 180, az = moonAzim * Math.PI / 180;
     uniforms.uSunDir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
   }
@@ -351,6 +353,7 @@ export function createWebGLBackend({
     cloudLightDefaults,
     setCloudLight,
     setMoonrise(on) { moonrise.on = on; if (!on) applySunDir(moonTargetElev); },
+    sunElevDeg: () => liveMoonElev, // current (animated) moon elevation in degrees, for the debug readout
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
     setQualityScale(s) {
