@@ -97,11 +97,11 @@ float cloudDensity(vec3 p, float time) {
   if (p.y > uCloudBase && p.y < funnelTop) {
     float hf = (p.y - uCloudBase) / (funnelTop - uCloudBase); // 0 at band centre -> 1 at the tip
     float funnelR = mix(10.0, 1.5, smoothstep(0.0, 1.0, hf)); // wide at the deck, tapering up
-    float core = smoothstep(funnelR, funnelR * 0.35, rr); // 1 in the core, 0 at the wall (robust as it narrows)
+    float core = 1.0 - smoothstep(funnelR * 0.35, funnelR, rr); // 1 in the core, 0 at the wall (edge0<edge1: defined on mobile)
     if (core > 0.001) {
       float wisp = 0.55 + 0.6 * cloudFbm((p + uCloudWind * time) * uCloudNoiseScale * 1.6); // break the column into cloud
       float swirl = 0.7 + 0.3 * cos(3.0 * theta - hf * 26.0 - time * 1.6); // swirling bands up the funnel
-      float taper = smoothstep(1.0, 0.72, hf); // solid most of the way, fading to the tip
+      float taper = 1.0 - smoothstep(0.72, 1.0, hf); // solid most of the way, fading to the tip (edge0<edge1)
       dens = max(dens, uVortex * core * swirl * wisp * taper * uCloudDensity * 5.0);
     }
   }
@@ -112,7 +112,7 @@ float cloudDensity(vec3 p, float time) {
 // band -> Beer transmittance, so objects dapple under cloud cover (morph.frag moonlight term).
 float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
   if (uCloudsOn < 0.5 || sunDir.y <= 0.01) return 1.0;
-  float yLo = uCloudBase - uCloudThick, yHi = uCloudBase + uCloudThick;
+  float yLo = uCloudBase - uCloudThick, yHi = uCloudBase + uCloudThick + (uVortex > 0.0 ? VORTEX_FUNNEL_H : 0.0);
   float tA = (yLo - worldPos.y) / sunDir.y, tB = (yHi - worldPos.y) / sunDir.y;
   float t0 = max(min(tA, tB), 0.0), t1 = max(tA, tB);
   if (t1 <= t0) return 1.0; // the up-ray doesn't cross the band
