@@ -26,6 +26,7 @@ import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
 import { buildStarfield, bakeStarCubemap } from '../starfield.js';
+import { buildMoon } from '../moon.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -121,7 +122,7 @@ export function createWebGLBackend({
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0 };
+  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 7.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
 
@@ -212,6 +213,7 @@ export function createWebGLBackend({
     uFrame: { value: 0 }, // frame counter for the per-frame cloud dither
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
+    uMoonSize: { value: cloudLightDefaults.moonSize }, // moon disc half-size (billboard at uSunDir)
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
     uStarCube: { value: starCubeRT.texture }, // baked real stars, sampled by direction in reflections
     uCloudLightStrength: { value: cloudLightBase * 0.15 }, // base * music pulse (updated in setAmplitude)
@@ -229,6 +231,7 @@ export function createWebGLBackend({
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
     cloudLightBase = p.lightScatter;
+    uniforms.uMoonSize.value = p.moonSize;
   }
   setCloudLight(cloudLightDefaults);
 
@@ -275,6 +278,7 @@ export function createWebGLBackend({
   let starPoints = null;
   buildStarfield({ uTime: uniforms.uTime, uStarSize: uniforms.uStarSize, uStarTwinkle: uniforms.uStarTwinkle })
     .then((m) => { bakeStarCubemap(renderer, m, starCubeRT); scene.add(m); starPoints = m; }).catch(() => {});
+  buildMoon(uniforms).then((m) => scene.add(m)).catch(() => {}); // additive moon billboard at uSunDir
 
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.

@@ -435,6 +435,7 @@ if (isLocalhost) {
   clf.add(clParams, 'powder', 0, 1, 0.01).onChange(applyCloudLight);
   clf.add(clParams, 'moonStrength', 0, 3, 0.05).name('moon on scene').onChange(applyCloudLight);
   clf.add(clParams, 'lightScatter', 0, 6, 0.1).name('lights -> cloud').onChange(applyCloudLight);
+  clf.add(clParams, 'moonSize', 0, 20, 0.5).name('moon size').onChange(applyCloudLight);
   const stParams = { ...backend.starDefaults };
   const applyStars = () => backend.setStars(stParams);
   const sf = debugGui.addFolder('stars');
