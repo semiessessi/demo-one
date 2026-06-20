@@ -55,6 +55,8 @@ float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566370614
 // Interleaved-gradient (blue-noise-like) dither, texture-free.
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
+const float VORTEX_FUNNEL_H = 35.0; // how far the vortex funnel rises above the band into clear sky
+
 // Vortex: rotate xz about the axis by an angle that tightens toward the centre (bounded ~1/r),
 // winds with height, and spins over time -> a swirling funnel, not a gentle barber-pole twist.
 vec3 cloudTwist(vec3 p, float time) {
@@ -67,25 +69,41 @@ vec3 cloudTwist(vec3 p, float time) {
   return vec3(rot.x, p.y, rot.y);
 }
 
-// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage.
+// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage. With the
+// vortex on: a clear eye + spiral arms in the band, plus a tapering swirling funnel rising above it.
 float cloudDensity(vec3 p, float time) {
+  float dens = 0.0;
   float h = 1.0 - abs(p.y - uCloudBase) / max(uCloudThick, 1e-3); // 1 centre -> 0 at band edge
-  if (h <= 0.0) return 0.0;
-  h = smoothstep(0.0, 0.5, h); // feather the top and bottom of the band
-  vec3 q = cloudTwist(p, time);
-  vec3 np = (q + uCloudWind * time) * uCloudNoiseScale;
-  float shape = cloudFbm(np) * h - (1.0 - uCoverage);
-  float dens = clamp(shape, 0.0, 1.0) * uCloudDensity;
-  // Vortex: a clear conical eye up the axis + spiral arms winding into it, spinning over time.
-  if (uVortex > 0.0) {
-    vec2 qv = p.xz - VORTEX_AXIS;
-    float rr = length(qv);
+  if (h > 0.0) {
+    h = smoothstep(0.0, 0.5, h); // feather the top and bottom of the band
+    vec3 q = cloudTwist(p, time);
+    vec3 np = (q + uCloudWind * time) * uCloudNoiseScale;
+    dens = clamp(cloudFbm(np) * h - (1.0 - uCoverage), 0.0, 1.0) * uCloudDensity;
+  }
+  if (uVortex <= 0.0) return dens;
+
+  vec2 qv = p.xz - VORTEX_AXIS;
+  float rr = length(qv);
+  float theta = atan(qv.y, qv.x);
+  // In-band: clear conical eye + 2-arm log-spiral arms winding into it (the whirlpool base).
+  if (h > 0.0) {
     float eyeR = 2.0 + max(p.y - (uCloudBase - uCloudThick), 0.0) * 0.25;
-    dens *= mix(1.0, smoothstep(eyeR - 1.5, eyeR + 5.0, rr), uVortex); // clear conical eye
-    float theta = atan(qv.y, qv.x);
-    float spiral = cos(2.0 * theta - log(rr + 1.0) * 5.0 - time * 0.8); // 2-arm log spiral, spinning
-    float arm = smoothstep(0.2, 0.85, spiral) * exp(-rr * 0.05) * smoothstep(eyeR, eyeR + 4.0, rr);
-    dens += uVortex * arm * uCloudDensity * 1.5; // denser spiral arms -> whirlpool reads even in fog
+    dens *= mix(1.0, smoothstep(eyeR - 1.5, eyeR + 5.0, rr), uVortex);
+    float spiral = cos(2.0 * theta - log(rr + 1.0) * 5.0 - time * 0.8);
+    dens += uVortex * smoothstep(0.2, 0.85, spiral) * exp(-rr * 0.05) * smoothstep(eyeR, eyeR + 4.0, rr) * uCloudDensity * 1.5;
+  }
+  // Funnel rising ABOVE the band into clear sky: a tapering, swirling, wispy column (the visible spout).
+  float funnelTop = uCloudBase + uCloudThick + VORTEX_FUNNEL_H;
+  if (p.y > uCloudBase && p.y < funnelTop) {
+    float hf = (p.y - uCloudBase) / (funnelTop - uCloudBase); // 0 at band centre -> 1 at the tip
+    float funnelR = mix(10.0, 1.5, smoothstep(0.0, 1.0, hf)); // wide at the deck, tapering up
+    float core = smoothstep(funnelR, funnelR * 0.35, rr); // 1 in the core, 0 at the wall (robust as it narrows)
+    if (core > 0.001) {
+      float wisp = 0.55 + 0.6 * cloudFbm((p + uCloudWind * time) * uCloudNoiseScale * 1.6); // break the column into cloud
+      float swirl = 0.7 + 0.3 * cos(3.0 * theta - hf * 26.0 - time * 1.6); // swirling bands up the funnel
+      float taper = smoothstep(1.0, 0.72, hf); // solid most of the way, fading to the tip
+      dens = max(dens, uVortex * core * swirl * wisp * taper * uCloudDensity * 5.0);
+    }
   }
   return dens;
 }
@@ -108,7 +126,7 @@ float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
 vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   if (uCloudsOn < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
   float yLo = uCloudBase - uCloudThick;
-  float yHi = uCloudBase + uCloudThick;
+  float yHi = uCloudBase + uCloudThick + (uVortex > 0.0 ? VORTEX_FUNNEL_H : 0.0); // extend up for the funnel
   float t0, t1;
   if (abs(rd.y) < 1e-4) {
     if (ro.y < yLo || ro.y > yHi) return vec4(0.0, 0.0, 0.0, 1.0); // parallel to a band it isn't in
