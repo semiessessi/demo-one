@@ -249,14 +249,10 @@ export function createWebGLBackend({
   mesh.frustumCulled = false; // we cull per-instance ourselves
   scene.add(mesh);
   // Async shader compile: the morph material is by far the heaviest shader (reflections + analytic
-  // traces + per-light shading). Hide the objects for the first frames and compile it in the
-  // background, so the first frame (sky + clouds + stars + light sprites) lands fast; reveal the
-  // objects the instant the program is ready. The ~1.1s fade covers the pop-in. Falls back to a sync
-  // compile where KHR_parallel_shader_compile is missing (no worse than before).
-  if (!capture) {
-    mesh.visible = false;
-    renderer.compileAsync(mesh, camera, scene).then(() => { mesh.visible = true; }).catch((e) => { console.error('[morph compile]', e); onError?.(e); });
-  }
+  // traces + per-light shading). Compile it SYNCHRONOUSLY (the default — on the first render) so the
+  // geometry, especially the hero dodecahedron, is in the FIRST rendered frame, not popped in later.
+  // An async compile here hid the objects until the shader finished, which on slower/live devices
+  // made the geometry appear long after the sky — the fade covers the compile (black) instead.
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
   const spritesMesh = buildLightSprites(lights, {
