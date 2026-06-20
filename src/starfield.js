@@ -24,6 +24,7 @@ void main() {
   float tw = 1.0 + uStarTwinkle * sin(uTime * 3.0 + hash11(aMag + position.x * 131.0) * 6.2831);
   float fade = smoothstep(-0.04, 0.16, position.y); // ground blocks below the horizon; haze dims near it
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position * ${STAR_RADIUS.toFixed(1)}, 1.0);
+  gl_Position.z = gl_Position.w * 0.999999; // pin to the far plane: at infinity, occluded only by near geometry
   gl_PointSize = max(1.0, uStarSize * b * tw * fade);
   vColor = aColor;
   vBright = b * tw * fade;

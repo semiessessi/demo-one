@@ -6,12 +6,17 @@ import lib from './shaders/lib.glsl?raw';
 // gradient (and the scene), so the dome is only the backdrop the cloud pass sees behind everything.
 const vertexShader = `${lib}
 in vec3 position;
+uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 out vec3 vWorldPos;
 void main() {
-  vWorldPos = position;
-  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+  // The dome follows the camera (mesh.position = camera.position), so the gradient is at infinity and
+  // can never be escaped/seen from outside; pin it to the far plane so it never occludes geometry.
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPos = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  gl_Position.z = gl_Position.w * 0.999999; // far plane (behind everything), regardless of radius
 }`;
 
 const fragmentShader = `${lib}

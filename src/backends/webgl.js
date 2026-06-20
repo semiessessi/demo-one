@@ -267,7 +267,9 @@ export function createWebGLBackend({
   });
   scene.add(spritesMesh);
   // Gradient backdrop dome (clouds are now the fullscreen CloudPass, composited over this + scene).
-  scene.add(buildSky());
+  // Kept centred on the camera each frame (render()) so the gradient sky is at infinity.
+  const sky = buildSky();
+  scene.add(sky);
   // Real-star background (async: the catalogue is code-split out of the main bundle). Added when it
   // resolves; the CloudPass then dims the stars where the cloud is thick.
   let starPoints = null;
@@ -372,6 +374,7 @@ export function createWebGLBackend({
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
       if (starPoints) starPoints.position.copy(camera.position); // keep the starfield centred on the camera -> infinity
+      sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
       uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
