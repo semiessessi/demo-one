@@ -171,10 +171,16 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spx = Math.cos(ang) * outR;
           spy = -sphereR * 1.3 + (CLOUD_OVER + sphereR * 1.3) * fpe; // the bottom (-1.3R) up to above the clouds
           spz = Math.sin(ang) * outR;
-          // Look out + slightly down toward the horizon (the cloud-tops receding), along the travel dir.
-          stx = spx + Math.cos(ang) * 120.0;
-          sty = spy - 20.0;
-          stz = spz + Math.sin(ang) * 120.0;
+          // GRADUALLY pan the look: keep watching the object field while we climb up THROUGH it, then
+          // ease toward the horizon only once we're clearing the cloud-tops — so we never stare at
+          // empty sky on the way up. lookT 0 = field centre, 1 = the horizon ahead.
+          const lookT = smooth(clamp((fp - 0.45) / 0.5, 0, 1));
+          const hx = spx + Math.cos(ang) * 120.0;
+          const hy = spy - 20.0;
+          const hz = spz + Math.sin(ang) * 120.0;
+          stx = hx * lookT;  // from (0,0,0) field centre...
+          sty = hy * lookT;  // ...to the horizon ahead
+          stz = hz * lookT;
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
