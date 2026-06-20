@@ -4,6 +4,7 @@ import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
 import { createMorphState } from './morphState.js';
 import { N_BANDS } from './constants.js';
+import { detectDevice } from './device.js';
 
 // --- Generate the static volume -------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -12,12 +13,20 @@ const TEST = params.has('test');
 // camera, no UI. e.g. ?capture&cam=main-overview&t=8  or  ?test&capture&t=3.75
 const CAPTURE = params.has('capture');
 
-// Scale knobs for stress testing: ?objects=N (&lpo=N for lights per object).
+// Device + diagnostic flags. iPadOS Safari reports a *desktop* UA, so detectDevice() uses
+// maxTouchPoints. ?safe/?lowgfx = the most-conservative path (to isolate iPad issues); ?ldr forces
+// only 8-bit render targets; ?stats shows the fps overlay off-localhost.
+const { isMobile, iOS } = detectDevice();
+const SAFE = params.has('safe') || params.has('lowgfx');
+const FORCE_LDR = SAFE || params.has('ldr');
+const LOW_GFX = SAFE || isMobile;
+// Scale knobs: ?objects=N (&lpo=N). Mobile/safe default to a much smaller field (the volume
+// auto-scales with the count, so the look holds) to cut data-texture size + GPU fill.
 const objectsParam = parseInt(params.get('objects'), 10);
 const lpoParam = parseInt(params.get('lpo'), 10);
 const genOpts = {
-  targetObjects: Number.isFinite(objectsParam) ? objectsParam : undefined,
-  lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : undefined,
+  targetObjects: Number.isFinite(objectsParam) ? objectsParam : LOW_GFX ? (SAFE ? 500 : 1000) : undefined,
+  lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : LOW_GFX ? 18 : undefined,
 };
 // Heavy scene generation runs off the main thread (mirrors sampleDurations.worker.js) so the
 // fade-up stays smooth and the tab never locks while ~5000 objects + their light/occluder/
@@ -79,9 +88,31 @@ const introTarget = objects[0].pos;
 
 // --- Backend (WebGL2) -----------------------------------------------------
 const app = document.getElementById('app');
-const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
+const fadeEl = document.getElementById('fade');
+let revealed = false;
+// Surface the real graphics error on screen instead of a silent black screen — essential for
+// diagnosing mobile/Safari, where the failing WebGL state can't be reproduced locally.
+function showError(e) {
+  const msg = e && (e.stack || e.message) ? `${e.message}\n\n${e.stack || ''}` : String(e);
+  const m = document.getElementById('errmsg'); if (m) m.textContent = msg;
+  document.getElementById('err')?.classList.add('show');
+  revealed = true;                          // block the normal fade-reveal
+  fadeEl?.classList.remove('gone');
+  if (fadeEl) fadeEl.style.display = 'none'; // get the black fade out from over the error
+}
+if (!document.createElement('canvas').getContext('webgl2')) {
+  showError(new Error('WebGL2 is not available (getContext("webgl2") returned null).'));
+  throw new Error('no webgl2');
+}
+
+let backend;
+try {
+  backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget, onError: showError, forceLdr: FORCE_LDR, lowGfx: LOW_GFX });
+} catch (e) { showError(e); throw e; }
 app.appendChild(backend.domElement);
+backend.domElement.addEventListener('webglcontextlost', (ev) => { ev.preventDefault(); showError(new Error('WebGL context lost — the GPU process crashed or ran out of memory (the scene may be too heavy for this device).')); }, { once: true });
 window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
+if (SAFE) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); // ?safe: clouds off to isolate the cloud raymarcher
 
 // Finish the scene in the background: gather every object's lists across workers, then hot-swap the
 // light/occluder/reflection buffers in. Until this lands only the first batch is lit (which is all
@@ -94,8 +125,6 @@ if (progressiveBase) {
 
 // Fade up from black once the first frame is on screen — covers the bundle load + scene
 // build + first render. The demo autostarts visually, so this just reveals it cleanly.
-const fadeEl = document.getElementById('fade');
-let revealed = false;
 function reveal() { if (revealed) return; revealed = true; fadeEl?.classList.add('gone'); }
 if (CAPTURE) { fadeEl?.style.setProperty('transition', 'none'); reveal(); } // no fade for deterministic captures
 else setTimeout(reveal, 6000); // safety fallback if a frame never lands
@@ -340,7 +369,7 @@ const startEl = document.getElementById('start');
 
 const statsEl = document.getElementById('stats');
 const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
-let statsOn = isLocalhost; // stats on by default on localhost
+let statsOn = isLocalhost || params.has('stats') || (isMobile && SAFE); // localhost / ?stats / mobile-safe (no keyboard to toggle, so fps stays visible while debugging)
 statsEl.style.display = statsOn ? 'block' : 'none';
 // Off localhost: hide all the UI chrome — just let the demo run.
 if (!isLocalhost) for (const id of ['controls', 'info', 'toast']) {
@@ -356,9 +385,10 @@ let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
 // FPS autoscaler state (runs for everyone; the localhost GUI tunes target/auto).
-let qualityScale = 1;
+let qualityScale = SAFE ? 0.12 : isMobile ? 0.4 : 1; // lower starting quality on mobile; the autoscaler ramps from here
 let lastQAdjust = 0;
-const perf = { auto: true, targetFps: 60 };
+const perf = { auto: true, targetFps: LOW_GFX ? 45 : 60 };
+if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobile start now (the controller only adjusts every 500ms)
 
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
 // lil-gui is dynamically imported, so end users off localhost never download it.
@@ -524,7 +554,7 @@ function frame() {
   if (perf.auto && t - lastQAdjust > 500) {
     lastQAdjust = t;
     const fps = 1000 / emaMs;
-    if (fps < perf.targetFps - 6) qualityScale = Math.max(0.3, qualityScale - 0.12);
+    if (fps < perf.targetFps - 6) qualityScale = Math.max(LOW_GFX ? 0.12 : 0.3, qualityScale - (LOW_GFX ? 0.18 : 0.12));
     else if (fps > perf.targetFps + 8) qualityScale = Math.min(1, qualityScale + 0.06);
     backend.setQualityScale(qualityScale);
   }

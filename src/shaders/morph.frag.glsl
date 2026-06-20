@@ -157,19 +157,18 @@ int shapeAtP(int pInt) {
 // current hull from its transform + phase and slab-traces every triangle plane.
 // Returns world-space entry distance and entry-plane normal.
 bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
+  // Respect the spawn-in: an un-spawned object casts no shadow / shows no reflection. This cheap
+  // early-out needs only oi + uSpawn, so do it BEFORE the transform fetches — un-spawned occluders
+  // then cost zero texel fetches in the hot shadow/reflection loop.
+  float reveal = spawnReveal(float(oi), uSpawn);
+  if (reveal <= 1e-4) return false;
+
   int b = oi * 4;
   vec4 t0 = texelFetch(uOccTransformTex, texel(b, uOccTransformTexW), 0);
   vec4 baseQ = texelFetch(uOccTransformTex, texel(b + 1, uOccTransformTexW), 0);
-  vec4 t2 = texelFetch(uOccTransformTex, texel(b + 2, uOccTransformTexW), 0);
-  vec4 t3 = texelFetch(uOccTransformTex, texel(b + 3, uOccTransformTexW), 0);
-  float phaseOff = t3.x;
-  float morphSpeed = t3.y;
+  vec4 t2 = texelFetch(uOccTransformTex, texel(b + 2, uOccTransformTexW), 0); // t3 (phaseOff/morphSpeed) was dead -> dropped
   vec3 center = t0.xyz;
   float scale = t0.w;
-  // Respect the spawn-in: an object that hasn't spawned casts no shadow / shows no
-  // reflection, and scales in as it spawns — matching the vertex (spawnReveal by rank).
-  float reveal = spawnReveal(float(oi), uSpawn);
-  if (reveal <= 1e-4) return false;
 
   float p = texelFetch(uMorphPTex, texel(oi, uMorphPTexW), 0).r;
   int seg = int(floor(p));
