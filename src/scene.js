@@ -235,10 +235,11 @@ export function generateScene(opts = {}) {
 export function gatherChunk(base, start, end) {
   const { objects, lights, maxOrbit } = base;
   const lightIndices = buildLightLists(objects, lights, start, end);
-  const occluderIndices = buildOccluderLists(objects, maxOrbit, start, end);
+  const objGrid = buildObjectGrid(objects); // shared by the shadow + reflection gathers (same objects -> same grid)
+  const occluderIndices = buildOccluderLists(objects, maxOrbit, start, end, objGrid);
   const reflectionIndices = buildNeighborLists(
     objects, () => REFLECTION_REACH, REFLECTION_CAP, 'reflOffset', 'reflCount',
-    (o) => o.rough < REFL_ROUGHNESS_MAX, start, end);
+    (o) => o.rough < REFL_ROUGHNESS_MAX, start, end, objGrid);
   const n = end - start;
   const lightCounts = new Int32Array(n), shadowCounts = new Int32Array(n), reflCounts = new Int32Array(n);
   for (let i = start; i < end; i++) {
@@ -295,9 +296,9 @@ export function generateTestScene() {
 
 // Shadow occluder lists: reach covers the object plus the orbit + falloff of the
 // lights that can reach it, so casters between a surface and a moving light are kept.
-function buildOccluderLists(objects, maxOrbit, start = 0, end = objects.length) {
+function buildOccluderLists(objects, maxOrbit, start = 0, end = objects.length, grid = null) {
   return buildNeighborLists(
-    objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount', null, start, end);
+    objects, (o) => o.radius + maxOrbit + LIGHT_RADIUS, SHADOW_CAP, 'shadowOffset', 'shadowCount', null, start, end, grid);
 }
 
 // Reusable scratch for the gather hot loops below — avoids allocating a {index, d2} object per
@@ -310,11 +311,9 @@ function growGatherScratch(n) {
   _gIdx = new Int32Array(s); _gD2 = new Float64Array(s); _gOrd = new Uint32Array(s);
 }
 
-// Generic per-object nearby-object lists via the bucket grid. An object j is
-// included for O when their separation is within reachFn(O) + j.proxyRadius;
-// nearest `cap` are kept. Writes O[offsetKey]/O[countKey] and returns the flat
-// index array. Objects are treated as sphere proxies.
-function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeFn, start = 0, end = objects.length) {
+// Build the object bucket grid once (bbox + bucket binning + maxProxy). Shared by the shadow and
+// reflection neighbour gathers — they otherwise rebuild the identical grid (same objects) twice.
+function buildObjectGrid(objects) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const o of objects)
@@ -327,13 +326,21 @@ function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeF
   const B = BUCKETS_PER_AXIS;
   const coord = (p, a) => Math.max(0, Math.min(B - 1, Math.floor((p - lo[a]) / bucketSize)));
   const key = (x, y, z) => (x * B + y) * B + z;
-
   let maxProxy = 0;
-  objects.forEach((o) => { maxProxy = Math.max(maxProxy, o.proxyRadius); });
+  for (const o of objects) maxProxy = Math.max(maxProxy, o.proxyRadius);
   const buckets = Array.from({ length: B * B * B }, () => []);
   objects.forEach((o, i) => {
     buckets[key(coord(o.pos[0], 0), coord(o.pos[1], 1), coord(o.pos[2], 2))].push(i);
   });
+  return { coord, key, buckets, maxProxy };
+}
+
+// Generic per-object nearby-object lists via the bucket grid. An object j is
+// included for O when their separation is within reachFn(O) + j.proxyRadius;
+// nearest `cap` are kept. Writes O[offsetKey]/O[countKey] and returns the flat
+// index array. Objects are treated as sphere proxies. `grid` is shared across calls.
+function buildNeighborLists(objects, reachFn, cap, offsetKey, countKey, includeFn, start = 0, end = objects.length, grid = null) {
+  const { coord, key, buckets, maxProxy } = grid || buildObjectGrid(objects);
 
   const indices = [];
   for (let self = start; self < end; self++) {
