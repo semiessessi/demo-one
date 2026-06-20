@@ -137,7 +137,9 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     for (int k = 0; k < 16; k++) {
       if (k >= uCloudLightCount) break;
       vec3 dl = uCloudLightPos[k].xyz - p;
-      S += uCloudLightColor[k] * (uCloudLightPos[k].w * uCloudLightStrength / (1.0 + dot(dl, dl) * 0.12));
+      float d2 = dot(dl, dl);
+      float fwd = 0.35 + 0.9 * max(dot(rd, dl * inversesqrt(max(d2, 1e-4))), 0.0); // brightest looking toward the light
+      S += uCloudLightColor[k] * (uCloudLightPos[k].w * uCloudLightStrength * fwd / (1.0 + d2 * 0.12));
     }
     float dT = exp(-dens * baseStep * 1.5);
     scat += T * (1.0 - dT) * S;
