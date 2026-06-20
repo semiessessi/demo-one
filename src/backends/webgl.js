@@ -222,9 +222,16 @@ export function createWebGLBackend({
     uCloudLightColor: { value: cloudLightCol },
   };
 
-  function setCloudLight(p) {
-    const el = p.sunElev * Math.PI / 180, az = p.sunAzim * Math.PI / 180;
+  // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
+  let moonTargetElev = cloudLightDefaults.sunElev, moonAzim = cloudLightDefaults.sunAzim;
+  const moonrise = { on: true, dur: 60 }; // elevation eases from -10deg to the target over `dur` music-seconds
+  function applySunDir(elevDeg) {
+    const el = elevDeg * Math.PI / 180, az = moonAzim * Math.PI / 180;
     uniforms.uSunDir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
+  }
+  function setCloudLight(p) {
+    moonTargetElev = p.sunElev; moonAzim = p.sunAzim;
+    if (!moonrise.on) applySunDir(moonTargetElev); // when the rise is on, render() animates uSunDir instead
     uniforms.uSunColor.value.set(MOON_BASE.r * p.sunIntensity, MOON_BASE.g * p.sunIntensity, MOON_BASE.b * p.sunIntensity);
     uniforms.uCloudAmbient.value = p.ambient;
     uniforms.uCloudHG.value = p.hg;
@@ -345,6 +352,7 @@ export function createWebGLBackend({
     },
     cloudLightDefaults,
     setCloudLight,
+    setMoonrise(on) { moonrise.on = on; if (!on) applySunDir(moonTargetElev); },
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
     setQualityScale(s) {
@@ -379,6 +387,7 @@ export function createWebGLBackend({
       culler.cull(camera); // frustum-cull + compact the instances for this view
       if (starPoints) starPoints.position.copy(camera.position); // keep the starfield centred on the camera -> infinity
       sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
+      if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
       uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
