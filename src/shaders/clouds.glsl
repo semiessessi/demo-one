@@ -137,10 +137,14 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     t0 = max(min(ta, tb), 0.0);
     t1 = max(ta, tb);
   }
-  t1 = min(t1, min(t0 + 200.0, tMax)); // cap by march length AND the depth/hit stop
+  t1 = min(t1, min(t0 + 700.0, tMax)); // far range; the geometric step below keeps distant sampling cheap
   if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
 
-  float baseStep = (t1 - t0) / float(steps);
+  // Distance LOD: a geometric step (fine near, coarser with distance) reaches far with a fixed budget,
+  // so distant clouds recede to the horizon instead of capping into a blob near the camera.
+  float minStep = max(0.4, 40.0 / float(steps)); // near detail; the step budget sets how far it reaches
+  float growth = 1.07;                            // each step a little longer than the last
+  float step = minStep;
   float cosT = dot(rd, uSunDir);
   float lightStep = uCloudThick * 0.12;     // world-scale spacing of the sun light-march
   // Per-ray constants, hoisted out of the march (they don't vary per step):
@@ -148,12 +152,12 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   vec3 ambient = environment(rd) * uCloudAmbient + 0.03; // sky fill + non-black floor
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
-  float t = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * baseStep; // per-frame blue-noise jitter -> no slice banding/layering
+  float t = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * minStep; // per-frame blue-noise jitter -> no slice banding/layering
   for (int i = 0; i < 192; i++) {
     if (i >= steps || t >= t1 || T < 0.02) break;
     vec3 p = ro + rd * t;
     float dens = cloudDensity(p, time);
-    if (dens <= 0.002) { t += baseStep * 1.5; continue; } // coarse-step empty patches
+    if (dens <= 0.002) { t += step * 1.6; step *= growth; continue; } // coarse-step empty patches (step keeps growing)
     // 6-tap light-march toward the moon (increasing spacing) -> optical depth to the sun.
     float sunDensity = 0.0;
     for (int j = 1; j <= 6; j++) sunDensity += cloudDensity(p + uSunDir * lightStep * float(j), time);
@@ -172,10 +176,11 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
       float fwd = 0.35 + 0.9 * max(dot(rd, dl * inversesqrt(max(d2, 1e-4))), 0.0); // brightest looking toward the light
       S += uCloudLightColor[k] * (uCloudLightPos[k].w * uCloudLightStrength * fwd / (1.0 + d2 * 0.12));
     }
-    float dT = exp(-dens * baseStep * 1.5);
+    float dT = exp(-dens * step * 1.5);
     scat += T * (1.0 - dT) * S;
     T *= dT;
-    t += baseStep;
+    t += step;
+    step *= growth; // distance LOD: each step a little longer
   }
   return vec4(scat, T);
 }

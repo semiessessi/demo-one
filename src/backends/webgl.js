@@ -116,7 +116,7 @@ export function createWebGLBackend({
   // Volumetric-cloud defaults: single source for both the uniforms below and the
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
-    cloudsOn: true, coverage: 0.55, density: 0.5, base: 24, thick: 32,
+    cloudsOn: true, coverage: 0.55, density: 2.0, base: 24, thick: 32,
     noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
