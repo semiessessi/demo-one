@@ -77,10 +77,17 @@ class CloudPass extends Pass {
 // setSize, render }.
 export function createWebGLBackend({
   objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
+  onError, forceLdr = false, lowGfx = false,
 }) {
   const renderer = new THREE.WebGLRenderer(); // antialias off: EffectComposer renders to its own non-MSAA targets, so default-buffer MSAA is unused
-  const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: THREE.HalfFloatType }); // baked starfield -> stars in reflections
-  renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio)); // cap at 1.5x — big fill-rate win on hi-DPI
+  // iOS Safari often lacks EXT_color_buffer_float, so RGBA16F FBOs are framebuffer-incomplete -> a
+  // SILENT black screen. Probe both extensions; getExtension('EXT_color_buffer_half_float') also
+  // ENABLES the cap three omits on the RT path. Fall back to 8-bit (LDR) targets so it renders at all.
+  const gl = renderer.getContext();
+  const halfFloatRenderable = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+  const rtType = (halfFloatRenderable && !forceLdr) ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: rtType }); // baked starfield -> stars in reflections
+  renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
@@ -238,7 +245,7 @@ export function createWebGLBackend({
   // compile where KHR_parallel_shader_compile is missing (no worse than before).
   if (!capture) {
     mesh.visible = false;
-    renderer.compileAsync(mesh, camera, scene).then(() => { mesh.visible = true; });
+    renderer.compileAsync(mesh, camera, scene).then(() => { mesh.visible = true; }).catch((e) => { console.error('[morph compile]', e); onError?.(e); });
   }
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
@@ -270,7 +277,7 @@ export function createWebGLBackend({
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
   const makeSceneRT = (w, h) => new THREE.WebGLRenderTarget(Math.max(1, w | 0), Math.max(1, h | 0), {
-    type: THREE.HalfFloatType,
+    type: rtType,
     depthTexture: new THREE.DepthTexture(Math.max(1, w | 0), Math.max(1, h | 0)),
   });
   let sceneRT = makeSceneRT(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
@@ -372,6 +379,7 @@ export function createWebGLBackend({
       cloudPass.setCamera(camera); // matrixWorld is current after the render above
       composer.render(); // CloudPass (clouds over the scene) -> bloom -> output
     },
+    debugInfo: () => ({ pixelRatio: renderer.getPixelRatio(), rtType: rtType === THREE.HalfFloatType ? 'half-float' : '8-bit', halfFloatRenderable, cloudsOn: !!uniforms.uCloudsOn.value, objects: objects.length }),
     // Hot-swap the progressively-gathered full light/occluder/reflection lists in: rebuild the index
     // + instance textures and re-upload the per-object offsets/counts. The lights themselves are
     // unchanged, so uLightsTex is kept (only the index into it grows).

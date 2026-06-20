@@ -274,6 +274,22 @@
       #fade.gone {
         opacity: 0;
       }
+      /* Graphics-error overlay — shown (above #fade) instead of a silent black screen if WebGL fails. */
+      #err {
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+        display: none;
+        background: #0a0a0a;
+        color: #ddd;
+        font: 13px/1.5 ui-monospace, monospace;
+        padding: 24px;
+        overflow: auto;
+        user-select: text;
+      }
+      #err.show { display: block; }
+      #err h3 { color: #ff6b6b; margin: 0 0 10px; }
+      #errmsg { white-space: pre-wrap; word-break: break-word; user-select: text; color: #9f9; }
     </style>
   </head>
   <body>
@@ -322,6 +338,7 @@
     </aside>
     <div id="toast"><span>Press <kbd>Tab</kbd> for controls</span></div>
     <div id="start" class="hidden">&#128266;&nbsp; Click anywhere to play with sound</div>
+    <div id="err"><h3>Graphics error</h3><pre id="errmsg"></pre><p>Please screenshot this and send it back.</p></div>
     <div id="fade"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
