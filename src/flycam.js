@@ -21,10 +21,11 @@ const CLIMAX_END = 77.0;        // rolls end as the scripted finale begins
 const CLIMAX_SPEED_MULT = 3.0;  // peak fly-speed multiplier during the climax
 const ROLL_SPEED = 1.2;         // peak barrel-roll rate (rad/s) -> a few full rolls over the climax
 // Scripted finale: a wide orbit of the sphere's outside (FINALE_START), pivoting down to its
-// bottom, then a meandering fly up through its middle to FLYUP_END, ending above and looking up.
+// bottom, then a calm climb UP and OUT to above the clouds, settling looking at the horizon.
 const FINALE_START = 77.0;
 const FLYUP_START = 110.0;
 const FLYUP_END = 138.0;
+const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const TWO_PI = Math.PI * 2.0;
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
@@ -161,13 +162,19 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spz = Math.sin(wang) * wr;
           stx = 0; sty = 0; stz = 0;                            // look at the centre -> ends looking up
         } else {
+          // Climb up out of the field, rise ABOVE THE CLOUDS, and settle looking out at the horizon
+          // (a calm, held final shot — no more fly-through-the-middle).
           const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
           const fpe = smooth(fp);
-          const meander = sphereR * 0.25;
-          spx = meander * Math.sin(fp * 3.0 * TWO_PI);
-          spy = -sphereR * 1.3 + sphereR * 2.6 * fpe;           // -1.3R up to +1.3R through the middle
-          spz = meander * Math.sin(fp * 2.3 * TWO_PI);
-          stx = spx; sty = spy + sphereR; stz = spz;            // look up, ahead of travel
+          const ang = 2.0 + fpe * 1.1;                          // a gentle outward arc while climbing
+          const outR = WIDE_R * 1.15 * fpe;                     // ease out from centre (fp=0 = the wide-orbit's bottom-centre)
+          spx = Math.cos(ang) * outR;
+          spy = -sphereR * 1.3 + (CLOUD_OVER + sphereR * 1.3) * fpe; // the bottom (-1.3R) up to above the clouds
+          spz = Math.sin(ang) * outR;
+          // Look out + slightly down toward the horizon (the cloud-tops receding), along the travel dir.
+          stx = spx + Math.cos(ang) * 120.0;
+          sty = spy - 20.0;
+          stz = spz + Math.sin(ang) * 120.0;
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
