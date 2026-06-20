@@ -368,13 +368,14 @@ export function createWebGLBackend({
     // unchanged, so uLightsTex is kept (only the index into it grows).
     updateScene(data) {
       const lt = buildLightTextures(data.lights, data.lightIndices);
-      uniforms.uLightIndexTex.value = lt.lightIndexTex; uniforms.uIndexTexW.value = lt.indexTexW;
+      lt.lightsTex.dispose(); // lights are unchanged — keep the original uLightsTex; only the index grows
+      uniforms.uLightIndexTex.value.dispose(); uniforms.uLightIndexTex.value = lt.lightIndexTex; uniforms.uIndexTexW.value = lt.indexTexW;
       const ot = buildOccluderTextures(data.objects, data.occluderIndices);
-      uniforms.uOccluderTex.value = ot.occluderTex; uniforms.uOccluderTexW.value = ot.occluderTexW;
-      uniforms.uShadowIndexTex.value = ot.shadowIndexTex; uniforms.uShadowIndexW.value = ot.shadowIndexW;
+      uniforms.uOccluderTex.value.dispose(); uniforms.uOccluderTex.value = ot.occluderTex; uniforms.uOccluderTexW.value = ot.occluderTexW;
+      uniforms.uShadowIndexTex.value.dispose(); uniforms.uShadowIndexTex.value = ot.shadowIndexTex; uniforms.uShadowIndexW.value = ot.shadowIndexW;
       const rt = buildReflectionData(data.objects, data.reflectionIndices);
-      uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
-      uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
+      uniforms.uReflIndexTex.value.dispose(); uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
+      uniforms.uInstanceTex.value.dispose(); uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
       setInstanceAttributes(geometry, data.objects);
       culler = createInstanceCuller(geometry, data.objects); // re-sync the culler: setInstanceAttributes rewrote the instance buffers full-order, so the culler's cached src + aOrigIndex must be rebuilt (else slots desync -> objects spin on every camera move)
     },
