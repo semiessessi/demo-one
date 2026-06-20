@@ -154,15 +154,13 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     // 6-tap light-march toward the moon (increasing spacing) -> optical depth to the sun.
     float sunDensity = 0.0;
     for (int j = 1; j <= 6; j++) sunDensity += cloudDensity(p + uSunDir * lightStep * float(j), time);
-    // multiple scattering: a few octaves of Beer * phase, so shadowed cores aren't black.
-    vec3 lum = vec3(0.0);
-    float a = 1.0, b = 1.0, c = 1.0;
-    for (int o = 0; o < 3; o++) {
-      lum += a * uSunColor * exp(-sunDensity * 0.9 * b) * hg(cosT, uCloudHG * c);
-      a *= 0.5; b *= 0.5; c *= 0.6;
-    }
+    // Phase: an isotropic base + a forward HG lobe (silver lining), so the cloud is lit from ALL
+    // angles, not just looking toward the moon. Beer octaves keep strong self-shadow contrast (form).
+    float phase = 0.35 + 1.4 * hg(cosT, uCloudHG);
+    float beer = exp(-sunDensity * 1.2) + 0.45 * exp(-sunDensity * 0.45) + 0.2 * exp(-sunDensity * 0.18);
+    vec3 lum = uSunColor * (phase * beer * 1.6);
     lum *= mix(1.0, 1.0 - exp(-dens * 2.0), uCloudPowder); // Beer-Powder: dark thin edges
-    vec3 S = lum + environment(rd) * uCloudAmbient + 0.025; // sky ambient + non-black floor
+    vec3 S = lum + environment(rd) * uCloudAmbient + 0.03; // sky ambient + non-black floor
     // Topmost orbiting lights scatter into the volume: a soft coloured glow near the lit objects up
     // in the band, pulsing with the music (uCloudLightStrength). Objects don't translate, so the
     // orbit centres are static and orbit radius << cloud scale -> no per-sample orbit math needed.
