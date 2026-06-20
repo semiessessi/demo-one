@@ -12,8 +12,6 @@ uniform float uCloudBase;     // band centre altitude (world y)
 uniform float uCloudThick;    // band half-thickness
 uniform float uCloudNoiseScale; // fbm frequency (smaller = bigger puffs)
 uniform vec3  uCloudWind;     // world units/sec the noise field drifts
-uniform float uVortex;        // 0 = flat band, 1 = full swirl
-uniform float uVortexTwist;   // radians of twist per world unit of height
 uniform float uCloudSteps;    // march iteration budget (quality)
 uniform vec3  uSunDir;        // moonlight direction (the cloud key light)
 uniform vec3  uSunColor;      // moonlight colour * intensity
@@ -27,8 +25,6 @@ uniform float uCloudLightStrength; // topmost-lights cloud glow strength (base *
 uniform int   uCloudLightCount;    // how many topmost lights scatter into the volume (autoscaled)
 uniform vec4  uCloudLightPos[16];  // xyz = world position (static orbit centre), w = per-light brightness
 uniform vec3  uCloudLightColor[16];// per-light colour
-
-const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 
 // --- value-noise fbm ------------------------------------------------------
 float cloudHash(vec3 p) {
@@ -55,55 +51,14 @@ float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566370614
 // Interleaved-gradient (blue-noise-like) dither, texture-free.
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
-const float VORTEX_FUNNEL_H = 35.0; // how far the vortex funnel rises above the band into clear sky
-
-// Vortex: rotate xz about the axis by an angle that tightens toward the centre (bounded ~1/r),
-// winds with height, and spins over time -> a swirling funnel, not a gentle barber-pole twist.
-vec3 cloudTwist(vec3 p, float time) {
-  if (uVortex <= 0.0) return p;
-  vec2 q = p.xz - VORTEX_AXIS;
-  float r = length(q);
-  float ang = uVortex * (uVortexTwist * (p.y - uCloudBase) + time * 0.6 + 7.0 / (r + 1.5));
-  float c = cos(ang), s = sin(ang);
-  vec2 rot = mat2(c, -s, s, c) * q + VORTEX_AXIS;
-  return vec3(rot.x, p.y, rot.y);
-}
-
-// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage. With the
-// vortex on: a clear eye + spiral arms in the band, plus a tapering swirling funnel rising above it.
+// Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage.
 float cloudDensity(vec3 p, float time) {
   float dens = 0.0;
   float h = 1.0 - abs(p.y - uCloudBase) / max(uCloudThick, 1e-3); // 1 centre -> 0 at band edge
   if (h > 0.0) {
     h = smoothstep(0.0, 0.5, h); // feather the top and bottom of the band
-    vec3 q = cloudTwist(p, time);
-    vec3 np = (q + uCloudWind * time) * uCloudNoiseScale;
+    vec3 np = (p + uCloudWind * time) * uCloudNoiseScale;
     dens = clamp(cloudFbm(np) * h - (1.0 - uCoverage), 0.0, 1.0) * uCloudDensity;
-  }
-  if (uVortex <= 0.0) return dens;
-
-  vec2 qv = p.xz - VORTEX_AXIS;
-  float rr = length(qv);
-  float theta = atan(qv.y, qv.x);
-  // In-band: clear conical eye + 2-arm log-spiral arms winding into it (the whirlpool base).
-  if (h > 0.0) {
-    float eyeR = 2.0 + max(p.y - (uCloudBase - uCloudThick), 0.0) * 0.25;
-    dens *= mix(1.0, smoothstep(eyeR - 1.5, eyeR + 5.0, rr), uVortex);
-    float spiral = cos(2.0 * theta - log(rr + 1.0) * 5.0 - time * 0.8);
-    dens += uVortex * smoothstep(0.2, 0.85, spiral) * exp(-rr * 0.05) * smoothstep(eyeR, eyeR + 4.0, rr) * uCloudDensity * 1.5;
-  }
-  // Funnel rising ABOVE the band into clear sky: a tapering, swirling, wispy column (the visible spout).
-  float funnelTop = uCloudBase + uCloudThick + VORTEX_FUNNEL_H;
-  if (p.y > uCloudBase && p.y < funnelTop) {
-    float hf = (p.y - uCloudBase) / (funnelTop - uCloudBase); // 0 at band centre -> 1 at the tip
-    float funnelR = mix(10.0, 1.5, smoothstep(0.0, 1.0, hf)); // wide at the deck, tapering up
-    float core = 1.0 - smoothstep(funnelR * 0.35, funnelR, rr); // 1 in the core, 0 at the wall (edge0<edge1: defined on mobile)
-    if (core > 0.001) {
-      float wisp = 0.55 + 0.6 * cloudFbm((p + uCloudWind * time) * uCloudNoiseScale * 1.6); // break the column into cloud
-      float swirl = 0.7 + 0.3 * cos(3.0 * theta - hf * 26.0 - time * 1.6); // swirling bands up the funnel
-      float taper = 1.0 - smoothstep(0.72, 1.0, hf); // solid most of the way, fading to the tip (edge0<edge1)
-      dens = max(dens, uVortex * core * swirl * wisp * taper * uCloudDensity * 5.0);
-    }
   }
   return dens;
 }
@@ -112,7 +67,7 @@ float cloudDensity(vec3 p, float time) {
 // band -> Beer transmittance, so objects dapple under cloud cover (morph.frag moonlight term).
 float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
   if (uCloudsOn < 0.5 || sunDir.y <= 0.01) return 1.0;
-  float yLo = uCloudBase - uCloudThick, yHi = uCloudBase + uCloudThick + (uVortex > 0.0 ? VORTEX_FUNNEL_H : 0.0);
+  float yLo = uCloudBase - uCloudThick, yHi = uCloudBase + uCloudThick;
   float tA = (yLo - worldPos.y) / sunDir.y, tB = (yHi - worldPos.y) / sunDir.y;
   float t0 = max(min(tA, tB), 0.0), t1 = max(tA, tB);
   if (t1 <= t0) return 1.0; // the up-ray doesn't cross the band
@@ -126,7 +81,7 @@ float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
 vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
   if (uCloudsOn < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
   float yLo = uCloudBase - uCloudThick;
-  float yHi = uCloudBase + uCloudThick + (uVortex > 0.0 ? VORTEX_FUNNEL_H : 0.0); // extend up for the funnel
+  float yHi = uCloudBase + uCloudThick;
   float t0, t1;
   if (abs(rd.y) < 1e-4) {
     if (ro.y < yLo || ro.y > yHi) return vec4(0.0, 0.0, 0.0, 1.0); // parallel to a band it isn't in

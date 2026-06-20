@@ -41,7 +41,7 @@ class CloudPass extends Pass {
       uTime: shared.uTime, uCloudsOn: shared.uCloudsOn, uCoverage: shared.uCoverage,
       uCloudDensity: shared.uCloudDensity, uCloudBase: shared.uCloudBase, uCloudThick: shared.uCloudThick,
       uCloudNoiseScale: shared.uCloudNoiseScale, uCloudWind: shared.uCloudWind,
-      uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
+      uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
       uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
       uCloudLightStrength: shared.uCloudLightStrength, uCloudLightCount: shared.uCloudLightCount,
@@ -117,7 +117,7 @@ export function createWebGLBackend({
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
     cloudsOn: true, coverage: 0.55, density: 2.0, base: 24, thick: 32,
-    noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
+    noiseScale: 0.05, windX: 2.5, windZ: -2.9, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
@@ -196,8 +196,6 @@ export function createWebGLBackend({
     uCloudThick: { value: cloudDefaults.thick },
     uCloudNoiseScale: { value: cloudDefaults.noiseScale },
     uCloudWind: { value: new THREE.Vector3(cloudDefaults.windX, 0, cloudDefaults.windZ) },
-    uVortex: { value: cloudDefaults.vortex },
-    uVortexTwist: { value: cloudDefaults.twist },
     uCloudSteps: { value: cloudDefaults.quality },
     // Lighting look: global brightness + amplitude-reactive subset (used by the sprites;
     // uLightScale also dims the morph lighting/specular).
@@ -336,8 +334,6 @@ export function createWebGLBackend({
       uniforms.uCloudThick.value = p.thick;
       uniforms.uCloudNoiseScale.value = p.noiseScale;
       uniforms.uCloudWind.value.set(p.windX, 0, p.windZ);
-      uniforms.uVortex.value = p.vortex;
-      uniforms.uVortexTwist.value = p.twist;
       uniforms.uCloudSteps.value = p.quality;
     },
     lookDefaults,

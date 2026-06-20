@@ -416,9 +416,6 @@ if (isLocalhost) {
   cf.add(cloudParams, 'windX', -3, 3, 0.05).name('wind x').onChange(applyClouds);
   cf.add(cloudParams, 'windZ', -3, 3, 0.05).name('wind z').onChange(applyClouds);
   cf.add(cloudParams, 'quality', 8, 120, 1).name('quality (steps)').onChange(applyClouds);
-  const vf = debugGui.addFolder('vortex');
-  vf.add(cloudParams, 'vortex', 0, 1, 0.01).name('amount').onChange(applyClouds);
-  vf.add(cloudParams, 'twist', 0, 0.2, 0.005).name('twist / height').onChange(applyClouds);
   const lookParams = { ...backend.lookDefaults };
   const applyLook = () => backend.setLook(lookParams);
   const lf = debugGui.addFolder('look');
