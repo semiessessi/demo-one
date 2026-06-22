@@ -21,10 +21,11 @@ const CLIMAX_END = 77.0;        // rolls end as the scripted finale begins
 const CLIMAX_SPEED_MULT = 3.0;  // peak fly-speed multiplier during the climax
 const ROLL_SPEED = 1.2;         // peak barrel-roll rate (rad/s) -> a few full rolls over the climax
 // Scripted finale: a wide orbit of the sphere's outside (FINALE_START), pivoting down to its
-// bottom, then a meandering fly up through its middle to FLYUP_END, ending above and looking up.
+// bottom, then a calm climb UP and OUT to above the clouds, settling looking at the horizon.
 const FINALE_START = 77.0;
 const FLYUP_START = 110.0;
 const FLYUP_END = 138.0;
+const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const TWO_PI = Math.PI * 2.0;
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
@@ -49,6 +50,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   let climaxRoll = 0;             // accumulated barrel-roll angle during the climax
   let rollSmooth = 0;             // smoothed camera roll (3rd euler)
   let musicLevel = 0;             // 0..1 music amplitude (note density), set by setMusicLevel
+  let sox = 0, soy = 0, soz = 0, lookSmoothInit = false; // smoothed look-offset -> calms the auto-camera's view swings
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
   function aim(tx, ty, tz) {
@@ -160,19 +162,38 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spz = Math.sin(wang) * wr;
           stx = 0; sty = 0; stz = 0;                            // look at the centre -> ends looking up
         } else {
+          // Climb up out of the field, rise ABOVE THE CLOUDS, and settle looking out at the horizon
+          // (a calm, held final shot — no more fly-through-the-middle).
           const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
           const fpe = smooth(fp);
-          const meander = sphereR * 0.25;
-          spx = meander * Math.sin(fp * 3.0 * TWO_PI);
-          spy = -sphereR * 1.3 + sphereR * 2.6 * fpe;           // -1.3R up to +1.3R through the middle
-          spz = meander * Math.sin(fp * 2.3 * TWO_PI);
-          stx = spx; sty = spy + sphereR; stz = spz;            // look up, ahead of travel
+          const ang = 2.0 + fpe * 1.1;                          // a gentle outward arc while climbing
+          const outR = WIDE_R * 1.15 * fpe;                     // ease out from centre (fp=0 = the wide-orbit's bottom-centre)
+          spx = Math.cos(ang) * outR;
+          spy = -sphereR * 1.3 + (CLOUD_OVER + sphereR * 1.3) * fpe; // the bottom (-1.3R) up to above the clouds
+          spz = Math.sin(ang) * outR;
+          // GRADUALLY pan the look: keep watching the object field while we climb up THROUGH it, then
+          // ease toward the horizon only once we're clearing the cloud-tops — so we never stare at
+          // empty sky on the way up. lookT 0 = field centre, 1 = the horizon ahead.
+          const lookT = smooth(clamp((fp - 0.45) / 0.5, 0, 1));
+          const hx = spx + Math.cos(ang) * 120.0;
+          const hy = spy - 20.0;
+          const hz = spz + Math.sin(ang) * 120.0;
+          stx = hx * lookT;  // from (0,0,0) field centre...
+          sty = hy * lookT;  // ...to the horizon ahead
+          stz = hz * lookT;
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
         lx += (stx - lx) * fb; ly += (sty - ly) * fb; lz += (stz - lz) * fb;
       }
-      aim(lx, ly, lz);
+      // The look target follows the fly velocity, which swings fast near the Lissajous low-speed
+      // corners — reading as the whole view spinning. Low-pass the look OFFSET from the camera (not
+      // the world point, so it never looks backwards as the camera moves) for a calm auto-pan.
+      const ox = lx - px, oy = ly - py, oz = lz - pz;
+      if (!lookSmoothInit) { sox = ox; soy = oy; soz = oz; lookSmoothInit = true; }
+      const lsa = 1.0 - Math.exp(-dt / 0.5);
+      sox += (ox - sox) * lsa; soy += (oy - soy) * lsa; soz += (oz - soz) * lsa;
+      aim(px + sox, py + soy, pz + soz);
     }
     if (mode === 'free') {
       const cp = Math.cos(pitch), sp = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);
@@ -211,6 +232,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     speedMultSmooth = 1;
     climaxRoll = 0;
     rollSmooth = 0;
+    sox = soy = soz = 0; lookSmoothInit = false;
     mode = 'intro';
   }
   function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }

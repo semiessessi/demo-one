@@ -4,6 +4,7 @@ import { createBackend } from './backends/index.js';
 import { createAudioManager } from './audio.js';
 import { createMorphState } from './morphState.js';
 import { N_BANDS } from './constants.js';
+import { detectDevice } from './device.js';
 
 // --- Generate the static volume -------------------------------------------
 const params = new URLSearchParams(location.search);
@@ -12,12 +13,16 @@ const TEST = params.has('test');
 // camera, no UI. e.g. ?capture&cam=main-overview&t=8  or  ?test&capture&t=3.75
 const CAPTURE = params.has('capture');
 
-// Scale knobs for stress testing: ?objects=N (&lpo=N for lights per object).
+// Mobile gets a lighter scene. Modern iPadOS Safari reports a *desktop* UA, so detectDevice() keys
+// off navigator.maxTouchPoints to spot touch devices.
+const { isMobile } = detectDevice();
+// Scale knobs: ?objects=N (&lpo=N). Mobile defaults to a smaller field (the volume auto-scales with
+// the count, so the look holds) to cut data-texture size + GPU fill.
 const objectsParam = parseInt(params.get('objects'), 10);
 const lpoParam = parseInt(params.get('lpo'), 10);
 const genOpts = {
-  targetObjects: Number.isFinite(objectsParam) ? objectsParam : undefined,
-  lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : undefined,
+  targetObjects: Number.isFinite(objectsParam) ? objectsParam : isMobile ? 1000 : undefined,
+  lightsPerObject: Number.isFinite(lpoParam) ? lpoParam : isMobile ? 18 : undefined,
 };
 // Heavy scene generation runs off the main thread (mirrors sampleDurations.worker.js) so the
 // fade-up stays smooth and the tab never locks while ~5000 objects + their light/occluder/
@@ -79,9 +84,10 @@ const introTarget = objects[0].pos;
 
 // --- Backend (WebGL2) -----------------------------------------------------
 const app = document.getElementById('app');
-const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget });
+const backend = await createBackend({ ...sceneData, test: TEST, capture: CAPTURE, introTarget, lowGfx: isMobile });
 app.appendChild(backend.domElement);
 window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
+if (isMobile) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); // the fullscreen cloud raymarcher is the big mobile fill-rate cost -> off on mobile
 
 // Finish the scene in the background: gather every object's lists across workers, then hot-swap the
 // light/occluder/reflection buffers in. Until this lands only the first batch is lit (which is all
@@ -325,10 +331,12 @@ if (!CAPTURE) setTimeout(() => info.classList.add('open'), 80);
 // the "click for sound" prompt asks for one; the first interaction of ANY kind (tap, click,
 // key, scroll) then (re)starts it from the top WITH sound, so music and visuals stay in sync.
 if (!CAPTURE && !TEST) {
-  let kicked = false;
-  const kickoff = () => { if (kicked) return; kicked = true; if (!audio.isRunning) setPlaying(true); };
-  ['pointerdown', 'touchstart', 'wheel', 'keydown', 'click'].forEach((ev) =>
-    window.addEventListener(ev, kickoff, { once: true, passive: true }));
+  // Start playing on the first gesture, then resume the audio context on EVERY gesture until it's
+  // actually running — iOS needs the resume() inside a tap, and a single autostart-created context
+  // stays suspended, so one-shot handlers (and the prior `kicked` guard) left iPad silent on tap.
+  const kickoff = () => { if (!playing) setPlaying(true); audio.resumeContext(); };
+  ['pointerdown', 'touchstart', 'click', 'keydown', 'wheel'].forEach((ev) =>
+    window.addEventListener(ev, kickoff, { passive: true }));
   setTimeout(() => { if (!playing) setPlaying(true); }, 600); // autostart promptly, right behind the fade
 }
 
@@ -356,15 +364,17 @@ let emaMs = 16.7;
 let lastNow = performance.now();
 let statsAcc = 0;
 // FPS autoscaler state (runs for everyone; the localhost GUI tunes target/auto).
-let qualityScale = 1;
+let qualityScale = isMobile ? 0.4 : 1; // lower starting quality on mobile; the autoscaler ramps from here
 let lastQAdjust = 0;
-const perf = { auto: true, targetFps: 60 };
+const perf = { auto: true, targetFps: isMobile ? 45 : 60 };
+if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobile start now (the controller only adjusts every 500ms)
 
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
 // lil-gui is dynamically imported, so end users off localhost never download it.
 const debugState = { geometry: true, sprites: true };
 const cloudParams = { ...backend.cloudDefaults }; // seeded from the backend's defaults
 let debugGui = null;
+let debugFrameHook = null; // per-frame debug-only update (live moon-elevation readout)
 const syncDebugGui = () => debugGui?.controllersRecursive().forEach((c) => c.updateDisplay());
 if (isLocalhost) {
   window.__backend = backend; // dev hook: drive the camera + cloud params from the console
@@ -385,9 +395,6 @@ if (isLocalhost) {
   cf.add(cloudParams, 'windX', -3, 3, 0.05).name('wind x').onChange(applyClouds);
   cf.add(cloudParams, 'windZ', -3, 3, 0.05).name('wind z').onChange(applyClouds);
   cf.add(cloudParams, 'quality', 8, 120, 1).name('quality (steps)').onChange(applyClouds);
-  const vf = debugGui.addFolder('vortex');
-  vf.add(cloudParams, 'vortex', 0, 1, 0.01).name('amount').onChange(applyClouds);
-  vf.add(cloudParams, 'twist', 0, 0.2, 0.005).name('twist / height').onChange(applyClouds);
   const lookParams = { ...backend.lookDefaults };
   const applyLook = () => backend.setLook(lookParams);
   const lf = debugGui.addFolder('look');
@@ -404,6 +411,15 @@ if (isLocalhost) {
   clf.add(clParams, 'hg', 0, 0.95, 0.01).name('phase (silver)').onChange(applyCloudLight);
   clf.add(clParams, 'powder', 0, 1, 0.01).onChange(applyCloudLight);
   clf.add(clParams, 'moonStrength', 0, 3, 0.05).name('moon on scene').onChange(applyCloudLight);
+  clf.add(clParams, 'lightScatter', 0, 6, 0.1).name('lights -> cloud').onChange(applyCloudLight);
+  clf.add(clParams, 'moonSize', 0, 20, 0.5).name('moon size').onChange(applyCloudLight);
+  const mrParams = { moonrise: true };
+  clf.add(mrParams, 'moonrise').name('moonrise (-10->elev)').onChange((v) => backend.setMoonrise(v));
+  // Live readout of the CURRENT moon elevation (the rise animates it from -10 up to 'moon elevation').
+  // Read-only; confirms the moon disc + cloud moonlight track the same rising uSunDir.
+  const moonLive = { elev: clParams.sunElev };
+  const moonLiveCtrl = clf.add(moonLive, 'elev', -10, 90, 0.1).name('elevation (live)').disable();
+  debugFrameHook = () => { moonLive.elev = Math.round(backend.sunElevDeg() * 10) / 10; moonLiveCtrl.updateDisplay(); };
   const stParams = { ...backend.starDefaults };
   const applyStars = () => backend.setStars(stParams);
   const sf = debugGui.addFolder('stars');
@@ -514,6 +530,7 @@ function frame() {
   }
   backend.render();
   reveal(); // first frame is on screen — start the fade-up from black
+  debugFrameHook?.(); // live moon-elevation readout (localhost debug GUI only)
 
   // Measure real frame time.
   emaMs = emaMs * 0.9 + (t - lastNow) * 0.1;
@@ -523,7 +540,7 @@ function frame() {
   if (perf.auto && t - lastQAdjust > 500) {
     lastQAdjust = t;
     const fps = 1000 / emaMs;
-    if (fps < perf.targetFps - 6) qualityScale = Math.max(0.3, qualityScale - 0.12);
+    if (fps < perf.targetFps - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.18 : 0.12));
     else if (fps > perf.targetFps + 8) qualityScale = Math.min(1, qualityScale + 0.06);
     backend.setQualityScale(qualityScale);
   }

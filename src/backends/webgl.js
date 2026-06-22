@@ -26,7 +26,8 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
-import { buildStarfield } from '../starfield.js';
+import { buildStarfield, bakeStarCubemap } from '../starfield.js';
+import { buildMoon } from '../moon.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -41,9 +42,9 @@ class CloudPass extends Pass {
       uTime: shared.uTime, uCloudsOn: shared.uCloudsOn, uCoverage: shared.uCoverage,
       uCloudDensity: shared.uCloudDensity, uCloudBase: shared.uCloudBase, uCloudThick: shared.uCloudThick,
       uCloudNoiseScale: shared.uCloudNoiseScale, uCloudWind: shared.uCloudWind,
-      uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
+      uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
-      uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder,
+      uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
       uCloudLightsTex: shared.uCloudLightsTex, uCloudLightsTexW: shared.uCloudLightsTexW,
       uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
       uCloudLightGain: shared.uCloudLightGain,
@@ -79,9 +80,17 @@ class CloudPass extends Pass {
 // setSize, render }.
 export function createWebGLBackend({
   objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
+  lowGfx = false,
 }) {
   const renderer = new THREE.WebGLRenderer(); // antialias off: EffectComposer renders to its own non-MSAA targets, so default-buffer MSAA is unused
-  renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio)); // cap at 1.5x — big fill-rate win on hi-DPI
+  // iOS Safari often lacks EXT_color_buffer_float, so RGBA16F FBOs are framebuffer-incomplete -> a
+  // SILENT black screen. Probe both extensions; getExtension('EXT_color_buffer_half_float') also
+  // ENABLES the cap three omits on the RT path. Fall back to 8-bit targets so it renders at all.
+  const gl = renderer.getContext();
+  const halfFloatRenderable = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+  const rtType = halfFloatRenderable ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: rtType }); // baked starfield -> stars in reflections
+  renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
@@ -105,22 +114,27 @@ export function createWebGLBackend({
   const occXf = buildOccluderTransforms(objects);
   // Per-object morph position (CPU note-stepped), uploaded each frame via setMorph.
   const morphPTex = floatTexture(new Float32Array(objects.length), objects.length, 1);
-  // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's
-  // coloured in-scatter (see cloudLights.js / lightEmission.js).
-  const cloudLights = createCloudLights(lights, lights.length / objects.length);
 
   // Volumetric-cloud defaults: single source for both the uniforms below and the
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
-    cloudsOn: true, coverage: 0.5, density: 0.5, base: 24, thick: 12,
-    noiseScale: 0.05, windX: 2.5, windZ: -2.9, vortex: 0, twist: 0.06, quality: 64,
+    cloudsOn: true, coverage: 0.55, density: 2.0, base: 24, thick: 32,
+    noiseScale: 0.05, windX: 2.5, windZ: -2.9, quality: 64,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, glow: 2.0 };
+  // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
+  // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
+  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
+
+  // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
+  // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
+  // and CURRENT per-light emission (steady "bath" fill -> always lit; amplitude subset dark when
+  // quiet). See cloudLights.js / lightEmission.js.
+  const cloudLights = createCloudLights(lights, lights.length / objects.length);
 
   const uniforms = {
     uTime: { value: 0 },
@@ -166,8 +180,6 @@ export function createWebGLBackend({
     uCloudThick: { value: cloudDefaults.thick },
     uCloudNoiseScale: { value: cloudDefaults.noiseScale },
     uCloudWind: { value: new THREE.Vector3(cloudDefaults.windX, 0, cloudDefaults.windZ) },
-    uVortex: { value: cloudDefaults.vortex },
-    uVortexTwist: { value: cloudDefaults.twist },
     uCloudSteps: { value: cloudDefaults.quality },
     // Lighting look: global brightness + amplitude-reactive subset (used by the sprites;
     // uLightScale also dims the morph lighting/specular).
@@ -182,36 +194,52 @@ export function createWebGLBackend({
     uCloudPowder: { value: cloudLightDefaults.powder },
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
     uReflCloudSteps: { value: 10 },
+    uFrame: { value: 0 }, // frame counter for the per-frame cloud dither
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
+    uMoonSize: { value: cloudLightDefaults.moonSize }, // moon disc half-size (billboard at uSunDir)
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
-    // Point lights colouring the cloud volume: a per-frame compact buffer + count, a
-    // tunable glow gain, and an FPS-autoscaled per-step light cap.
+    uStarCube: { value: starCubeRT.texture }, // baked real stars, sampled by direction in reflections
     uCloudLightsTex: { value: cloudLights.tex },
     uCloudLightsTexW: { value: cloudLights.width },
-    uCloudLightCount: { value: 0 },
-    uCloudLightCap: { value: 48 },
-    uCloudLightGain: { value: cloudLightDefaults.glow },
+    uCloudLightCount: { value: 0 }, // packed per-frame by cloudLights.update()
+    uCloudLightCap: { value: 48 }, // FPS-autoscaled per-step cloud-light budget
+    uCloudLightGain: { value: cloudLightDefaults.lightScatter }, // GUI "lights -> cloud"
   };
 
-  function setCloudLight(p) {
-    const el = p.sunElev * Math.PI / 180, az = p.sunAzim * Math.PI / 180;
+  // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
+  let moonTargetElev = cloudLightDefaults.sunElev, moonAzim = cloudLightDefaults.sunAzim;
+  let liveMoonElev = cloudLightDefaults.sunElev; // the CURRENT (animated) elevation — drives the disc + cloud light; read by the debug GUI
+  const moonrise = { on: true, dur: 150 }; // elevation eases from -10deg to the target over `dur` demo-seconds (uTime) -> a slow ~2.5min rise
+  function applySunDir(elevDeg) {
+    liveMoonElev = elevDeg; // single source: the moon disc AND the cloud moonlight both read uSunDir, set from this
+    const el = elevDeg * Math.PI / 180, az = moonAzim * Math.PI / 180;
     uniforms.uSunDir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
+  }
+  function setCloudLight(p) {
+    moonTargetElev = p.sunElev; moonAzim = p.sunAzim;
+    if (!moonrise.on) applySunDir(moonTargetElev); // when the rise is on, render() animates uSunDir instead
     uniforms.uSunColor.value.set(MOON_BASE.r * p.sunIntensity, MOON_BASE.g * p.sunIntensity, MOON_BASE.b * p.sunIntensity);
     uniforms.uCloudAmbient.value = p.ambient;
     uniforms.uCloudHG.value = p.hg;
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
-    uniforms.uCloudLightGain.value = p.glow;
+    uniforms.uCloudLightGain.value = p.lightScatter;
+    uniforms.uMoonSize.value = p.moonSize;
   }
   setCloudLight(cloudLightDefaults);
 
   const geometry = buildUnifiedGeometry();
   setInstanceAttributes(geometry, objects);
-  const culler = createInstanceCuller(geometry, objects); // CPU frustum cull + compact
+  let culler = createInstanceCuller(geometry, objects); // CPU frustum cull + compact
   const mesh = new THREE.Mesh(geometry, buildMorphMaterial(uniforms));
   mesh.frustumCulled = false; // we cull per-instance ourselves
   scene.add(mesh);
+  // Async shader compile: the morph material is by far the heaviest shader (reflections + analytic
+  // traces + per-light shading). Compile it SYNCHRONOUSLY (the default — on the first render) so the
+  // geometry, especially the hero dodecahedron, is in the FIRST rendered frame, not popped in later.
+  // An async compile here hid the objects until the shader finished, which on slower/live devices
+  // made the geometry appear long after the sky — the fade covers the compile (black) instead.
   // Share the light-orbit clock + music bands so the sprites orbit and pulse in
   // lockstep with the lighting.
   const spritesMesh = buildLightSprites(lights, {
@@ -232,16 +260,20 @@ export function createWebGLBackend({
   });
   scene.add(spritesMesh);
   // Gradient backdrop dome (clouds are now the fullscreen CloudPass, composited over this + scene).
-  scene.add(buildSky());
+  // Kept centred on the camera each frame (render()) so the gradient sky is at infinity.
+  const sky = buildSky();
+  scene.add(sky);
   // Real-star background (async: the catalogue is code-split out of the main bundle). Added when it
   // resolves; the CloudPass then dims the stars where the cloud is thick.
+  let starPoints = null;
   buildStarfield({ uTime: uniforms.uTime, uStarSize: uniforms.uStarSize, uStarTwinkle: uniforms.uStarTwinkle })
-    .then((m) => scene.add(m)).catch(() => {});
+    .then((m) => { bakeStarCubemap(renderer, m, starCubeRT); scene.add(m); starPoints = m; }).catch(() => {});
+  buildMoon(uniforms).then((m) => scene.add(m)).catch(() => {}); // additive moon billboard at uSunDir
 
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
   const makeSceneRT = (w, h) => new THREE.WebGLRenderTarget(Math.max(1, w | 0), Math.max(1, h | 0), {
-    type: THREE.HalfFloatType,
+    type: rtType,
     depthTexture: new THREE.DepthTexture(Math.max(1, w | 0), Math.max(1, h | 0)),
   });
   let sceneRT = makeSceneRT(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
@@ -287,12 +319,12 @@ export function createWebGLBackend({
       uniforms.uCloudThick.value = p.thick;
       uniforms.uCloudNoiseScale.value = p.noiseScale;
       uniforms.uCloudWind.value.set(p.windX, 0, p.windZ);
-      uniforms.uVortex.value = p.vortex;
-      uniforms.uVortexTwist.value = p.twist;
       uniforms.uCloudSteps.value = p.quality;
     },
     lookDefaults,
-    setAmplitude(a) { uniforms.uAmplitude.value = a; },
+    setAmplitude(a) {
+      uniforms.uAmplitude.value = a; // cloud-light glow tracks each light's own emission (cloudLights.update)
+    },
     setLook(p) {
       uniforms.uLightScale.value = p.lightScale;
       uniforms.uAmpGain.value = p.ampGain;
@@ -300,6 +332,8 @@ export function createWebGLBackend({
     },
     cloudLightDefaults,
     setCloudLight,
+    setMoonrise(on) { moonrise.on = on; if (!on) applySunDir(moonTargetElev); },
+    sunElevDeg: () => liveMoonElev, // current (animated) moon elevation in degrees, for the debug readout
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
     setQualityScale(s) {
@@ -333,25 +367,32 @@ export function createWebGLBackend({
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
       cloudLights.update(uniforms, camera.position); // re-pick the lights that colour the cloud band
+      if (starPoints) starPoints.position.copy(camera.position); // keep the starfield centred on the camera -> infinity
+      sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
+      if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
+      uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
       cloudPass.setScene(sceneRT);
       cloudPass.setCamera(camera); // matrixWorld is current after the render above
       composer.render(); // CloudPass (clouds over the scene) -> bloom -> output
     },
+    debugInfo: () => ({ pixelRatio: renderer.getPixelRatio(), rtType: rtType === THREE.HalfFloatType ? 'half-float' : '8-bit', halfFloatRenderable, cloudsOn: !!uniforms.uCloudsOn.value, objects: objects.length }),
     // Hot-swap the progressively-gathered full light/occluder/reflection lists in: rebuild the index
     // + instance textures and re-upload the per-object offsets/counts. The lights themselves are
     // unchanged, so uLightsTex is kept (only the index into it grows).
     updateScene(data) {
       const lt = buildLightTextures(data.lights, data.lightIndices);
-      uniforms.uLightIndexTex.value = lt.lightIndexTex; uniforms.uIndexTexW.value = lt.indexTexW;
+      lt.lightsTex.dispose(); // lights are unchanged — keep the original uLightsTex; only the index grows
+      uniforms.uLightIndexTex.value.dispose(); uniforms.uLightIndexTex.value = lt.lightIndexTex; uniforms.uIndexTexW.value = lt.indexTexW;
       const ot = buildOccluderTextures(data.objects, data.occluderIndices);
-      uniforms.uOccluderTex.value = ot.occluderTex; uniforms.uOccluderTexW.value = ot.occluderTexW;
-      uniforms.uShadowIndexTex.value = ot.shadowIndexTex; uniforms.uShadowIndexW.value = ot.shadowIndexW;
+      uniforms.uOccluderTex.value.dispose(); uniforms.uOccluderTex.value = ot.occluderTex; uniforms.uOccluderTexW.value = ot.occluderTexW;
+      uniforms.uShadowIndexTex.value.dispose(); uniforms.uShadowIndexTex.value = ot.shadowIndexTex; uniforms.uShadowIndexW.value = ot.shadowIndexW;
       const rt = buildReflectionData(data.objects, data.reflectionIndices);
-      uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
-      uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
+      uniforms.uReflIndexTex.value.dispose(); uniforms.uReflIndexTex.value = rt.reflIndexTex; uniforms.uReflIndexW.value = rt.reflIndexW;
+      uniforms.uInstanceTex.value.dispose(); uniforms.uInstanceTex.value = rt.instanceTex; uniforms.uInstanceTexW.value = rt.instanceTexW;
       setInstanceAttributes(geometry, data.objects);
+      culler = createInstanceCuller(geometry, data.objects); // re-sync the culler: setInstanceAttributes rewrote the instance buffers full-order, so the culler's cached src + aOrigIndex must be rebuilt (else slots desync -> objects spin on every camera move)
     },
     dispose() { flycam?.dispose(); composer.dispose?.(); renderer.dispose(); }, // free input listeners + GPU resources (e.g. on bfcache pagehide)
   };

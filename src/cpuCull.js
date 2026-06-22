@@ -25,7 +25,13 @@ export function createInstanceCuller(geometry, objects) {
   const frustum = new THREE.Frustum();
   const vp = new THREE.Matrix4();
   const sphere = new THREE.Sphere();
-  const order = Array.from({ length: n }, () => ({ i: 0, d2: 0 }));
+  // Persistent scratch (no per-frame allocation): per visible slot the object index + squared
+  // distance, an index permutation sorted by distance, and the resolved visible-object ids.
+  const cidx = new Int32Array(n);
+  const cd2 = new Float64Array(n);
+  const cord = new Uint32Array(n);
+  const visJ = new Int32Array(n);
+  const aArr = attrs.map((a) => a.array); // attribute backing stores are stable for this culler's lifetime
 
   return {
     // Returns the visible instance count (for stats).
@@ -41,19 +47,19 @@ export function createInstanceCuller(geometry, objects) {
         sphere.radius = radii[i];
         if (!frustum.intersectsSphere(sphere)) continue;
         const dx = centers[i].x - cp.x, dy = centers[i].y - cp.y, dz = centers[i].z - cp.z;
-        const e = order[vc++];
-        e.i = i; e.d2 = dx * dx + dy * dy + dz * dz;
+        cidx[vc] = i; cd2[vc] = dx * dx + dy * dy + dz * dz; vc++;
       }
-      const vis = order.slice(0, vc).sort((a, b) => a.d2 - b.d2);
+      for (let k = 0; k < vc; k++) cord[k] = k;
+      cord.subarray(0, vc).sort((a, b) => cd2[a] - cd2[b]); // nearest first (early-Z); stable, so equal-distance ties keep ascending id
+      for (let s = 0; s < vc; s++) { const j = cidx[cord[s]]; visJ[s] = j; origArr[s] = j; }
 
-      for (let s = 0; s < vc; s++) {
-        const j = vis[s].i;
-        for (let a = 0; a < attrs.length; a++) {
-          const sz = sizes[a], dst = attrs[a].array, s0 = src[a];
-          const di = s * sz, sj = j * sz;
+      // Compact each attribute near->far into the front of its buffer (backing arrays hoisted).
+      for (let a = 0; a < aArr.length; a++) {
+        const sz = sizes[a], dst = aArr[a], s0 = src[a];
+        for (let s = 0; s < vc; s++) {
+          const j = visJ[s], di = s * sz, sj = j * sz;
           for (let k = 0; k < sz; k++) dst[di + k] = s0[sj + k];
         }
-        origArr[s] = j;
       }
       for (const a of attrs) a.needsUpdate = true;
       origAttr.needsUpdate = true;

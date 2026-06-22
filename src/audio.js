@@ -196,9 +196,16 @@ export function createAudioManager() {
     } catch (e) { return 0; }
   }
 
+  // iOS unlock: an AudioContext created outside a user gesture starts 'suspended' and stays muted
+  // until resume() is called INSIDE a gesture. Safe to call on every tap (no-op once running).
+  function resumeContext() {
+    try { if (player && player.context && player.context.state === 'suspended') player.context.resume(); } catch (_) { /* best effort */ }
+  }
+
   return {
     prefetch,
     getAmplitude,
+    resumeContext,
     play,
     restart,
     pause,
