@@ -78,21 +78,36 @@ export function buildBspMesh(parsed) {
   const wz = (i) => conv[i * 3 + 2] * scale + offset[2];
 
   // Build the draw arrays by expanding each drawn face (no cross-face vertex sharing — the BSP's
-  // vertex ranges are per-face anyway, and it keeps per-face albedo/material clean).
-  const P = [], N = [], C = [], U = [], M = [], I = [];
+  // vertex ranges are per-face anyway). Indices are bucketed by texture so the geometry can carry
+  // one draw-group per material -> a material array, each with its own (streamed) texture.
+  const P = [], N = [], C = [], U = [], M = [];
+  const buckets = new Map(); // texture index -> index list
+  const bucket = (tex) => { let b = buckets.get(tex); if (!b) { b = []; buckets.set(tex, b); } return b; };
   for (const f of faces) {
     if (!drawable(f, textures)) continue;
     const alb = albedoFor(textures[f.texture].name);
+    const idx = bucket(f.texture);
     if (f.type === 1 || f.type === 3) {
       const start = P.length / 3;
       for (let v = f.vertex; v < f.vertex + f.n_vertexes; v++) {
         P.push(wx(v), wy(v), wz(v)); N.push(cn[v * 3], cn[v * 3 + 1], cn[v * 3 + 2]);
         C.push(alb[0], alb[1], alb[2]); U.push(verts.uv[v * 2], verts.uv[v * 2 + 1]); M.push(f.texture);
       }
-      for (let k = 0; k < f.n_meshverts; k++) I.push(start + meshverts[f.meshvert + k]);
+      for (let k = 0; k < f.n_meshverts; k++) idx.push(start + meshverts[f.meshvert + k]);
     } else if (f.type === 2) {
-      tessellatePatch(f, conv, cn, verts.uv, scale, offset, alb, P, N, C, U, M, I);
+      tessellatePatch(f, conv, cn, verts.uv, scale, offset, alb, P, N, C, U, M, idx);
     }
+  }
+
+  // Flatten the buckets into one index buffer, one draw-group + slot per material.
+  const I = [];
+  const slots = []; // [{ texIndex, name }] -> parallel to geometry groups / the material array
+  const groups = [];
+  for (const [tex, arr] of buckets) {
+    if (!arr.length) continue;
+    groups.push({ start: I.length, count: arr.length, slot: slots.length });
+    for (let i = 0; i < arr.length; i++) I.push(arr[i]);
+    slots.push({ texIndex: tex, name: textures[tex].name });
   }
 
   const g = new THREE.BufferGeometry();
@@ -102,9 +117,10 @@ export function buildBspMesh(parsed) {
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(U), 2));
   g.setAttribute('aMaterial', new THREE.BufferAttribute(new Float32Array(M), 1));
   g.setIndex(I);
+  for (const gr of groups) g.addGroup(gr.start, gr.count, gr.slot);
   g.computeBoundingSphere();
 
-  return { geometry: g, transform: { scale, offset }, indexCount: I.length };
+  return { geometry: g, slots, transform: { scale, offset }, indexCount: I.length };
 }
 
 // Tessellate a Q3 biquadratic bezier patch (face.type 2) into triangles. The patch is a (w x h)
@@ -161,19 +177,29 @@ void main() {
 
 const FRAG = `
 in vec3 vColor; in vec3 vNormal; in vec3 vWorldPos; in vec2 vUv; in float vMaterial;
-// uSunDir/uSunColor/uMoonStrength are already declared in clouds.glsl (prepended); only uTime is new.
+// uSunDir/uSunColor/uMoonStrength are already declared in clouds.glsl (prepended); these are new.
 uniform float uTime;
+uniform sampler2D uMap;   // this material's diffuse (streamed in; default 1x1 white until then)
+uniform float uHasMap;    // 0 = use the stylized placeholder colour, 1 = use the texture
 out vec4 fragColor;
 void main() {
   vec3 N = normalize(vNormal);
+  vec3 base = (uHasMap > 0.5) ? pow(texture(uMap, vUv).rgb, vec3(2.2)) : vColor; // sRGB texture -> linear
   vec3 amb = environment(N) * 1.6 + 0.02;                 // night-sky hemisphere fill
   float ndl = max(dot(N, uSunDir), 0.0);
   float sh = cloudShadow(vWorldPos, uSunDir, uTime);       // dappled under the cloud deck
-  vec3 lit = vColor * (amb + uSunColor * ndl * uMoonStrength * sh);
+  vec3 lit = base * (amb + uSunColor * ndl * uMoonStrength * sh);
   fragColor = vec4(lit, 1.0);
 }`;
 
-export function buildBspMaterial(uniforms, cloudsGlsl) {
+// 1x1 white stand-in so uMap is always a valid sampler before a texture streams in.
+const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+WHITE.needsUpdate = true;
+
+// One material per draw-group/slot: shares the demo lighting + cloud uniforms (by reference) but
+// owns its uMap/uHasMap so each surface's texture can hot-swap in independently.
+export function buildBspMaterial(shared, cloudsGlsl) {
+  const uniforms = Object.assign({}, shared, { uMap: { value: WHITE }, uHasMap: { value: 0 } });
   return new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3,
     uniforms,

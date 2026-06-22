@@ -10,6 +10,32 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { parseBSP } from '../src/bsp.js';
+
+// Index a ZIP's central directory once: lowercased entry name -> { method, compSize, localOff }.
+// (Q3 paks are effectively case-insensitive, so we key by lowercase.)
+function indexZip(zip) {
+  let eocd = -1;
+  for (let i = zip.length - 22; i >= 0; i--) { if (zip.readUInt32LE(i) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error('not a ZIP (no EOCD)');
+  let off = zip.readUInt32LE(eocd + 16);
+  const count = zip.readUInt16LE(eocd + 10);
+  const map = new Map();
+  for (let e = 0; e < count && zip.readUInt32LE(off) === 0x02014b50; e++) {
+    const method = zip.readUInt16LE(off + 10), compSize = zip.readUInt32LE(off + 20);
+    const nameLen = zip.readUInt16LE(off + 28), extraLen = zip.readUInt16LE(off + 30), commLen = zip.readUInt16LE(off + 32);
+    const localOff = zip.readUInt32LE(off + 42);
+    map.set(zip.toString('latin1', off + 46, off + 46 + nameLen).toLowerCase(), { method, compSize, localOff });
+    off += 46 + nameLen + extraLen + commLen;
+  }
+  return map;
+}
+function readZipEntry(zip, e) {
+  const lNameLen = zip.readUInt16LE(e.localOff + 26), lExtraLen = zip.readUInt16LE(e.localOff + 28);
+  const start = e.localOff + 30 + lNameLen + lExtraLen;
+  const comp = zip.subarray(start, start + e.compSize);
+  return e.method === 0 ? Buffer.from(comp) : inflateRawSync(comp);
+}
 
 // Pull a single entry out of a ZIP buffer via the End-Of-Central-Directory + central directory.
 function extractEntry(zip, wanted) {
@@ -83,3 +109,39 @@ if (data.length < 1024) { console.error(`extracted a tiny file (${data.length}B)
 const slim = slimBsp(data);
 writeFileSync(out, slim);
 console.log(`wrote ${out} (${(slim.length / 1048576).toFixed(2)} MB, slimmed from ${(data.length / 1048576).toFixed(2)} MB)`);
+
+// --- Authentic textures: pull the diffuse image for each referenced material from the paks. ---
+// Resolve each shader name to <name>.{tga,jpg,...} across the texture/patch paks (patches override
+// the base), copy it under public/wrackdm17/, and write a name->path manifest. Surfaces whose name
+// doesn't resolve to a direct image (shader-only / sky / structural) keep their stylized placeholder.
+const parsed = parseBSP(slim.buffer.slice(slim.byteOffset, slim.byteOffset + slim.byteLength));
+const wantNames = [...new Set(parsed.textures.map((t) => t.name))]
+  .filter((n) => n.startsWith('textures/') && !n.includes('common/') && !n.includes('sky'));
+
+const texPaks = ['pak6-patch088.pk3', 'pak6-patch085.pk3', 'pak4-textures.pk3', 'pak0.pk3', 'pak6-misc.pk3']
+  .map((f) => join(oaDir, 'baseoa', f)).filter(existsSync);
+const index = new Map(); // lowercased entry name -> { zip, e } (first pak wins -> patches override base)
+for (const p of texPaks) {
+  const zip = readFileSync(p);
+  for (const [name, e] of indexZip(zip)) if (!index.has(name)) index.set(name, { zip, e });
+}
+
+const exts = ['.tga', '.jpg', '.jpeg', '.png'];
+const manifest = {};
+let texBytes = 0, found = 0;
+for (const name of wantNames) {
+  for (const ext of exts) {
+    const hit = index.get((name + ext).toLowerCase());
+    if (!hit) continue;
+    const buf = readZipEntry(hit.zip, hit.e);
+    const rel = `wrackdm17/${name}${ext}`;
+    const dst = join(outDir, rel);
+    mkdirSync(dirname(dst), { recursive: true });
+    writeFileSync(dst, buf);
+    manifest[name] = rel;
+    texBytes += buf.length; found++;
+    break;
+  }
+}
+writeFileSync(join(outDir, 'wrackdm17.textures.json'), JSON.stringify(manifest));
+console.log(`textures: ${found}/${wantNames.length} resolved, ${(texBytes / 1048576).toFixed(1)} MB -> public/wrackdm17/`);
