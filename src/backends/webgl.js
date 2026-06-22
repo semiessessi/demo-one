@@ -78,21 +78,15 @@ class CloudPass extends Pass {
 // setSize, render }.
 export function createWebGLBackend({
   objects, lights, lightIndices, occluderIndices, reflectionIndices, test, capture, introTarget, sphereR,
-  onError, forceLdr = false, lowGfx = false,
+  lowGfx = false,
 }) {
   const renderer = new THREE.WebGLRenderer(); // antialias off: EffectComposer renders to its own non-MSAA targets, so default-buffer MSAA is unused
   // iOS Safari often lacks EXT_color_buffer_float, so RGBA16F FBOs are framebuffer-incomplete -> a
   // SILENT black screen. Probe both extensions; getExtension('EXT_color_buffer_half_float') also
-  // ENABLES the cap three omits on the RT path. Fall back to 8-bit (LDR) targets so it renders at all.
+  // ENABLES the cap three omits on the RT path. Fall back to 8-bit targets so it renders at all.
   const gl = renderer.getContext();
   const halfFloatRenderable = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
-  const rtType = (halfFloatRenderable && !forceLdr) ? THREE.HalfFloatType : THREE.UnsignedByteType;
-  // Surface a shader compile/link failure (the likely "sprites render but NO geometry on iOS" case —
-  // the big morph shader exceeding a mobile compiler limit) instead of three silently logging it.
-  renderer.debug.onShaderError = (glc, program, vs, fs) => {
-    const slog = (s) => glc.getShaderInfoLog(s) || '';
-    onError?.(new Error(`Shader failed on this device:\n${glc.getProgramInfoLog(program) || ''}\n--- fragment ---\n${slog(fs)}\n--- vertex ---\n${slog(vs)}`));
-  };
+  const rtType = halfFloatRenderable ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: rtType }); // baked starfield -> stars in reflections
   renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
