@@ -41,6 +41,31 @@ function extractEntry(zip, wanted) {
   throw new Error(`entry not found: ${wanted}`);
 }
 
+// Repack a full IBSP down to only the lumps src/bsp.js reads (textures, planes, brushes,
+// brushsides, vertexes, meshverts, faces). Drops the big unused lumps (visdata, models, nodes,
+// leafs, lightmaps, lightgrid, entities) -> a much smaller file to stream. Stays a valid IBSP v46
+// (other lumps just have length 0), so the parser is unchanged.
+function slimBsp(buf) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) !== 'IBSP') throw new Error('not IBSP');
+  const KEEP = new Set([1, 2, 8, 9, 10, 11, 13]);
+  const lumps = [];
+  for (let i = 0; i < 17; i++) lumps.push({ off: dv.getInt32(8 + i * 8, true), len: dv.getInt32(8 + i * 8 + 4, true) });
+  let outLen = 144; // 8-byte header + 17 * 8-byte directory
+  for (let i = 0; i < 17; i++) if (KEEP.has(i)) outLen += lumps[i].len;
+  const out = Buffer.alloc(outLen);
+  out.write('IBSP', 0, 'latin1'); out.writeInt32LE(46, 4);
+  let cur = 144;
+  for (let i = 0; i < 17; i++) {
+    if (KEEP.has(i)) {
+      buf.copy(out, cur, lumps[i].off, lumps[i].off + lumps[i].len);
+      out.writeInt32LE(cur, 8 + i * 8); out.writeInt32LE(lumps[i].len, 8 + i * 8 + 4);
+      cur += lumps[i].len;
+    } else { out.writeInt32LE(144, 8 + i * 8); out.writeInt32LE(0, 8 + i * 8 + 4); }
+  }
+  return out;
+}
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const oaDir = process.argv[2] || 'C:/code/openarena-0.8.8';
 const pk3 = join(oaDir, 'baseoa', 'pak1-maps.pk3');
@@ -55,5 +80,6 @@ if (!existsSync(pk3)) {
 mkdirSync(outDir, { recursive: true });
 const data = extractEntry(readFileSync(pk3), entry);
 if (data.length < 1024) { console.error(`extracted a tiny file (${data.length}B) — wrong entry?`); process.exit(1); }
-writeFileSync(out, data);
-console.log(`wrote ${out} (${(data.length / 1048576).toFixed(1)} MB)`);
+const slim = slimBsp(data);
+writeFileSync(out, slim);
+console.log(`wrote ${out} (${(slim.length / 1048576).toFixed(2)} MB, slimmed from ${(data.length / 1048576).toFixed(2)} MB)`);
