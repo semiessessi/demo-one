@@ -26,6 +26,7 @@ const FINALE_START = 77.0;
 const FLYUP_START = 110.0;
 const FLYUP_END = 138.0;
 const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
+const MAP_LOOK_Y = 92.0; // the finale settles looking back at the wrackdm17 level floating above the deck (bspMesh PLACE.floorY 64 + ~half height)
 const TWO_PI = Math.PI * 2.0;
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
@@ -172,15 +173,13 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spy = -sphereR * 1.3 + (CLOUD_OVER + sphereR * 1.3) * fpe; // the bottom (-1.3R) up to above the clouds
           spz = Math.sin(ang) * outR;
           // GRADUALLY pan the look: keep watching the object field while we climb up THROUGH it, then
-          // ease toward the horizon only once we're clearing the cloud-tops — so we never stare at
-          // empty sky on the way up. lookT 0 = field centre, 1 = the horizon ahead.
+          // ease UP to the wrackdm17 level (it floats above the deck at the origin) as we clear the
+          // cloud-tops — so emerging above the clouds reveals the level, not empty sky. lookT 0 =
+          // field centre, 1 = the floating level.
           const lookT = smooth(clamp((fp - 0.45) / 0.5, 0, 1));
-          const hx = spx + Math.cos(ang) * 120.0;
-          const hy = spy - 20.0;
-          const hz = spz + Math.sin(ang) * 120.0;
-          stx = hx * lookT;  // from (0,0,0) field centre...
-          sty = hy * lookT;  // ...to the horizon ahead
-          stz = hz * lookT;
+          stx = 0.0;             // the level sits over the origin...
+          sty = MAP_LOOK_Y * lookT; // ...so pan up from the field centre to it
+          stz = 0.0;
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
