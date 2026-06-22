@@ -22,6 +22,12 @@ uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
+// Point lights colouring the cloud volume (cloudLights.js packs the N nearest/brightest band
+// lights each frame: texel0 = orbiting pos + glow reach, texel1 = colour * current emission).
+uniform sampler2D uCloudLightsTex;
+uniform int uCloudLightsTexW;
+uniform int uCloudLightCount;   // lights currently packed (<= 64)
+uniform float uCloudLightGain;  // tunable in-scatter strength
 
 const vec2 VORTEX_AXIS = vec2(0.0); // xz of the vortex centre (over the scene)
 
@@ -86,7 +92,7 @@ float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
 
 // Core march: premultiplied in-scatter (rgb) + transmittance (a), bounded by tMax (depth/hit
 // stop). Composite over the background behind via `bg*a + rgb` (see skyCloudsOver).
-vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
+vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightCap) {
   if (uCloudsOn < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
   float yLo = uCloudBase - uCloudThick;
   float yHi = uCloudBase + uCloudThick;
@@ -126,6 +132,18 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
     }
     lum *= mix(1.0, 1.0 - exp(-dens * 2.0), uCloudPowder); // Beer-Powder: dark thin edges
     vec3 S = lum + environment(rd) * uCloudAmbient + 0.025; // sky ambient + non-black floor
+    // Point-light in-scatter: each nearby sprite tints the cloud around it (skipped for
+    // reflections, lightCap = 0). Cheap distance reject keeps the empty taps near-free.
+    for (int li = 0; li < 64; li++) {
+      if (li >= uCloudLightCount || li >= lightCap) break;
+      vec4 lp = texelFetch(uCloudLightsTex, texel(li * 2, uCloudLightsTexW), 0);     // pos.xyz, reach
+      vec3 toL = lp.xyz - p;
+      float dl = length(toL);
+      if (dl > lp.w) continue;
+      vec4 lc = texelFetch(uCloudLightsTex, texel(li * 2 + 1, uCloudLightsTexW), 0); // premult colour
+      float att = clamp(1.0 - dl / lp.w, 0.0, 1.0); att *= att;                      // soft glow lobe
+      S += lc.rgb * att * hg(dot(rd, toL / max(dl, 1e-4)), uCloudHG) * uCloudLightGain;
+    }
     float dT = exp(-dens * baseStep * 1.5);
     scat += T * (1.0 - dT) * S;
     T *= dT;
@@ -136,7 +154,7 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps) {
 
 // Composite the cloud march over a given background colour (used by reflections).
 vec3 skyCloudsOver(vec3 bg, vec3 ro, vec3 rd, float time, float tMax, int steps) {
-  vec4 c = marchClouds(ro, rd, time, tMax, steps);
+  vec4 c = marchClouds(ro, rd, time, tMax, steps, 0); // reflections skip the point-light in-scatter
   return bg * c.a + c.rgb;
 }
 // Unbounded clouds composited over the environment() sky (reflections call this).

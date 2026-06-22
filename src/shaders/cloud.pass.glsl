@@ -14,6 +14,7 @@ uniform vec3 uCamPos;      // camera world position
 uniform float uCamNear;
 uniform float uCamFar;
 uniform float uTime;
+uniform int uCloudLightCap; // FPS-autoscaled per-step cloud-light budget (0 disables in-scatter)
 
 // window depth [0,1] -> view-space Z (negative), for a perspective camera.
 float viewZFromDepth(float d) {
@@ -37,6 +38,6 @@ void main() {
   }
 
   vec3 sceneCol = texture(tColor, vUv).rgb;
-  vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps));
+  vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps), uCloudLightCap);
   fragColor = vec4(sceneCol * c.a + c.rgb, 1.0);
 }

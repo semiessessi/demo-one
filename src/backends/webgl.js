@@ -20,6 +20,7 @@ import { buildNormScaleLUT } from '../normalize.js';
 import { MAX_NORM_CIRCUMRADIUS } from '../journey.js';
 import { buildPlaneTexture, buildOccluderTransforms } from '../occluderData.js';
 import { floatTexture } from '../textures.js';
+import { createCloudLights } from '../cloudLights.js';
 import { createInstanceCuller } from '../cpuCull.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import libGlsl from '../shaders/lib.glsl?raw';
@@ -43,6 +44,9 @@ class CloudPass extends Pass {
       uVortex: shared.uVortex, uVortexTwist: shared.uVortexTwist, uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
       uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder,
+      uCloudLightsTex: shared.uCloudLightsTex, uCloudLightsTexW: shared.uCloudLightsTexW,
+      uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
+      uCloudLightGain: shared.uCloudLightGain,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -101,6 +105,9 @@ export function createWebGLBackend({
   const occXf = buildOccluderTransforms(objects);
   // Per-object morph position (CPU note-stepped), uploaded each frame via setMorph.
   const morphPTex = floatTexture(new Float32Array(objects.length), objects.length, 1);
+  // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's
+  // coloured in-scatter (see cloudLights.js / lightEmission.js).
+  const cloudLights = createCloudLights(lights, lights.length / objects.length);
 
   // Volumetric-cloud defaults: single source for both the uniforms below and the
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
@@ -111,7 +118,7 @@ export function createWebGLBackend({
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
-  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5 };
+  const cloudLightDefaults = { sunElev: 35, sunAzim: 40, sunIntensity: 1.0, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, glow: 2.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
 
@@ -178,6 +185,13 @@ export function createWebGLBackend({
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
+    // Point lights colouring the cloud volume: a per-frame compact buffer + count, a
+    // tunable glow gain, and an FPS-autoscaled per-step light cap.
+    uCloudLightsTex: { value: cloudLights.tex },
+    uCloudLightsTexW: { value: cloudLights.width },
+    uCloudLightCount: { value: 0 },
+    uCloudLightCap: { value: 48 },
+    uCloudLightGain: { value: cloudLightDefaults.glow },
   };
 
   function setCloudLight(p) {
@@ -188,6 +202,7 @@ export function createWebGLBackend({
     uniforms.uCloudHG.value = p.hg;
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
+    uniforms.uCloudLightGain.value = p.glow;
   }
   setCloudLight(cloudLightDefaults);
 
@@ -293,6 +308,7 @@ export function createWebGLBackend({
       uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
+      uniforms.uCloudLightCap.value = Math.max(8, Math.round(48 * s));
     },
     setView({ position, target }) {
       if (flycam) {
@@ -316,6 +332,7 @@ export function createWebGLBackend({
     render() {
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
+      cloudLights.update(uniforms, camera.position); // re-pick the lights that colour the cloud band
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
       cloudPass.setScene(sceneRT);
