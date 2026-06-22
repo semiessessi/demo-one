@@ -89,6 +89,14 @@ app.appendChild(backend.domElement);
 window.addEventListener('pagehide', () => backend.dispose?.(), { once: true }); // free GPU + input listeners if the page is bfcached / unloaded
 if (isMobile) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); // the fullscreen cloud raymarcher is the big mobile fill-rate cost -> off on mobile
 
+// Stream the wrackdm17 level in after the first frame (never blocks first paint): it floats above
+// the cloud deck and is revealed as the camera rises out of the clouds.
+if (!TEST && !CAPTURE) {
+  backend.loadBspMap('/wrackdm17.bsp')
+    .then((info) => console.log(`[map] wrackdm17: ${info.triangles | 0} tris, ${info.brushes} brushes`))
+    .catch((e) => console.warn('[map] load failed', e));
+}
+
 // Finish the scene in the background: gather every object's lists across workers, then hot-swap the
 // light/occluder/reflection buffers in. Until this lands only the first batch is lit (which is all
 // that has spawned yet).
@@ -371,7 +379,7 @@ if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobi
 
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
 // lil-gui is dynamically imported, so end users off localhost never download it.
-const debugState = { geometry: true, sprites: true };
+const debugState = { geometry: true, sprites: true, map: true };
 const cloudParams = { ...backend.cloudDefaults }; // seeded from the backend's defaults
 let debugGui = null;
 let debugFrameHook = null; // per-frame debug-only update (live moon-elevation readout)
@@ -384,6 +392,7 @@ if (isLocalhost) {
   debugGui.domElement.style.right = 'auto'; // top-left, clear of the top-right fps overlay
   debugGui.add(debugState, 'geometry').name('geometry (g)').onChange((v) => backend.setGeometryVisible(v));
   debugGui.add(debugState, 'sprites').name('light sprites (b)').onChange((v) => backend.setSpritesVisible(v));
+  debugGui.add(debugState, 'map').name('wrackdm17 (m)').onChange((v) => backend.setMapVisible(v));
   const applyClouds = () => backend.setClouds(cloudParams);
   const cf = debugGui.addFolder('clouds');
   cf.add(cloudParams, 'cloudsOn').name('clouds (c)').onChange(applyClouds);
@@ -465,6 +474,11 @@ window.addEventListener('keydown', (e) => {
   if (isLocalhost && (e.key === 'b' || e.key === 'B')) {
     debugState.sprites = !debugState.sprites;
     backend.setSpritesVisible(debugState.sprites);
+    syncDebugGui();
+  }
+  if (isLocalhost && (e.key === 'm' || e.key === 'M')) {
+    debugState.map = !debugState.map;
+    backend.setMapVisible(debugState.map);
     syncDebugGui();
   }
   if (isLocalhost && (e.key === 'c' || e.key === 'C')) {

@@ -102,6 +102,7 @@ export function parseBSP(arrayBuffer) {
       meshvert: dv.getInt32(o + 20, true),
       n_meshverts: dv.getInt32(o + 24, true),
       normal: [dv.getFloat32(o + 84, true), dv.getFloat32(o + 88, true), dv.getFloat32(o + 92, true)],
+      size: [dv.getInt32(o + 96, true), dv.getInt32(o + 100, true)], // patch control-grid dims (type 2)
     });
   }
 

@@ -28,6 +28,8 @@ import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
 import { buildStarfield, bakeStarCubemap } from '../starfield.js';
 import { buildMoon } from '../moon.js';
+import { parseBSP } from '../bsp.js';
+import { buildBspMesh, buildBspMaterial } from '../bspMesh.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -135,6 +137,8 @@ export function createWebGLBackend({
   // and CURRENT per-light emission (steady "bath" fill -> always lit; amplitude subset dark when
   // quiet). See cloudLights.js / lightEmission.js.
   const cloudLights = createCloudLights(lights, lights.length / objects.length);
+  // wrackdm17 level (streamed in after the first frame; transform shared with the brush occluders).
+  let bspMesh = null, bspTransform = null;
 
   const uniforms = {
     uTime: { value: 0 },
@@ -336,6 +340,19 @@ export function createWebGLBackend({
     sunElevDeg: () => liveMoonElev, // current (animated) moon elevation in degrees, for the debug readout
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
+    // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
+    // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
+    async loadBspMap(url) {
+      const buf = await fetch(url).then((r) => r.arrayBuffer());
+      const parsed = parseBSP(buf);
+      const { geometry, transform, indexCount } = buildBspMesh(parsed);
+      bspTransform = transform; // reused by the brush occluders (phase: shadows/reflections)
+      bspMesh = new THREE.Mesh(geometry, buildBspMaterial(uniforms, cloudsGlsl));
+      bspMesh.frustumCulled = false;
+      scene.add(bspMesh);
+      return { faces: parsed.faces.length, triangles: indexCount / 3, brushes: parsed.brushes.length };
+    },
+    setMapVisible(v) { if (bspMesh) bspMesh.visible = v; }, // localhost debug toggle
     setQualityScale(s) {
       uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
       uniforms.uReflCloudSteps.value = Math.max(4, Math.round(12 * s));
