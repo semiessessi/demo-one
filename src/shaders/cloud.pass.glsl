@@ -30,7 +30,8 @@ void main() {
   float d = texture(tDepth, vUv).x;
   float sceneDist;
   if (d >= 1.0) {
-    sceneDist = uCamFar;                              // background — march the whole band
+    sceneDist = 1e6;                                  // background — let the band / far-range cap govern,
+                                                       // NOT the 300u far plane (so distant clouds reach the horizon)
   } else {
     float vz = viewZFromDepth(d);                     // negative
     vec3 viewPos = viewDir * (vz / viewDir.z);        // view-space position of this fragment
