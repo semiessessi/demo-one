@@ -123,12 +123,13 @@ export function buildBspMesh(parsed) {
   return { geometry: g, slots, transform: { scale, offset }, indexCount: I.length };
 }
 
-// Tessellate a Q3 biquadratic bezier patch (face.type 2) into triangles. The patch is a (w x h)
-// grid of control points (both odd), decomposed into 3x3 subpatches; each is sampled at PATCH_LEVEL+1
-// steps per axis. Positions go straight to world space (the affine transform of a bezier equals the
-// bezier of the transformed control points). Temporary triangle stand-in until these become true
-// raytraced bezier patches (the control grid stays available in the parsed BSP for that).
+// Tessellate a Q3 biquadratic bezier patch (face.type 2) into triangles — "ordinary geometry to do
+// normals", but with EXACT analytic surface normals (the true cross(dS/du, dS/dv), not interpolated
+// control normals) so the curvature shades perfectly smooth with no facets. The (w x h) control grid
+// decomposes into 3x3 subpatches sampled PATCH_LEVEL+1 per axis; positions/derivatives are the bezier
+// of the (affine-transformed) control points. Shadows are cast by the convex brush volumes (P7a).
 const bern = (t) => [(1 - t) * (1 - t), 2 * t * (1 - t), t * t]; // quadratic Bernstein basis
+const dbern = (t) => [2 * (t - 1), 2 - 4 * t, 2 * t];           // its derivative
 function tessellatePatch(f, conv, cn, uv, scale, offset, alb, P, N, C, U, M, I) {
   const w = f.size[0], h = f.size[1], L = PATCH_LEVEL;
   if (w < 3 || h < 3) return;
@@ -137,18 +138,26 @@ function tessellatePatch(f, conv, cn, uv, scale, offset, alb, P, N, C, U, M, I) 
     for (let psi = 0; psi < (w - 1) / 2; psi++) {
       const start = P.length / 3;
       for (let sj = 0; sj <= L; sj++) {
-        const bv = bern(sj / L);
+        const bv = bern(sj / L), dbv = dbern(sj / L);
         for (let si = 0; si <= L; si++) {
-          const bu = bern(si / L);
-          let px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0, u0 = 0, u1 = 0;
+          const bu = bern(si / L), dbu = dbern(si / L);
+          let px = 0, py = 0, pz = 0, rnx = 0, rny = 0, rnz = 0, u0 = 0, u1 = 0;
+          let dux = 0, duy = 0, duz = 0, dvx = 0, dvy = 0, dvz = 0; // dS/du, dS/dv (converted space)
           for (let bj = 0; bj < 3; bj++) for (let bi = 0; bi < 3; bi++) {
-            const wgt = bu[bi] * bv[bj];
             const ci = ctrl(psj * 2 + bj, psi * 2 + bi);
-            px += wgt * conv[ci * 3]; py += wgt * conv[ci * 3 + 1]; pz += wgt * conv[ci * 3 + 2];
-            nx += wgt * cn[ci * 3]; ny += wgt * cn[ci * 3 + 1]; nz += wgt * cn[ci * 3 + 2];
+            const cx = conv[ci * 3], cy = conv[ci * 3 + 1], cz = conv[ci * 3 + 2];
+            const wgt = bu[bi] * bv[bj], wu = dbu[bi] * bv[bj], wv = bu[bi] * dbv[bj];
+            px += wgt * cx; py += wgt * cy; pz += wgt * cz;
+            dux += wu * cx; duy += wu * cy; duz += wu * cz;
+            dvx += wv * cx; dvy += wv * cy; dvz += wv * cz;
+            rnx += wgt * cn[ci * 3]; rny += wgt * cn[ci * 3 + 1]; rnz += wgt * cn[ci * 3 + 2]; // ref (orientation)
             u0 += wgt * uv[ci * 2]; u1 += wgt * uv[ci * 2 + 1];
           }
-          const nl = Math.hypot(nx, ny, nz) || 1;
+          // analytic normal = dS/du x dS/dv, oriented to the BSP's intended outward normal
+          let nx = duy * dvz - duz * dvy, ny = duz * dvx - dux * dvz, nz = dux * dvy - duy * dvx;
+          let nl = Math.hypot(nx, ny, nz);
+          if (nl < 1e-9) { nx = rnx; ny = rny; nz = rnz; nl = Math.hypot(nx, ny, nz) || 1; } // degenerate sample
+          if (nx * rnx + ny * rny + nz * rnz < 0.0) { nx = -nx; ny = -ny; nz = -nz; }
           P.push(px * scale + offset[0], py * scale + offset[1], pz * scale + offset[2]);
           N.push(nx / nl, ny / nl, nz / nl);
           C.push(alb[0], alb[1], alb[2]); U.push(u0, u1); M.push(f.texture);
