@@ -31,6 +31,8 @@ import { buildMoon } from '../moon.js';
 import { parseBSP } from '../bsp.js';
 import { buildBspMesh, buildBspMaterial } from '../bspMesh.js';
 import { streamBspTextures } from '../bspTextures.js';
+import { buildBspLights } from '../bspLights.js';
+import { buildBspOccluders } from '../bspOccluders.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -140,6 +142,10 @@ export function createWebGLBackend({
   const cloudLights = createCloudLights(lights, lights.length / objects.length);
   // wrackdm17 level (streamed in after the first frame; transform shared with the brush occluders).
   let bspMesh = null, bspTransform = null, bspMaterials = null, bspSlots = null;
+  let mapShadowsOn = true; // debug toggle (setQualityScale forces uMapShadowCap to 0 when off)
+  const mapDefaults = { lightScale: 1.0, shadows: true };
+  // 1-texel placeholder so the bsp materials' map-light/occluder samplers are valid before the level loads.
+  const mapPlaceholder = floatTexture(new Float32Array(4), 1, 4);
 
   const uniforms = {
     uTime: { value: 0 },
@@ -210,6 +216,13 @@ export function createWebGLBackend({
     uCloudLightCount: { value: 0 }, // packed per-frame by cloudLights.update()
     uCloudLightCap: { value: 48 }, // FPS-autoscaled per-step cloud-light budget
     uCloudLightGain: { value: cloudLightDefaults.lightScatter }, // GUI "lights -> cloud"
+    // wrackdm17 raytraced lighting (P7): point lights at the level's fixtures + convex brush shadow
+    // occluders. Filled in loadBspMap; placeholders + zero counts keep the materials valid until then.
+    uMapLightsTex: { value: mapPlaceholder.tex }, uMapLightsW: { value: mapPlaceholder.width },
+    uMapLightCount: { value: 0 }, uMapLightCap: { value: 80 }, uMapLightScale: { value: 1.0 },
+    uMapPlaneTex: { value: mapPlaceholder.tex }, uMapPlaneW: { value: mapPlaceholder.width },
+    uMapBrushTex: { value: mapPlaceholder.tex }, uMapBrushW: { value: mapPlaceholder.width },
+    uMapBrushCount: { value: 0 }, uMapShadowCap: { value: 64 },
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -347,15 +360,33 @@ export function createWebGLBackend({
       const buf = await fetch(url).then((r) => r.arrayBuffer());
       const parsed = parseBSP(buf);
       const { geometry, slots, transform, indexCount } = buildBspMesh(parsed);
-      bspTransform = transform; // reused by the brush occluders (phase: shadows/reflections)
+      bspTransform = transform;
       bspSlots = slots;
+      // Synthesise the level's point lights (from emissive faces) + convex brush shadow occluders, and
+      // upload them so the materials light + raytrace-shadow the level (same world space as the mesh).
+      const mapLights = buildBspLights(parsed, transform);
+      const ld = new Float32Array(Math.max(1, mapLights.length) * 2 * 4);
+      mapLights.forEach((l, i) => {
+        const o = i * 8;
+        ld[o] = l.pos[0]; ld[o + 1] = l.pos[1]; ld[o + 2] = l.pos[2]; ld[o + 3] = l.band;
+        ld[o + 4] = l.color[0]; ld[o + 5] = l.color[1]; ld[o + 6] = l.color[2]; ld[o + 7] = l.radius;
+      });
+      const ltex = floatTexture(ld, Math.max(1, mapLights.length * 2), 4);
+      uniforms.uMapLightsTex.value = ltex.tex; uniforms.uMapLightsW.value = ltex.width;
+      uniforms.uMapLightCount.value = mapLights.length;
+      const occ = buildBspOccluders(parsed, transform);
+      const ptex = floatTexture(occ.planeData, Math.max(1, occ.planeCount), 4);
+      const btex = floatTexture(occ.brushData, Math.max(1, occ.brushCount * 2), 4);
+      uniforms.uMapPlaneTex.value = ptex.tex; uniforms.uMapPlaneW.value = ptex.width;
+      uniforms.uMapBrushTex.value = btex.tex; uniforms.uMapBrushW.value = btex.width;
+      uniforms.uMapBrushCount.value = occ.brushCount;
       bspMaterials = slots.map(() => buildBspMaterial(uniforms, cloudsGlsl)); // one per draw-group/texture
       bspMesh = new THREE.Mesh(geometry, bspMaterials);
       bspMesh.frustumCulled = false;
       scene.add(bspMesh);
       // Stream the authentic Q3 textures in + hot-swap them onto each material (after first frame).
       streamBspTextures(url, slots, bspMaterials);
-      return { faces: parsed.faces.length, triangles: indexCount / 3, brushes: parsed.brushes.length, materials: slots.length };
+      return { faces: parsed.faces.length, triangles: indexCount / 3, mapLights: mapLights.length, occluders: occ.brushCount, materials: slots.length };
     },
     setMapVisible(v) { if (bspMesh) bspMesh.visible = v; }, // localhost debug toggle
     setQualityScale(s) {
@@ -365,7 +396,11 @@ export function createWebGLBackend({
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
       uniforms.uCloudLightCap.value = Math.max(8, Math.round(48 * s));
+      uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(8, Math.round(uniforms.uMapBrushCount.value * s)) : 0; // raytraced map shadows
+      uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
     },
+    mapDefaults,
+    setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose

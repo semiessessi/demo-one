@@ -93,7 +93,7 @@ if (isMobile) backend.setClouds({ ...backend.cloudDefaults, cloudsOn: false }); 
 // the cloud deck and is revealed as the camera rises out of the clouds.
 if (!TEST && !CAPTURE) {
   backend.loadBspMap('/wrackdm17.bsp')
-    .then((info) => console.log(`[map] wrackdm17: ${info.triangles | 0} tris, ${info.brushes} brushes`))
+    .then((info) => console.log(`[map] wrackdm17: ${info.triangles | 0} tris, ${info.mapLights} lamps, ${info.occluders} shadow brushes`))
     .catch((e) => console.warn('[map] load failed', e));
 }
 
@@ -429,6 +429,11 @@ if (isLocalhost) {
   const moonLive = { elev: clParams.sunElev };
   const moonLiveCtrl = clf.add(moonLive, 'elev', -10, 90, 0.1).name('elevation (live)').disable();
   debugFrameHook = () => { moonLive.elev = Math.round(backend.sunElevDeg() * 10) / 10; moonLiveCtrl.updateDisplay(); };
+  const mapParams = { ...backend.mapDefaults };
+  const applyMap = () => backend.setMap(mapParams);
+  const mf = debugGui.addFolder('wrackdm17 (m)');
+  mf.add(mapParams, 'lightScale', 0, 4, 0.05).name('lamp brightness').onChange(applyMap);
+  mf.add(mapParams, 'shadows').name('raytraced shadows').onChange(applyMap);
   const stParams = { ...backend.starDefaults };
   const applyStars = () => backend.setStars(stParams);
   const sf = debugGui.addFolder('stars');

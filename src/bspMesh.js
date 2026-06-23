@@ -177,18 +177,114 @@ void main() {
 
 const FRAG = `
 in vec3 vColor; in vec3 vNormal; in vec3 vWorldPos; in vec2 vUv; in float vMaterial;
-// uSunDir/uSunColor/uMoonStrength are already declared in clouds.glsl (prepended); these are new.
+// uSunDir/uSunColor/uMoonStrength are declared in clouds.glsl; musicFlare/falloff helpers in lib.glsl.
+uniform vec3 cameraPosition;
 uniform float uTime;
 uniform sampler2D uMap;   // this material's diffuse (streamed in; default 1x1 white until then)
-uniform float uHasMap;    // 0 = use the stylized placeholder colour, 1 = use the texture
+uniform float uHasMap;    // 0 = stylized placeholder colour, 1 = texture
+// music state (the lamps pulse with the beat)
+uniform float uBeatTime[32]; uniform float uBeatStrength[32]; uniform float uBeatDecay[32];
+uniform float uMusicTime; uniform float uAmplitude; uniform float uAmpGain;
+// map point lights (fixed-position lamps synthesised from emissive faces — bspLights.js)
+uniform sampler2D uMapLightsTex; uniform int uMapLightsW; uniform int uMapLightCount; uniform int uMapLightCap;
+uniform float uMapLightScale;
+// convex brush occluders for raytraced shadows (bspOccluders.js)
+uniform sampler2D uMapPlaneTex; uniform int uMapPlaneW;
+uniform sampler2D uMapBrushTex; uniform int uMapBrushW; uniform int uMapBrushCount; uniform int uMapShadowCap;
 out vec4 fragColor;
+
+const float MAP_BASE = 0.55; // lamps stay lit (a level's lights don't go dark); the beat adds on top
+
+// Distance falloff + GGX BRDF (copied from morph.frag.glsl — kept self-contained; that file is
+// merge-sensitive and must not be modified).
+float falloff(float dist, float radius) {
+  float a = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
+  return a * a / (dist * dist + 1.0);
+}
+vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist, float fallD, float fallS) {
+  vec3 H = normalize(V + L);
+  float NdotL = max(dot(N, L), 0.0), NdotV = max(dot(N, V), 1e-4), NdotH = max(dot(N, H), 0.0), LdotH = max(dot(L, H), 0.0);
+  float specRough = min(roughness, 0.18); float alpha = specRough * specRough;
+  float wAlpha = clamp(alpha + 0.015 / (3.0 * dist), 0.0, 1.0); float wAlpha2 = wAlpha * wAlpha;
+  float energy = (alpha / wAlpha) * (alpha / wAlpha);
+  float dDen = NdotH * NdotH * (wAlpha2 - 1.0) + 1.0; float D = energy * wAlpha2 / (dDen * dDen);
+  float a2 = alpha * alpha;
+  float smithV = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
+  float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
+  float Vis = 0.5 / max(smithV + smithL, 1e-5);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
+  return (diffuseAlbedo * fallD + D * Vis * F * 8.0 * fallS) * NdotL;
+}
+
+// Ray vs one convex brush (world-space half-space planes, static): the traceHull slab loop.
+bool traceBrush(int bi, vec3 ro, vec3 rd, out float tHit) {
+  vec4 b1 = texelFetch(uMapBrushTex, texel(bi * 2 + 1, uMapBrushW), 0);
+  int ps = int(b1.x + 0.5), pc = int(b1.y + 0.5);
+  float tEnter = -1e9, tExit = 1e9;
+  for (int i = 0; i < 32; i++) {
+    if (i >= pc) break;
+    vec4 pl = texelFetch(uMapPlaneTex, texel(ps + i, uMapPlaneW), 0);
+    float denom = dot(pl.xyz, rd), num = pl.w - dot(pl.xyz, ro);
+    if (abs(denom) < 1e-9) { if (num < 0.0) return false; continue; }
+    float th = num / denom;
+    if (denom < 0.0) { if (th > tEnter) tEnter = th; } else { if (th < tExit) tExit = th; }
+  }
+  if (tEnter <= tExit && tExit > 1e-4) { tHit = tEnter; return true; }
+  return false;
+}
+// Hard shadow toward a point light at distance distToLight (1 = lit, 0 = occluded).
+float mapShadow(vec3 p, vec3 L, float distToLight) {
+  for (int s = 0; s < uMapBrushCount; s++) {
+    if (s >= uMapShadowCap) break;
+    vec4 b0 = texelFetch(uMapBrushTex, texel(s * 2, uMapBrushW), 0);
+    vec3 D = b0.xyz - p; float r = b0.w, t = dot(D, L), perp2 = dot(D, D) - t * t;
+    if (t <= -r || t >= distToLight + r || perp2 >= r * r) continue;
+    float tHit;
+    if (traceBrush(s, p, L, tHit) && tHit > 1e-3 && tHit < distToLight) return 0.0;
+  }
+  return 1.0;
+}
+// Directional (moon) self-shadow — same brushes, no far bound.
+float mapSunShadow(vec3 p, vec3 sunDir) {
+  for (int s = 0; s < uMapBrushCount; s++) {
+    if (s >= uMapShadowCap) break;
+    vec4 b0 = texelFetch(uMapBrushTex, texel(s * 2, uMapBrushW), 0);
+    vec3 D = b0.xyz - p; float r = b0.w, t = dot(D, sunDir), perp2 = dot(D, D) - t * t;
+    if (t <= -r || perp2 >= r * r) continue;
+    float tHit;
+    if (traceBrush(s, p, sunDir, tHit) && tHit > 1e-3) return 0.0;
+  }
+  return 1.0;
+}
+// Sum the level's lamps: dual falloff BRDF + per-light raytraced shadow + music-pulsed brightness.
+vec3 shadeMapLights(vec3 p, vec3 N, vec3 V, vec3 albedo) {
+  vec3 F0 = vec3(0.04); vec3 lit = vec3(0.0);
+  for (int k = 0; k < uMapLightCount; k++) {
+    if (k >= uMapLightCap) break;
+    vec4 l0 = texelFetch(uMapLightsTex, texel(k * 2, uMapLightsW), 0);     // pos.xyz, band
+    vec4 l1 = texelFetch(uMapLightsTex, texel(k * 2 + 1, uMapLightsW), 0); // color.rgb, radius
+    vec3 L = l0.xyz - p; float dist = length(L); L /= max(dist, 1e-4);
+    float fallS = falloff(dist, l1.w * 4.0);
+    if (dot(N, L) <= 0.0 || fallS <= 1e-6) continue;          // out of reach -> no shadow ray cost
+    int band = int(l0.w + 0.5);
+    float flare = musicFlare(band, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]);
+    float emission = MAP_BASE + 0.6 * flare + uAmplitude * uAmpGain * 0.15;
+    float sh = mapShadow(p + N * 0.02, L, dist);
+    lit += brdf(N, V, L, albedo, F0, 0.5, dist, falloff(dist, l1.w), fallS) * l1.rgb * uMapLightScale * sh * emission;
+  }
+  return lit;
+}
+
 void main() {
   vec3 N = normalize(vNormal);
-  vec3 base = (uHasMap > 0.5) ? pow(texture(uMap, vUv).rgb, vec3(2.2)) : vColor; // sRGB texture -> linear
-  vec3 amb = environment(N) * 1.6 + 0.02;                 // night-sky hemisphere fill
+  vec3 V = normalize(cameraPosition - vWorldPos);
+  if (dot(N, V) < 0.0) N = -N;                              // face the camera (DoubleSide)
+  vec3 base = (uHasMap > 0.5) ? pow(texture(uMap, vUv).rgb, vec3(2.2)) : vColor; // sRGB -> linear
+  vec3 lit = base * (environment(N) * 1.6 + 0.02);          // night-sky hemisphere fill
+  lit += shadeMapLights(vWorldPos, N, V, base);             // the level's own lamps + raytraced shadows
   float ndl = max(dot(N, uSunDir), 0.0);
-  float sh = cloudShadow(vWorldPos, uSunDir, uTime);       // dappled under the cloud deck
-  vec3 lit = base * (amb + uSunColor * ndl * uMoonStrength * sh);
+  float sunSh = (ndl > 0.0 && uSunDir.y > 0.01) ? mapSunShadow(vWorldPos + N * 0.02, uSunDir) : 1.0;
+  lit += base * uSunColor * ndl * uMoonStrength * cloudShadow(vWorldPos, uSunDir, uTime) * sunSh; // moon + self-shadow
   fragColor = vec4(lit, 1.0);
 }`;
 
