@@ -103,10 +103,12 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
       const opx = introTarget[0] + Math.cos(oang) * orad;
       const opy = introTarget[1] + 1.0 + 2.0 * oe + Math.sin(oang * 0.8) * 5.0 * oe; // more vertical variation as it goes out
       const opz = introTarget[2] + Math.sin(oang) * orad;
-      const lookK = Math.min(1, introT / ORBIT_DUR); // pan from focal toward origin
-      const otx = introTarget[0] * (1 - lookK);
-      const oty = introTarget[1] * (1 - lookK);
-      const otz = introTarget[2] * (1 - lookK);
+      // Keep the hero CENTRED through the orbit — look straight at it (the camera still circles +
+      // pulls back, so it reads as a turntable). The old pan toward the origin pushed the hero, which
+      // sits a few units off-origin, off to the side. The wider view arrives with the fly blend below.
+      const otx = introTarget[0];
+      const oty = introTarget[1];
+      const otz = introTarget[2];
       // Lissajous fly. Speed is full for FLY_FULL_SECS, then very smoothly follows the music
       // amplitude up to FLY_SPEED*0.5 (near-zero in calm patches). Accumulate the phase so the
       // speed can vary over time.
@@ -189,9 +191,15 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
       // corners — reading as the whole view spinning. Low-pass the look OFFSET from the camera (not
       // the world point, so it never looks backwards as the camera moves) for a calm auto-pan.
       const ox = lx - px, oy = ly - py, oz = lz - pz;
-      if (!lookSmoothInit) { sox = ox; soy = oy; soz = oz; lookSmoothInit = true; }
-      const lsa = 1.0 - Math.exp(-dt / 0.5);
-      sox += (ox - sox) * lsa; soy += (oy - soy) * lsa; soz += (oz - soz) * lsa;
+      if (introT < ORBIT_DUR) {
+        // Orbit: aim straight at the hero (no offset-smoothing — its lag against the orbit's motion
+        // is what pushed the hero off-centre). Keep sox in sync for a seamless handoff to the fly.
+        sox = ox; soy = oy; soz = oz; lookSmoothInit = true;
+      } else {
+        if (!lookSmoothInit) { sox = ox; soy = oy; soz = oz; lookSmoothInit = true; }
+        const lsa = 1.0 - Math.exp(-dt / 0.5);
+        sox += (ox - sox) * lsa; soy += (oy - soy) * lsa; soz += (oz - soz) * lsa;
+      }
       aim(px + sox, py + soy, pz + soz);
     }
     if (mode === 'free') {

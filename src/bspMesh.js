@@ -295,6 +295,17 @@ vec3 shadeMapLights(vec3 p, vec3 N, vec3 V, vec3 albedo) {
   return lit;
 }
 
+// The level's environment (ambient fill + faux reflection): the night sky PLUS the moon (a glow
+// toward uSunDir) and the moonlit cloud deck the level floats above (downward-facing surfaces catch
+// its bounce) — so the moon + clouds are in q3dm17's environment, not just a bare gradient.
+vec3 mapEnv(vec3 n) {
+  vec3 e = environment(n) * 1.6 + 0.02;                                          // night-sky hemisphere
+  e += uSunColor * uMoonStrength * pow(max(dot(n, uSunDir), 0.0), 6.0) * 0.7;    // moon-direction glow
+  float down = clamp(-n.y, 0.0, 1.0);                                            // facing the deck below
+  e += (uSunColor * uMoonStrength * 0.5 + uCloudAmbient * 0.15) * down * step(0.5, uCloudsOn); // cloud bounce
+  return e;
+}
+
 void main() {
   vec3 N = normalize(vNormal);
   vec3 V = normalize(cameraPosition - vWorldPos);
@@ -303,7 +314,7 @@ void main() {
   float texA = (uHasMap > 0.5) ? tex.a : 1.0;
   if (uAlphaTest > 0.5 && texA < 0.5) discard;              // alpha-tested grates/decals
   vec3 base = (uHasMap > 0.5) ? pow(tex.rgb, vec3(2.2)) : vColor; // sRGB -> linear
-  vec3 lit = base * (environment(N) * 1.6 + 0.02);          // night-sky hemisphere fill
+  vec3 lit = base * mapEnv(N);                              // night sky + moon + cloud-deck bounce
   lit += shadeMapLights(vWorldPos, N, V, base);             // the level's own lamps + raytraced shadows
   float ndl = max(dot(N, uSunDir), 0.0);
   float sunSh = (ndl > 0.0 && uSunDir.y > 0.01) ? mapSunShadow(vWorldPos + N * 0.02, uSunDir) : 1.0;

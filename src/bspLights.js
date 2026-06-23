@@ -19,7 +19,7 @@ const KINDS = [
   ['light', [1.00, 0.85, 0.60], 6],         // generic fallback
 ];
 const BASE_R = 1.6;       // world-unit base reach; * the kind's multiplier
-const INTENSITY = 2.2;    // colour scale (tuned against the BRDF + uMapLightScale)
+const INTENSITY = 11.0;   // colour scale (5x — punchier lamps; tune live via uMapLightScale)
 const MERGE_DIST = 1.6;   // collapse a fixture's many faces into one lamp (world units)
 const NUDGE = 0.3;        // push the lamp this far off the surface along its normal
 
