@@ -92,6 +92,68 @@ function slimBsp(buf) {
   return out;
 }
 
+// --- Minimal Quake-3 .shader parser + classifier (for transparency / blend modes / glows) ---
+function parseShaders(text) {
+  text = text.replace(/\/\/[^\n]*/g, '');                            // strip // comments
+  const lines = text.replace(/([{}])/g, '\n$1\n').split('\n').map((l) => l.trim()).filter(Boolean);
+  const shaders = new Map();
+  let i = 0;
+  while (i < lines.length) {
+    const name = lines[i++];
+    if (name === '{' || name === '}') continue;
+    if (lines[i] !== '{') continue;
+    i++;
+    const def = { surfaceparms: [], cull: 'back', sky: false, stages: [] };
+    while (i < lines.length && lines[i] !== '}') {
+      if (lines[i] === '{') {
+        i++;
+        const st = {};
+        while (i < lines.length && lines[i] !== '}') {
+          const t = lines[i++].split(/\s+/); const k = t[0].toLowerCase();
+          if (k === 'map' || k === 'clampmap') st.map = t[1];
+          else if (k === 'animmap') st.map = t[2];                   // first frame of an anim
+          else if (k === 'blendfunc') st.blend = t.slice(1).map((x) => x.toLowerCase()).join(' ');
+          else if (k === 'alphafunc') st.alpha = true;
+          else if (k === 'rgbgen') st.rgbgen = t.slice(1);
+        }
+        i++; def.stages.push(st);
+      } else {
+        const t = lines[i++].split(/\s+/); const k = t[0].toLowerCase();
+        if (k === 'surfaceparm') def.surfaceparms.push((t[1] || '').toLowerCase());
+        else if (k === 'cull') def.cull = (t[1] || '').toLowerCase();
+        else if (k === 'skyparms') def.sky = true;
+      }
+    }
+    i++; shaders.set(name, def);
+  }
+  return shaders;
+}
+const blendMode = (b) => {
+  if (!b) return 'opaque';
+  if (b === 'add' || b === 'gl_one gl_one') return 'add';
+  if (b === 'blend' || b === 'gl_src_alpha gl_one_minus_src_alpha') return 'blend';
+  return 'filter'; // gl_dst_color gl_zero etc (multiply) -> treated as opaque diffuse
+};
+// Reduce a shader def to what the renderer needs: a diffuse map + render mode, plus an optional
+// additive glow stage (the see-through bits: pulsing lamp/jumppad/flare glows).
+function classifyShader(def) {
+  if (def.sky || def.surfaceparms.includes('sky')) return { mode: 'sky' };
+  let diffuse = null, mode = 'opaque', glow = null, glowWave = null;
+  for (const s of def.stages) {
+    if (!s.map || s.map === '$lightmap') continue;
+    const bm = blendMode(s.blend);
+    if (bm === 'add' && !glow) {
+      glow = s.map;
+      const g = s.rgbgen;
+      glowWave = g && g[0] === 'wave' ? { type: g[1], base: +g[2], amp: +g[3], phase: +g[4], freq: +g[5] } : null;
+      continue;
+    }
+    if (!diffuse && bm !== 'add') { diffuse = s.map; mode = s.alpha ? 'alphatest' : (bm === 'blend' ? 'blend' : 'opaque'); }
+  }
+  if (!diffuse && glow) { diffuse = glow; mode = 'add'; glow = null; glowWave = null; }
+  return { diffuse, mode, glow, glowWave, cull: def.cull };
+}
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const oaDir = process.argv[2] || 'C:/code/openarena-0.8.8';
 const pk3 = join(oaDir, 'baseoa', 'pak1-maps.pk3');
@@ -110,13 +172,12 @@ const slim = slimBsp(data);
 writeFileSync(out, slim);
 console.log(`wrote ${out} (${(slim.length / 1048576).toFixed(2)} MB, slimmed from ${(data.length / 1048576).toFixed(2)} MB)`);
 
-// --- Authentic textures: pull the diffuse image for each referenced material from the paks. ---
-// Resolve each shader name to <name>.{tga,jpg,...} across the texture/patch paks (patches override
-// the base), copy it under public/wrackdm17/, and write a name->path manifest. Surfaces whose name
-// doesn't resolve to a direct image (shader-only / sky / structural) keep their stylized placeholder.
+// --- Materials: parse the Q3 .shader scripts, classify each referenced surface (opaque / blend /
+// alphatest / additive-glow / sky), resolve its diffuse + glow images across the paks, and write a
+// shader-aware manifest (name -> {diffuse, mode, glow, glowWave, cull}). ---
 const parsed = parseBSP(slim.buffer.slice(slim.byteOffset, slim.byteOffset + slim.byteLength));
 const wantNames = [...new Set(parsed.textures.map((t) => t.name))]
-  .filter((n) => n.startsWith('textures/') && !n.includes('common/') && !n.includes('sky'));
+  .filter((n) => n.startsWith('textures/') && !n.includes('common/'));
 
 const texPaks = ['pak6-patch088.pk3', 'pak6-patch085.pk3', 'pak4-textures.pk3', 'pak0.pk3', 'pak6-misc.pk3']
   .map((f) => join(oaDir, 'baseoa', f)).filter(existsSync);
@@ -125,23 +186,44 @@ for (const p of texPaks) {
   const zip = readFileSync(p);
   for (const [name, e] of indexZip(zip)) if (!index.has(name)) index.set(name, { zip, e });
 }
+// Parse every .shader script across the paks.
+const shaderDefs = new Map();
+for (const [name, v] of index) {
+  if (!name.endsWith('.shader')) continue;
+  try { for (const [sn, def] of parseShaders(readZipEntry(v.zip, v.e).toString('latin1'))) if (!shaderDefs.has(sn)) shaderDefs.set(sn, def); } catch { /* skip */ }
+}
 
 const exts = ['.tga', '.jpg', '.jpeg', '.png'];
-const manifest = {};
-let texBytes = 0, found = 0;
-for (const name of wantNames) {
+const extracted = new Map(); // base name (no ext) -> public rel path | null (dedup the shared images)
+let texBytes = 0;
+function extractTex(texName) {
+  if (!texName) return null;
+  const base = texName.replace(/\.(tga|jpg|jpeg|png)$/i, '');
+  if (extracted.has(base)) return extracted.get(base);
   for (const ext of exts) {
-    const hit = index.get((name + ext).toLowerCase());
+    const hit = index.get((base + ext).toLowerCase());
     if (!hit) continue;
     const buf = readZipEntry(hit.zip, hit.e);
-    const rel = `wrackdm17/${name}${ext}`;
-    const dst = join(outDir, rel);
-    mkdirSync(dirname(dst), { recursive: true });
-    writeFileSync(dst, buf);
-    manifest[name] = rel;
-    texBytes += buf.length; found++;
-    break;
+    const rel = `wrackdm17/${base}${ext}`;
+    mkdirSync(dirname(join(outDir, rel)), { recursive: true });
+    writeFileSync(join(outDir, rel), buf);
+    texBytes += buf.length; extracted.set(base, rel); return rel;
   }
+  extracted.set(base, null); return null;
+}
+
+const manifest = {};
+let nGlow = 0, nBlend = 0, nSky = 0;
+for (const name of wantNames) {
+  const def = shaderDefs.get(name);
+  const c = def ? classifyShader(def) : { diffuse: name, mode: 'opaque', glow: null, glowWave: null, cull: 'back' };
+  if (c.mode === 'sky') { nSky++; continue; }                  // the level uses the demo's own sky
+  const diffuse = extractTex(c.diffuse || name);
+  const glow = extractTex(c.glow);
+  if (!diffuse && !glow) continue;                              // unresolved -> stylized placeholder stays
+  manifest[name] = { diffuse, mode: c.mode, glow, glowWave: c.glowWave || null, cull: c.cull || 'back' };
+  if (glow) nGlow++;
+  if (c.mode === 'blend' || c.mode === 'add') nBlend++;
 }
 writeFileSync(join(outDir, 'wrackdm17.textures.json'), JSON.stringify(manifest));
-console.log(`textures: ${found}/${wantNames.length} resolved, ${(texBytes / 1048576).toFixed(1)} MB -> public/wrackdm17/`);
+console.log(`materials: ${Object.keys(manifest).length} (${nGlow} glow, ${nBlend} translucent, ${nSky} sky skipped), ${(texBytes / 1048576).toFixed(1)} MB -> public/wrackdm17/`);

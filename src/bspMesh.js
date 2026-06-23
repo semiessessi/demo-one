@@ -48,9 +48,10 @@ function albedoFor(name) {
   return [r * k, g * k, b * k];
 }
 
-export function buildBspMesh(parsed) {
+export function buildBspMesh(parsed, manifest) {
   const { verts, meshverts, faces, textures } = parsed;
   const n = verts.count;
+  const mat = (name) => (manifest && manifest[name]) || null;
 
   // Convert all verts to Y-up once: (qx, qy, qz) -> (qx, qz, -qy), a -90deg X rotation
   // (handedness + winding preserved). Normals convert the same way.
@@ -60,11 +61,10 @@ export function buildBspMesh(parsed) {
     cn[i * 3] = verts.normal[i * 3]; cn[i * 3 + 1] = verts.normal[i * 3 + 2]; cn[i * 3 + 2] = -verts.normal[i * 3 + 1];
   }
 
-  // Placement AABB over the DRAWN geometry only (excluding the huge sky/bounds shell, which would
-  // otherwise dominate the box and shrink the real level).
+  // Placement AABB over the DRAWN geometry only (excluding the huge sky/bounds shell).
   let mnx = 1e9, mny = 1e9, mnz = 1e9, mxx = -1e9, mxy = -1e9, mxz = -1e9;
   for (const f of faces) {
-    if (!drawable(f, textures)) continue;
+    if (!drawable(f, textures) || mat(textures[f.texture].name)?.mode === 'sky') continue;
     for (let v = f.vertex; v < f.vertex + f.n_vertexes; v++) {
       const x = conv[v * 3], y = conv[v * 3 + 1], z = conv[v * 3 + 2];
       if (x < mnx) mnx = x; if (y < mny) mny = y; if (z < mnz) mnz = z;
@@ -77,50 +77,60 @@ export function buildBspMesh(parsed) {
   const wy = (i) => conv[i * 3 + 1] * scale + offset[1];
   const wz = (i) => conv[i * 3 + 2] * scale + offset[2];
 
-  // Build the draw arrays by expanding each drawn face (no cross-face vertex sharing — the BSP's
-  // vertex ranges are per-face anyway). Indices are bucketed by texture so the geometry can carry
-  // one draw-group per material -> a material array, each with its own (streamed) texture.
-  const P = [], N = [], C = [], U = [], M = [];
-  const buckets = new Map(); // texture index -> index list
-  const bucket = (tex) => { let b = buckets.get(tex); if (!b) { b = []; buckets.set(tex, b); } return b; };
-  for (const f of faces) {
-    if (!drawable(f, textures)) continue;
-    const alb = albedoFor(textures[f.texture].name);
-    const idx = bucket(f.texture);
+  // Three render passes: opaque (lit), transparent (alpha-blended, lit), glow (additive emissive).
+  // A glowing surface (e.g. gothic_light) lands in BOTH opaque (its diffuse) and glow (its additive
+  // stage). Each pass buckets faces by texture -> draw-groups + a material array.
+  const mkPass = () => ({ P: [], N: [], C: [], U: [], M: [], buckets: new Map() });
+  const passes = { opaque: mkPass(), trans: mkPass(), glow: mkPass() };
+  const bucketOf = (p, tex) => { let b = p.buckets.get(tex); if (!b) { b = []; p.buckets.set(tex, b); } return b; };
+  const emit = (p, f, alb) => {
+    const idx = bucketOf(p, f.texture);
     if (f.type === 1 || f.type === 3) {
-      const start = P.length / 3;
+      const start = p.P.length / 3;
       for (let v = f.vertex; v < f.vertex + f.n_vertexes; v++) {
-        P.push(wx(v), wy(v), wz(v)); N.push(cn[v * 3], cn[v * 3 + 1], cn[v * 3 + 2]);
-        C.push(alb[0], alb[1], alb[2]); U.push(verts.uv[v * 2], verts.uv[v * 2 + 1]); M.push(f.texture);
+        p.P.push(wx(v), wy(v), wz(v)); p.N.push(cn[v * 3], cn[v * 3 + 1], cn[v * 3 + 2]);
+        p.C.push(alb[0], alb[1], alb[2]); p.U.push(verts.uv[v * 2], verts.uv[v * 2 + 1]); p.M.push(f.texture);
       }
       for (let k = 0; k < f.n_meshverts; k++) idx.push(start + meshverts[f.meshvert + k]);
     } else if (f.type === 2) {
-      tessellatePatch(f, conv, cn, verts.uv, scale, offset, alb, P, N, C, U, M, idx);
+      tessellatePatch(f, conv, cn, verts.uv, scale, offset, alb, p.P, p.N, p.C, p.U, p.M, idx);
     }
+  };
+
+  for (const f of faces) {
+    if (!drawable(f, textures)) continue;
+    const name = textures[f.texture].name;
+    const m = mat(name);
+    const mode = m ? m.mode : 'opaque';
+    if (mode === 'sky') continue;
+    const alb = albedoFor(name);
+    if (mode === 'add') emit(passes.glow, f, alb);                       // wholly-additive (flares)
+    else emit(mode === 'blend' ? passes.trans : passes.opaque, f, alb);  // alpha or solid
+    if (m && m.glow) emit(passes.glow, f, alb);                          // additive glow overlay
   }
 
-  // Flatten the buckets into one index buffer, one draw-group + slot per material.
-  const I = [];
-  const slots = []; // [{ texIndex, name }] -> parallel to geometry groups / the material array
-  const groups = [];
-  for (const [tex, arr] of buckets) {
-    if (!arr.length) continue;
-    groups.push({ start: I.length, count: arr.length, slot: slots.length });
-    for (let i = 0; i < arr.length; i++) I.push(arr[i]);
-    slots.push({ texIndex: tex, name: textures[tex].name });
-  }
+  const build = (p) => {
+    const I = [], slots = [], groups = [];
+    for (const [tex, arr] of p.buckets) {
+      if (!arr.length) continue;
+      groups.push({ start: I.length, count: arr.length, slot: slots.length });
+      for (let i = 0; i < arr.length; i++) I.push(arr[i]);
+      slots.push({ texIndex: tex, name: textures[tex].name, mat: mat(textures[tex].name) });
+    }
+    if (!I.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p.P), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(p.N), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(p.C), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(p.U), 2));
+    g.setAttribute('aMaterial', new THREE.BufferAttribute(new Float32Array(p.M), 1));
+    g.setIndex(I);
+    for (const gr of groups) g.addGroup(gr.start, gr.count, gr.slot);
+    g.computeBoundingSphere();
+    return { geometry: g, slots };
+  };
 
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(N), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(C), 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(U), 2));
-  g.setAttribute('aMaterial', new THREE.BufferAttribute(new Float32Array(M), 1));
-  g.setIndex(I);
-  for (const gr of groups) g.addGroup(gr.start, gr.count, gr.slot);
-  g.computeBoundingSphere();
-
-  return { geometry: g, slots, transform: { scale, offset }, indexCount: I.length };
+  return { opaque: build(passes.opaque), transparent: build(passes.trans), glow: build(passes.glow), transform: { scale, offset } };
 }
 
 // Tessellate a Q3 biquadratic bezier patch (face.type 2) into triangles — "ordinary geometry to do
@@ -191,6 +201,7 @@ uniform vec3 cameraPosition;
 uniform float uTime;
 uniform sampler2D uMap;   // this material's diffuse (streamed in; default 1x1 white until then)
 uniform float uHasMap;    // 0 = stylized placeholder colour, 1 = texture
+uniform float uAlphaTest; // 1 = discard low-alpha texels (grates/decals)
 // music state (the lamps pulse with the beat)
 uniform float uBeatTime[32]; uniform float uBeatStrength[32]; uniform float uBeatDecay[32];
 uniform float uMusicTime; uniform float uAmplitude; uniform float uAmpGain;
@@ -288,28 +299,68 @@ void main() {
   vec3 N = normalize(vNormal);
   vec3 V = normalize(cameraPosition - vWorldPos);
   if (dot(N, V) < 0.0) N = -N;                              // face the camera (DoubleSide)
-  vec3 base = (uHasMap > 0.5) ? pow(texture(uMap, vUv).rgb, vec3(2.2)) : vColor; // sRGB -> linear
+  vec4 tex = texture(uMap, vUv);
+  float texA = (uHasMap > 0.5) ? tex.a : 1.0;
+  if (uAlphaTest > 0.5 && texA < 0.5) discard;              // alpha-tested grates/decals
+  vec3 base = (uHasMap > 0.5) ? pow(tex.rgb, vec3(2.2)) : vColor; // sRGB -> linear
   vec3 lit = base * (environment(N) * 1.6 + 0.02);          // night-sky hemisphere fill
   lit += shadeMapLights(vWorldPos, N, V, base);             // the level's own lamps + raytraced shadows
   float ndl = max(dot(N, uSunDir), 0.0);
   float sunSh = (ndl > 0.0 && uSunDir.y > 0.01) ? mapSunShadow(vWorldPos + N * 0.02, uSunDir) : 1.0;
   lit += base * uSunColor * ndl * uMoonStrength * cloudShadow(vWorldPos, uSunDir, uTime) * sunSh; // moon + self-shadow
-  fragColor = vec4(lit, 1.0);
+  fragColor = vec4(lit, texA);
+}`;
+
+// Additive emissive glow stage (lamp coronas, jump-pad / flare glows). No lighting — it's a light
+// SOURCE; pulses via the Q3 rgbgen wave (uGlowType -1 steady, 0 sin, 1 square).
+const GLOW_FRAG = `
+in vec3 vColor; in vec3 vNormal; in vec3 vWorldPos; in vec2 vUv; in float vMaterial;
+uniform float uTime; uniform sampler2D uMap; uniform float uHasMap;
+uniform vec4 uGlowWave;   // base, amp, phase, freq
+uniform float uGlowType;  // -1 steady, 0 sin, 1 square
+uniform float uGlowScale; // global tunable
+out vec4 fragColor;
+void main() {
+  vec4 t = texture(uMap, vUv);
+  float w = 1.0;
+  if (uGlowType >= -0.5) {
+    float ph = uGlowWave.z + uGlowWave.w * uTime;
+    float wave = (uGlowType < 0.5) ? sin(6.2831853 * ph) : ((fract(ph) < 0.5) ? 1.0 : -1.0);
+    w = max(0.0, uGlowWave.x + uGlowWave.y * wave);
+  }
+  vec3 col = (uHasMap > 0.5) ? pow(t.rgb, vec3(2.2)) : vColor;
+  fragColor = vec4(col * w * uGlowScale, 1.0); // additive blending in three
 }`;
 
 // 1x1 white stand-in so uMap is always a valid sampler before a texture streams in.
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 WHITE.needsUpdate = true;
+const WAVE_TYPE = { sin: 0, square: 1 };
 
 // One material per draw-group/slot: shares the demo lighting + cloud uniforms (by reference) but
-// owns its uMap/uHasMap so each surface's texture can hot-swap in independently.
-export function buildBspMaterial(shared, cloudsGlsl) {
-  const uniforms = Object.assign({}, shared, { uMap: { value: WHITE }, uHasMap: { value: 0 } });
+// owns its uMap/uHasMap so each surface's texture can hot-swap in independently. `mode` sets the
+// blend (opaque / alphatest / blend); `cull` 'none' renders both sides.
+export function buildBspMaterial(shared, cloudsGlsl, mode = 'opaque', cull = 'back') {
+  const uniforms = Object.assign({}, shared, {
+    uMap: { value: WHITE }, uHasMap: { value: 0 }, uAlphaTest: { value: mode === 'alphatest' ? 1 : 0 },
+  });
+  const m = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3, uniforms, vertexShader: VERT,
+    fragmentShader: `${libGlsl}\n${cloudsGlsl}\n${FRAG}`, side: THREE.DoubleSide,
+  });
+  if (mode === 'blend') { m.transparent = true; m.depthWrite = false; }
+  return m;
+}
+
+// Additive glow material for a slot. `wave` = the manifest glowWave ({type,base,amp,phase,freq}) or null.
+export function buildGlowMaterial(shared, wave) {
+  const uniforms = {
+    uTime: shared.uTime, uMap: { value: WHITE }, uHasMap: { value: 0 }, uGlowScale: shared.uMapGlowScale,
+    uGlowWave: { value: new THREE.Vector4(wave ? wave.base : 1, wave ? wave.amp : 0, wave ? wave.phase : 0, wave ? wave.freq : 0) },
+    uGlowType: { value: wave ? (WAVE_TYPE[wave.type] ?? 0) : -1 },
+  };
   return new THREE.RawShaderMaterial({
-    glslVersion: THREE.GLSL3,
-    uniforms,
-    vertexShader: VERT,
-    fragmentShader: `${libGlsl}\n${cloudsGlsl}\n${FRAG}`,
-    side: THREE.DoubleSide,
+    glslVersion: THREE.GLSL3, uniforms, vertexShader: VERT, fragmentShader: `${libGlsl}\n${GLOW_FRAG}`,
+    side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
 }

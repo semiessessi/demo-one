@@ -29,7 +29,7 @@ import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
 import { buildStarfield, bakeStarCubemap } from '../starfield.js';
 import { buildMoon } from '../moon.js';
 import { parseBSP } from '../bsp.js';
-import { buildBspMesh, buildBspMaterial } from '../bspMesh.js';
+import { buildBspMesh, buildBspMaterial, buildGlowMaterial } from '../bspMesh.js';
 import { streamBspTextures } from '../bspTextures.js';
 import { buildBspLights } from '../bspLights.js';
 import { buildBspOccluders } from '../bspOccluders.js';
@@ -141,9 +141,9 @@ export function createWebGLBackend({
   // quiet). See cloudLights.js / lightEmission.js.
   const cloudLights = createCloudLights(lights, lights.length / objects.length);
   // wrackdm17 level (streamed in after the first frame; transform shared with the brush occluders).
-  let bspMesh = null, bspTransform = null, bspMaterials = null, bspSlots = null;
+  let bspMeshes = null, bspTransform = null; // the level's render-pass meshes (opaque/transparent/glow)
   let mapShadowsOn = true; // debug toggle (setQualityScale forces uMapShadowCap to 0 when off)
-  const mapDefaults = { lightScale: 1.0, shadows: true };
+  const mapDefaults = { lightScale: 1.0, glowScale: 1.0, shadows: true };
   // 1-texel placeholder so the bsp materials' map-light/occluder samplers are valid before the level loads.
   const mapPlaceholder = floatTexture(new Float32Array(4), 1, 4);
 
@@ -223,6 +223,7 @@ export function createWebGLBackend({
     uMapPlaneTex: { value: mapPlaceholder.tex }, uMapPlaneW: { value: mapPlaceholder.width },
     uMapBrushTex: { value: mapPlaceholder.tex }, uMapBrushW: { value: mapPlaceholder.width },
     uMapBrushCount: { value: 0 }, uMapShadowCap: { value: 64 },
+    uMapGlowScale: { value: 1.0 }, // additive-glow stage brightness (lamps/jump-pads/flares)
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -357,14 +358,15 @@ export function createWebGLBackend({
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
     // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
     async loadBspMap(url) {
-      const buf = await fetch(url).then((r) => r.arrayBuffer());
+      const [buf, manifest] = await Promise.all([
+        fetch(url).then((r) => r.arrayBuffer()),
+        fetch(url.replace(/\.bsp$/, '.textures.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
       const parsed = parseBSP(buf);
-      const { geometry, slots, transform, indexCount } = buildBspMesh(parsed);
-      bspTransform = transform;
-      bspSlots = slots;
-      // Synthesise the level's point lights (from emissive faces) + convex brush shadow occluders, and
-      // upload them so the materials light + raytrace-shadow the level (same world space as the mesh).
-      const mapLights = buildBspLights(parsed, transform);
+      const built = buildBspMesh(parsed, manifest); // { opaque, transparent, glow, transform }
+      bspTransform = built.transform;
+      // Synthesise the level's point lights (from emissive faces) + convex brush shadow occluders.
+      const mapLights = buildBspLights(parsed, built.transform);
       const ld = new Float32Array(Math.max(1, mapLights.length) * 2 * 4);
       mapLights.forEach((l, i) => {
         const o = i * 8;
@@ -374,21 +376,42 @@ export function createWebGLBackend({
       const ltex = floatTexture(ld, Math.max(1, mapLights.length * 2), 4);
       uniforms.uMapLightsTex.value = ltex.tex; uniforms.uMapLightsW.value = ltex.width;
       uniforms.uMapLightCount.value = mapLights.length;
-      const occ = buildBspOccluders(parsed, transform);
+      const occ = buildBspOccluders(parsed, built.transform);
       const ptex = floatTexture(occ.planeData, Math.max(1, occ.planeCount), 4);
       const btex = floatTexture(occ.brushData, Math.max(1, occ.brushCount * 2), 4);
       uniforms.uMapPlaneTex.value = ptex.tex; uniforms.uMapPlaneW.value = ptex.width;
       uniforms.uMapBrushTex.value = btex.tex; uniforms.uMapBrushW.value = btex.width;
       uniforms.uMapBrushCount.value = occ.brushCount;
-      bspMaterials = slots.map(() => buildBspMaterial(uniforms, cloudsGlsl)); // one per draw-group/texture
-      bspMesh = new THREE.Mesh(geometry, bspMaterials);
-      bspMesh.frustumCulled = false;
-      scene.add(bspMesh);
-      // Stream the authentic Q3 textures in + hot-swap them onto each material (after first frame).
-      streamBspTextures(url, slots, bspMaterials);
-      return { faces: parsed.faces.length, triangles: indexCount / 3, mapLights: mapLights.length, occluders: occ.brushCount, materials: slots.length };
+
+      // Build a mesh per render pass (opaque lit, transparent lit, additive glow), each with a
+      // material array parallel to its draw-groups. Collect texture-load tasks for streaming.
+      const tasks = []; // { material, file }
+      bspMeshes = [];
+      const passMesh = (pass, kind, order) => {
+        if (!pass) return;
+        const mats = pass.slots.map((s) => {
+          if (kind === 'glow') {
+            const m = buildGlowMaterial(uniforms, s.mat && s.mat.glowWave);
+            const file = (s.mat && s.mat.glow) || (s.mat && s.mat.mode === 'add' ? s.mat.diffuse : null);
+            if (file) tasks.push({ material: m, file });
+            return m;
+          }
+          const m = buildBspMaterial(uniforms, cloudsGlsl, (s.mat && s.mat.mode) || 'opaque', (s.mat && s.mat.cull) || 'back');
+          if (s.mat && s.mat.diffuse) tasks.push({ material: m, file: s.mat.diffuse });
+          return m;
+        });
+        const mesh = new THREE.Mesh(pass.geometry, mats);
+        mesh.frustumCulled = false; mesh.renderOrder = order;
+        scene.add(mesh); bspMeshes.push(mesh);
+      };
+      passMesh(built.opaque, 'opaque', 0);
+      passMesh(built.transparent, 'trans', 2);
+      passMesh(built.glow, 'glow', 3);
+      streamBspTextures(tasks); // hot-swap the authentic Q3 textures + glows onto the materials
+      const tris = (built.opaque && built.opaque.geometry.index.count || 0) / 3;
+      return { triangles: tris, mapLights: mapLights.length, occluders: occ.brushCount, glows: built.glow ? built.glow.slots.length : 0 };
     },
-    setMapVisible(v) { if (bspMesh) bspMesh.visible = v; }, // localhost debug toggle
+    setMapVisible(v) { for (const m of bspMeshes || []) m.visible = v; }, // localhost debug toggle
     setQualityScale(s) {
       uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
       uniforms.uReflCloudSteps.value = Math.max(4, Math.round(12 * s));
@@ -400,7 +423,7 @@ export function createWebGLBackend({
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
     },
     mapDefaults,
-    setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
+    setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapGlowScale.value = p.glowScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
     setView({ position, target }) {
       if (flycam) {
         flycam.setPose(position, target); // start free flight from this pose
