@@ -169,8 +169,10 @@ vec3 environment(vec3 d) {
   vec3 Sky = vec3(0.008, 0.012, 0.035);
   vec3 Horizon = vec3(0.06, 0.08, 0.14);
   vec3 Glow = vec3(0.16, 0.20, 0.30);
-  vec3 GroundEdge = vec3(0.035, 0.035, 0.045);
-  vec3 Ground = vec3(0.02, 0.02, 0.028);
+  // Ground tinted toward deep ocean teal — it's the sea below, and it reads as water in the
+  // downward reflections of the morph objects + the level.
+  vec3 GroundEdge = vec3(0.018, 0.05, 0.065);
+  vec3 Ground = vec3(0.008, 0.028, 0.042);
   float Up = d.y;
   vec3 Base;
   if (Up >= 0.0) Base = mix(Horizon, Sky, pow(clamp(Up, 0.0, 1.0), 0.20));

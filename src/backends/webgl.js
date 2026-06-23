@@ -26,6 +26,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
+import oceanGlsl from '../shaders/ocean.glsl?raw';
 import { buildStarfield, bakeStarCubemap } from '../starfield.js';
 import { buildMoon } from '../moon.js';
 import { parseBSP } from '../bsp.js';
@@ -52,14 +53,17 @@ class CloudPass extends Pass {
       uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
       uCloudLightsTex: shared.uCloudLightsTex, uCloudLightsTexW: shared.uCloudLightsTexW,
       uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
-      uCloudLightGain: shared.uCloudLightGain,
+      uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
+      uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
+      uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
+      uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
       uniforms: u,
       vertexShader: 'in vec3 position;\nin vec2 uv;\nout vec2 vUv;\nvoid main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: `${libGlsl}\n${cloudsGlsl}\n${cloudPassFrag}`,
+      fragmentShader: `${libGlsl}\n${cloudsGlsl}\n${oceanGlsl}\n${cloudPassFrag}`,
       depthTest: false, depthWrite: false,
     });
     this.fsQuad = new FullScreenQuad(this.material);
@@ -134,6 +138,8 @@ export function createWebGLBackend({
   const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
+  // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
+  const oceanDefaults = { on: true, y: -70, color: 0x05161e, fog: 0.006, wave: 1.0 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -224,6 +230,12 @@ export function createWebGLBackend({
     uMapBrushTex: { value: mapPlaceholder.tex }, uMapBrushW: { value: mapPlaceholder.width },
     uMapBrushCount: { value: 0 }, uMapShadowCap: { value: 64 },
     uMapGlowScale: { value: 1.0 }, // additive-glow stage brightness (lamps/jump-pads/flares)
+    // Ocean "ground" for the skybox: a wavy reflective sea below the world (cloud.pass / ocean.glsl).
+    uOceanOn: { value: oceanDefaults.on ? 1 : 0 },
+    uOceanY: { value: oceanDefaults.y },
+    uOceanColor: { value: new THREE.Color(oceanDefaults.color) },
+    uOceanFog: { value: oceanDefaults.fog },
+    uOceanWave: { value: oceanDefaults.wave },
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -355,6 +367,14 @@ export function createWebGLBackend({
     sunElevDeg: () => liveMoonElev, // current (animated) moon elevation in degrees, for the debug readout
     starDefaults,
     setStars(p) { uniforms.uStarSize.value = p.size; uniforms.uStarTwinkle.value = p.twinkle; },
+    oceanDefaults,
+    setOcean(p) {
+      uniforms.uOceanOn.value = p.on ? 1 : 0;
+      uniforms.uOceanY.value = p.y;
+      uniforms.uOceanColor.value.set(p.color);
+      uniforms.uOceanFog.value = p.fog;
+      uniforms.uOceanWave.value = p.wave;
+    },
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
     // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
     async loadBspMap(url) {

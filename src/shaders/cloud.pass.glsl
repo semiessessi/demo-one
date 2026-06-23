@@ -39,6 +39,17 @@ void main() {
   }
 
   vec3 sceneCol = texture(tColor, vUv).rgb;
+  // The skybox "ground" is an ocean: on downward background rays, replace the sky-dome backdrop with
+  // the wavy reflective sea; the clouds then composite IN FRONT (they sit above the ocean). Keep the
+  // bright light sprites drawn over it (they're foreground glows), but let the dim starfield be
+  // covered by the water (stars belong in the sky + the reflection, not on the surface).
+  if (d >= 1.0 && uOceanOn > 0.5 && rd.y < -0.001) {
+    vec3 ocn = ocean(uCamPos, rd, uTime);
+    vec3 sky = environment(rd);
+    float fg = clamp((max(max(sceneCol.r, sceneCol.g), sceneCol.b)
+                      - max(max(sky.r, sky.g), sky.b) - 0.12) * 5.0, 0.0, 1.0); // bright sprites -> 1, dim stars -> 0
+    sceneCol = mix(ocn, sceneCol, fg);
+  }
   vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps), uCloudLightCap);
   fragColor = vec4(sceneCol * c.a + c.rgb, 1.0);
 }
