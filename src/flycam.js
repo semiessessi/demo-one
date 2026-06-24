@@ -185,7 +185,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           // ease UP to the wrackdm17 level (it floats above the deck at the origin) as we clear the
           // cloud-tops — so emerging above the clouds reveals the level, not empty sky. lookT 0 =
           // field centre, 1 = the floating level.
-          const lookT = smooth(clamp((fp - 0.45) / 0.5, 0, 1));
+          const lookT = smooth(clamp((fp - 0.62) / 0.33, 0, 1)); // pan up to the level LATER (was 0.45 -> blended too early)
           stx = 0.0;             // the level sits over the origin...
           sty = MAP_LOOK_Y * lookT; // ...so pan up from the field centre to it
           stz = 0.0;
