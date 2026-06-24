@@ -391,6 +391,10 @@ let statsAcc = 0;
 // FPS autoscaler state (runs for everyone; the localhost GUI tunes target/auto).
 let qualityScale = isMobile ? 0.4 : 1; // lower starting quality on mobile; the autoscaler ramps from here
 let lastQAdjust = 0;
+// Desktop can climb PAST 1.0 to ENRICH the scene when the GPU budget has room (more cloud-march steps,
+// more per-object lights, richer cloud reflections — every round(N*s) lever scales up; god rays /
+// displacement / shadows stay at their bounds). The self-limiting budget stops it before it overshoots.
+const QUALITY_MAX = isMobile ? 1 : 2;
 const perf = { auto: true, targetFps: isMobile ? 45 : 90 }; // desktop targets 90 via the GPU timer (vsync stays on; falls back to 60 if no timer)
 if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobile start now (the controller only adjusts every 500ms)
 
@@ -627,7 +631,7 @@ function frame() {
     const fps = 1000 / (useGpu ? gpuMs : emaMs);
     const target = useGpu ? perf.targetFps : Math.min(perf.targetFps, 60);
     if (fps < target - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.18 : 0.12));
-    else if (fps > target + 8) qualityScale = Math.min(1, qualityScale + 0.06);
+    else if (fps > target + 8) qualityScale = Math.min(QUALITY_MAX, qualityScale + 0.06); // climb past 1.0 to enrich when there's headroom
     backend.setQualityScale(qualityScale);
   }
   if (statsOn) {
