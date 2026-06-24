@@ -153,6 +153,9 @@ export function createWebGLBackend({
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
+  // Object material look: specular punch at the mirror end (low roughness) -> matte end (high
+  // roughness). `detail` drives the per-class procedural texturing (0 off; autoscaled, off on mobile).
+  const materialDefaults = { specBoostHi: 20.0, specBoostLo: 6.0, detail: lowGfx ? 0 : 1 };
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
   // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
@@ -239,6 +242,10 @@ export function createWebGLBackend({
     uStarTwinkle: { value: starDefaults.twinkle },
     uMoonSize: { value: cloudLightDefaults.moonSize }, // moon disc half-size (billboard at uSunDir)
     uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
+    // Object materials: roughness-aware specular punch + procedural-detail strength (autoscaled).
+    uSpecBoostHi: { value: materialDefaults.specBoostHi },
+    uSpecBoostLo: { value: materialDefaults.specBoostLo },
+    uMaterialDetail: { value: materialDefaults.detail },
     uStarCube: { value: starCubeRT.texture }, // baked real stars, sampled by direction in reflections
     uCloudLightsTex: { value: cloudLights.tex },
     uCloudLightsTexW: { value: cloudLights.width },
@@ -410,6 +417,12 @@ export function createWebGLBackend({
       uniforms.uLightScale.value = p.lightScale;
       uniforms.uAmpGain.value = p.ampGain;
       bloomPass.strength = p.bloom;
+    },
+    materialDefaults,
+    setMaterials(p) {
+      uniforms.uSpecBoostHi.value = p.specBoostHi;
+      uniforms.uSpecBoostLo.value = p.specBoostLo;
+      if (p.detail !== undefined) uniforms.uMaterialDetail.value = p.detail;
     },
     cloudLightDefaults,
     setCloudLight,

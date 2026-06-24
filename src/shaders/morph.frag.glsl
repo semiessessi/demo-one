@@ -21,6 +21,8 @@ uniform float uAmpGain;    // how hard that subset reacts
 uniform int uShadowCap;    // FPS-autoscale caps (min'd with the distance-LOD caps below)
 uniform int uReflCap;
 uniform int uLightCap;
+uniform float uSpecBoostHi; // specular punch for near-mirror materials (low roughness)
+uniform float uSpecBoostLo; // specular punch for matte materials (high roughness)
 // uStarCube is declared by the prepended ocean.glsl (shared) -> avoid a duplicate-uniform link error
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
@@ -75,7 +77,10 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float NdotV = max(dot(N, V), 1e-4);
   float NdotH = max(dot(N, H), 0.0);
   float LdotH = max(dot(L, H), 0.0);
-  float specRough = min(roughness, 0.06); // clamp -> very tight, sprite-reflection-like highlights
+  // Roughness now drives the lobe across its FULL range (was clamped to 0.06, so every material got
+  // the same tiny sharp glint -> "black with bright speculars"). A small floor keeps a crisp
+  // point-light glint on near-mirror metals; high roughness genuinely widens + dims the lobe.
+  float specRough = clamp(roughness, 0.025, 1.0);
   float alpha = specRough * specRough;
   float wAlpha = clamp(alpha + 0.015 / (3.0 * dist), 0.0, 1.0); // minimal light-size widening -> tighter still
   float wAlpha2 = wAlpha * wAlpha;
@@ -87,9 +92,12 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow5(1.0 - LdotH);
-  // Diffuse uses the normal falloff; the specular highlight reaches 4x further (fallS) and is
-  // brighter, so it reads as a tight bright reflection of the light sprite.
-  return (diffuseAlbedo * fallD + D * Vis * F * 20.0 * fallS) * NdotL;
+  // Diffuse uses the normal falloff; the specular highlight reaches 4x further (fallS). The boost is
+  // roughness-aware: ~uSpecBoostHi for mirrors (a tiny lobe over a tiny light needs the punch to read
+  // as a sprite reflection), easing to uSpecBoostLo for matte (the GGX D already drops the peak there,
+  // so this keeps a soft sheen instead of a hard dot) -> the full metal..chalk range now reads.
+  float specBoost = mix(uSpecBoostLo, uSpecBoostHi, exp(-alpha * 8.0));
+  return (diffuseAlbedo * fallD + D * Vis * F * specBoost * fallS) * NdotL;
 }
 
 // --- Fast analytic occluder traces (exact-shape fast path) -----------------
