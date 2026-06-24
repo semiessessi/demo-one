@@ -23,6 +23,7 @@ uniform samplerCube uStarCube;   // baked starfield (reflected in the water)
 uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + level) mirrored about the sea
 uniform float uOceanReflOn;      // 1 when that reflection rendered this frame
 uniform float uOceanReflDistort; // how much the waves ripple-distort the planar reflection (screen-space)
+uniform float uOceanReady;       // 0..1 startup warm-up: the on-screen sea fades in (no first-frames garbage/fog)
 uniform sampler2D uOceanFFTDisp; // GPU FFT displacement (dx, dy, dz), tiled over world XZ
 uniform sampler2D uOceanFFTFoam; // accumulated foam (evolves over time), same tiling
 uniform float uOceanFFTOn;       // 0 analytic, 1 FFT, 2 FFT debug (height as grey)

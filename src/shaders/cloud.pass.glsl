@@ -43,9 +43,9 @@ void main() {
   // the wavy reflective sea; the clouds then composite IN FRONT (they sit above the ocean). Keep the
   // bright light sprites drawn over it (they're foreground glows), but let the dim starfield be
   // covered by the water (stars belong in the sky + the reflection, not on the surface).
-  if (d >= 1.0 && uOceanOn > 0.5 && rd.y < -0.001) {
-    vec3 ocn = ocean(uCamPos, rd, uTime, vUv);
+  if (d >= 1.0 && uOceanOn > 0.5 && rd.y < -0.001 && uOceanReady > 0.001) {
     vec3 sky = environment(rd);
+    vec3 ocn = mix(sky, ocean(uCamPos, rd, uTime, vUv), uOceanReady); // fade the sea IN over the warm-up -> no startup fog
     float fg = clamp((max(max(sceneCol.r, sceneCol.g), sceneCol.b)
                       - max(max(sky.r, sky.g), sky.b) - 0.12) * 5.0, 0.0, 1.0); // bright sprites -> 1, dim stars -> 0
     sceneCol = mix(ocn, sceneCol, fg);

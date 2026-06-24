@@ -66,7 +66,7 @@ class CloudPass extends Pass {
       uOceanDisp: shared.uOceanDisp, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
-      uOceanReflDistort: shared.uOceanReflDistort,
+      uOceanReflDistort: shared.uOceanReflDistort, uOceanReady: shared.uOceanReady,
       uOceanFFTDisp: shared.uOceanFFTDisp, uOceanFFTFoam: shared.uOceanFFTFoam,
       uOceanFFTOn: shared.uOceanFFTOn, uOceanFFTL: shared.uOceanFFTL,
     };
@@ -307,6 +307,7 @@ export function createWebGLBackend({
     uOceanOctaves: { value: oceanDefaults.octaves },
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
+    uOceanReady: { value: 0 },                     // 0..1 warm-up: the sea fades in over the first frames (no startup garbage/fog)
     uOceanReflDistort: { value: oceanDefaults.distort }, // wave ripple on the planar reflection
     // GPU FFT ocean: (dx, dy, dz) displacement texture + tile size; 0/1/2 = analytic / FFT / FFT-debug.
     uOceanFFTDisp: { value: oceanFFT ? oceanFFT.dispTexture : fftPlaceholder },
@@ -610,6 +611,7 @@ export function createWebGLBackend({
       sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
       if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
       if (!capture) uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither (frozen in capture -> reproducible)
+      uniforms.uOceanReady.value = capture ? 1 : Math.min(1, uniforms.uOceanReady.value + 0.04); // sea warm-up: fade in over ~25 frames (kills the startup ocean fog)
       if (oceanFFT && uniforms.uOceanFFTOn.value > 0.5) {
         oceanFFT.update(uniforms.uTime.value);         // evolve + IFFT the wave field, accumulate foam
         uniforms.uOceanFFTFoam.value = oceanFFT.foamTexture(); // ping-pong: rebind the latest foam buffer
