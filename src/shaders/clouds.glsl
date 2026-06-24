@@ -43,27 +43,38 @@ float cloudNoise(vec3 x) {
              mix(mix(cloudHash(i + vec3(0, 0, 1)), cloudHash(i + vec3(1, 0, 1)), f.x),
                  mix(cloudHash(i + vec3(0, 1, 1)), cloudHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
-float cloudFbm(vec3 p) {
+float cloudFbm(vec3 p, int oct) {
   float s = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { s += a * cloudNoise(p); p *= 2.02; a *= 0.5; }
+  for (int i = 0; i < 4; i++) { if (i >= oct) break; s += a * cloudNoise(p); p *= 2.02; a *= 0.5; }
   return s;
 }
 
 // Henyey-Greenstein phase (forward scattering -> silver lining toward the moon).
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566370614 * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5)); }
+// pow(x, 1.5) == x * sqrt(x), exactly, and cheaper than pow's exp2/log2 pair.
+float hg(float c, float g) { float g2 = g * g; float b = max(1.0 + g2 - 2.0 * g * c, 1e-4); return (1.0 - g2) / (12.566370614 * b * sqrt(b)); }
 // Interleaved-gradient (blue-noise-like) dither, texture-free.
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
 // Cloud density at a point: fbm shaped by a soft height gradient, thresholded by coverage.
-float cloudDensity(vec3 p, float time) {
+// `oct`/`ampScale` let the sun/shadow optical-depth march use a cheaper, smoother fbm.
+float cloudDensityOct(vec3 p, float time, int oct, float ampScale) {
   float dens = 0.0;
   float h = 1.0 - abs(p.y - uCloudBase) / max(uCloudThick, 1e-3); // 1 centre -> 0 at band edge
   if (h > 0.0) {
     h = smoothstep(0.0, 0.5, h); // feather the top and bottom of the band
     vec3 np = (p + uCloudWind * time) * uCloudNoiseScale;
-    dens = clamp(cloudFbm(np) * h - (1.0 - uCoverage), 0.0, 1.0) * uCloudDensity;
+    dens = clamp(cloudFbm(np, oct) * ampScale * h - (1.0 - uCoverage), 0.0, 1.0) * uCloudDensity;
   }
   return dens;
+}
+// Full-detail density for the silhouette (4 octaves).
+float cloudDensity(vec3 p, float time) { return cloudDensityOct(p, time, 4, 1.0); }
+// Cheaper density for the sun/shadow optical depth: Beer's exp smooths away the dropped
+// high-frequency octaves, so 2 are visually indistinguishable here. ampScale = 4-octave
+// weight-sum / this octave-sum -> the SAME mean optical depth (self-shadow strength unchanged).
+#define CLOUD_SHADOW_OCTAVES 3
+float cloudDensitySun(vec3 p, float time) {
+  return cloudDensityOct(p, time, CLOUD_SHADOW_OCTAVES, 0.9375 / (1.0 - exp2(-float(CLOUD_SHADOW_OCTAVES))));
 }
 
 // Cloud shadow for the SCENE: optical depth from a world point up toward the moon through the
@@ -75,7 +86,7 @@ float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
   float t0 = max(min(tA, tB), 0.0), t1 = max(tA, tB);
   if (t1 <= t0) return 1.0; // the up-ray doesn't cross the band
   float dt = (t1 - t0) / 4.0, dens = 0.0;
-  for (int i = 0; i < 4; i++) dens += cloudDensity(worldPos + sunDir * (t0 + dt * (float(i) + 0.5)), time);
+  for (int i = 0; i < 4; i++) dens += cloudDensitySun(worldPos + sunDir * (t0 + dt * (float(i) + 0.5)), time);
   return exp(-dens * dt * 1.2);
 }
 
@@ -118,7 +129,7 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
     if (dens <= 0.002) { t += step * 1.6; step *= growth; continue; } // coarse-step empty patches (step keeps growing)
     // 6-tap light-march toward the moon (increasing spacing) -> optical depth to the sun.
     float sunDensity = 0.0;
-    for (int j = 1; j <= 6; j++) sunDensity += cloudDensity(p + uSunDir * lightStep * float(j), time);
+    for (int j = 1; j <= 6; j++) sunDensity += cloudDensitySun(p + uSunDir * lightStep * float(j), time);
     // Beer octaves of the sun optical depth keep strong self-shadow contrast (form).
     float beer = exp(-sunDensity * 1.2) + 0.45 * exp(-sunDensity * 0.45) + 0.2 * exp(-sunDensity * 0.18);
     vec3 lum = uSunColor * (phase * beer * 1.6);
@@ -159,7 +170,7 @@ vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
   // Sample the volume's coverage field (at band centre, where it's densest) -> deck opacity, so the
   // analytic deck lines up with the marched band's gaps and puffs.
   vec3 np = (vec3(hit.x, uCloudBase, hit.z) + uCloudWind * time) * uCloudNoiseScale;
-  float cov = clamp((cloudFbm(np) - (1.0 - uCoverage)) * 3.0, 0.0, 1.0);
+  float cov = clamp((cloudFbm(np, 4) - (1.0 - uCoverage)) * 3.0, 0.0, 1.0);
   if (cov <= 0.002) return vec4(0.0);
   float phase = 0.4 + 1.3 * hg(dot(rd, uSunDir), uCloudHG);     // moon key (silver lining)
   vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + 0.03;

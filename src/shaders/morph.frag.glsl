@@ -65,7 +65,7 @@ float lookupNorm(float p) {
 }
 
 float falloff(float dist, float radius) {
-  float a = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
+  float a = clamp(1.0 - pow4(dist / radius), 0.0, 1.0);
   return a * a / (dist * dist + 1.0);
 }
 
@@ -86,7 +86,7 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithV = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
-  vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
+  vec3 F = F0 + (1.0 - F0) * pow5(1.0 - LdotH);
   // Diffuse uses the normal falloff; the specular highlight reaches 4x further (fallS) and is
   // brighter, so it reads as a tight bright reflection of the light sprite.
   return (diffuseAlbedo * fallD + D * Vis * F * 20.0 * fallS) * NdotL;
@@ -296,11 +296,12 @@ vec3 shadeDirect(vec3 p, vec3 N, vec3 V, vec3 albedo, float rough, float metal,
     vec3 L = lightPos - p;
     float dist = length(L);
     L /= max(dist, 1e-4);
-    float fallD = falloff(dist, colRad.w);           // diffuse: normal radius
-    float fallS = falloff(dist, colRad.w * 4.0);     // specular: reaches 4x the radius
+    // Cheap rejects first (back-facing / dark) so those lights never pay the falloff pow4s.
     float lum = max(colRad.r, max(colRad.g, colRad.b));
-    // skip lights that can't contribute: back-facing, beyond the specular reach, or dark
-    if (dot(N, L) <= 0.0 || fallS <= 1e-6 || lum <= 0.0) continue;
+    if (dot(N, L) <= 0.0 || lum <= 0.0) continue;
+    float fallS = falloff(dist, colRad.w * 4.0);     // specular: reaches 4x the radius
+    if (fallS <= 1e-6) continue;                     // beyond the specular reach
+    float fallD = falloff(dist, colRad.w);           // diffuse: normal radius
     int band = idx % 32;
     float hostSlot = floor(float(idx) / uLightsPerObject); // this light's host object rank
     // Lights fade in just after their host object; the ~30% amplitude subset uses ONLY the
@@ -363,7 +364,7 @@ void main() {
     vec3 F0 = mix(vec3(0.04), vColor, vMetal);
     vec3 Rdir = reflect(-V, N);
     float NdotV = max(dot(N, V), 0.0);
-    vec3 envF = F0 + (max(vec3(1.0 - vRough), F0) - F0) * pow(1.0 - NdotV, 5.0);
+    vec3 envF = F0 + (max(vec3(1.0 - vRough), F0) - F0) * pow5(1.0 - NdotV);
 
     float ht; vec3 hN; int hObj;
     vec3 refl;
@@ -399,7 +400,7 @@ void main() {
       if (e <= 1e-4) continue;
       float perp = length(toL - Rdir * tL);
       float r = perp / (0.3 + 0.5 * e);
-      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
+      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow6(1.0 - r) * 5.0;
     }
     for (int k = 0; reflLo >= 0 && k < reflLc && k < 128; k++) {
       int li = int(texelFetch(uLightIndexTex, texel(reflLo + k, uIndexTexW), 0).r + 0.5);
@@ -414,7 +415,7 @@ void main() {
       if (e <= 1e-4) continue;
       float perp = length(toL - Rdir * tL);
       float r = perp / (0.3 + 0.5 * e);
-      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow(1.0 - r, 6.0) * 5.0;
+      if (r < 1.0) refl += texelFetch(uLightsTex, texel(li * 2 + 1, uLightsTexW), 0).rgb * e * pow6(1.0 - r) * 5.0;
     }
     // Volumetric clouds IN FRONT of the reflected geometry (bounded by the reflected hit distance ht).
     refl = skyCloudsOver(refl, rro, Rdir, uTime, ht, int(uReflCloudSteps));

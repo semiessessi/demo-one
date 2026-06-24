@@ -110,7 +110,7 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
     vec4 sc = texture(uOceanReflTex, clamp(uv + ripple, 0.0, 1.0));
     reflCol = mix(reflCol, sc.rgb, clamp(sc.a, 0.0, 1.0));
   }
-  float fres = clamp(0.02 + 0.98 * pow(1.0 - max(dot(view, n), 0.0), 5.0), 0.0, 1.0);
+  float fres = clamp(0.02 + 0.98 * pow5(1.0 - max(dot(view, n), 0.0)), 0.0, 1.0);
 
   // --- Water shading: the Atlas/Acerola multiple-scattering model (GarrettGunnell/Water FFTWater). ---
   vec3 L = uSunDir;
@@ -120,8 +120,8 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   float lit = max(L.y, 0.0);                              // no moon contribution below the horizon
   // Subsurface / multiple scattering: k1 = peak backscatter toward the moon, k2 = view-dependent body
   // glow that fills the water with colour (the term that was missing), k3 = ambient diffuse scatter.
-  float k1 = uOceanScatterAmt * 4.0 * H * pow(max(dot(L, -view), 0.0), 4.0) * pow(max(0.5 - 0.5 * dot(L, n), 0.0), 3.0);
-  float k2 = uOceanScatterAmt * 1.2 * pow(max(dot(view, n), 0.0), 2.0);
+  float k1 = uOceanScatterAmt * 4.0 * H * pow4(max(dot(L, -view), 0.0)) * pow3(max(0.5 - 0.5 * dot(L, n), 0.0));
+  float k2 = uOceanScatterAmt * 1.2 * pow2(max(dot(view, n), 0.0));
   float k3 = uOceanScatterAmt * 0.3 * ndotl;
   vec3 scatter = (k1 + k2 + k3) * uOceanScatter * sunIrr * lit;
   scatter += uOceanColor + uOceanColor * environment(n) * 6.0; // deep-water base + sky-ambient fill (less empty)

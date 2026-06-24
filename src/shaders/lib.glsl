@@ -66,7 +66,7 @@ vec3 animLightDir(int idx, float t, float kick) {
 // linger far longer than others. Returns the raw flare; the caller folds it into the
 // spawn emission below.
 float lightFadeRate(int idx) {
-  return 3.0 * pow(2.0, float(hash(uint(idx)) % 8u) * 0.5); // ~3..34 /s — flashes fade fast (don't linger)
+  return 3.0 * exp2(float(hash(uint(idx)) % 8u) * 0.5); // ~3..34 /s — flashes fade fast (don't linger)
 }
 float musicFlare(int idx, float beatTime, float strength, float now, float pitchFactor) {
   float age = now - beatTime;
@@ -132,7 +132,7 @@ float ripplePulse(vec3 worldPos, vec4 ripples[N_RIPPLES], float now) {
     if (age < 0.0 || age > 3.0) continue;                 // RIPPLE_LIFE = 3s
     float radius = age * 18.0;                            // RIPPLE_SPEED = 18 u/s
     float d = distance(worldPos, ripples[i].xyz);
-    float shell = exp(-pow((d - radius) / 4.0, 2.0));     // RIPPLE_WIDTH = 4
+    float shell = exp(-pow2((d - radius) * 0.25));        // RIPPLE_WIDTH = 4
     sum += shell * (1.0 - age / 3.0);                     // fade over the ripple's life
   }
   return sum * 2.5;                                       // RIPPLE_BRIGHT
