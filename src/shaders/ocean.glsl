@@ -103,8 +103,8 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   // (rippled by the wave normal), all weighted by a water Fresnel (F0 = 0.02).
   vec3 refl = reflect(rd, n); refl.y = abs(refl.y);
   vec3 reflCol = environment(refl) + texture(uStarCube, refl).rgb;
-  if (full) reflCol = skyCloudsOver(reflCol, hit, refl, t, 1e9, int(uReflCloudSteps));
-  if (full && uOceanReflOn > 0.5) {
+  reflCol = skyCloudsOver(reflCol, hit, refl, t, 1e9, int(uReflCloudSteps)); // clouds in the sea reflection — BOTH paths now (matches the on-screen sea)
+  if (full && uOceanReflOn > 0.5) { // planar scene reflection: on-screen pass only (it's screen-space; meaningless on an object's reflection ray)
     vec2 ripple = n.xz * uOceanReflDistort * (1.0 + tHit * 0.01);
     vec4 sc = texture(uOceanReflTex, clamp(uv + ripple, 0.0, 1.0));
     reflCol = mix(reflCol, sc.rgb, clamp(sc.a, 0.0, 1.0));
