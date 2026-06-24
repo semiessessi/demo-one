@@ -199,7 +199,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
             const seg = Math.floor(bt), u = bt - seg;   // hop index (loops via %N) + progress
             const A = pads[((seg % N) + N) % N], B = pads[(((seg + 1) % N) + N) % N], C = pads[(((seg + 2) % N) + N) % N];
             const arc = 4.0 * u * (1.0 - u);            // 0 -> 1 -> 0 parabola
-            const hopH = Math.min(Math.max(A.apex[1], B.base[1]) - A.base[1] + 6.0, 26.0); // toward the real apex, capped
+            const hopH = Math.min(Math.max(B.base[1] - A.base[1], 0.0) + 9.0, 14.0); // gentle perimeter hop — low enough to clear the central platform (don't arc to the high central apex)
             spx = A.base[0] + (B.base[0] - A.base[0]) * u;
             spz = A.base[2] + (B.base[2] - A.base[2]) * u;
             spy = A.base[1] + EYE + (B.base[1] - A.base[1]) * u + arc * hopH;

@@ -36,12 +36,19 @@ export function buildBspJumpPads(parsed, transform) {
     pads.push({ base, apex });
   }
 
-  // Order around the arena centre so consecutive hops sweep around the yard (a clean loop).
-  if (pads.length > 1) {
-    let cx = 0, cz = 0;
-    for (const p of pads) { cx += p.base[0]; cz += p.base[2]; }
-    cx /= pads.length; cz /= pads.length;
-    pads.sort((a, b) => Math.atan2(a.base[2] - cz, a.base[0] - cx) - Math.atan2(b.base[2] - cz, b.base[0] - cx));
-  }
-  return pads;
+  if (!pads.length) return pads;
+  // Arena centre (all pads).
+  let cx = 0, cz = 0;
+  for (const p of pads) { cx += p.base[0]; cz += p.base[2]; }
+  cx /= pads.length; cz /= pads.length;
+  const rad = (p) => Math.hypot(p.base[0] - cx, p.base[2] - cz);
+  // Drop the CENTRAL pads (the ones on the central structure that launch up to the top platform —
+  // a camera arc off them clips the platform). Keep the OUTER ring so hops sweep the perimeter only.
+  let maxR = 0;
+  for (const p of pads) maxR = Math.max(maxR, rad(p));
+  let ring = pads.filter((p) => rad(p) >= 0.5 * maxR);
+  if (ring.length < 2) ring = pads; // don't strip everything on an odd layout
+  // Order around the centre so consecutive hops sweep around the yard (a clean perimeter loop).
+  ring.sort((a, b) => Math.atan2(a.base[2] - cz, a.base[0] - cx) - Math.atan2(b.base[2] - cz, b.base[0] - cx));
+  return ring;
 }
