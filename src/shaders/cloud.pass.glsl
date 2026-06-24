@@ -44,7 +44,7 @@ void main() {
   // bright light sprites drawn over it (they're foreground glows), but let the dim starfield be
   // covered by the water (stars belong in the sky + the reflection, not on the surface).
   if (d >= 1.0 && uOceanOn > 0.5 && rd.y < -0.001) {
-    vec3 ocn = ocean(uCamPos, rd, uTime);
+    vec3 ocn = ocean(uCamPos, rd, uTime, vUv);
     vec3 sky = environment(rd);
     float fg = clamp((max(max(sceneCol.r, sceneCol.g), sceneCol.b)
                       - max(max(sky.r, sky.g), sky.b) - 0.12) * 5.0, 0.0, 1.0); // bright sprites -> 1, dim stars -> 0

@@ -57,6 +57,7 @@ class CloudPass extends Pass {
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
       uOceanScatter: shared.uOceanScatter, uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
+      uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -110,6 +111,7 @@ export function createWebGLBackend({
     50, window.innerWidth / window.innerHeight, 0.1, 300,
   );
   camera.position.set(24, 17, 31);
+  camera.layers.enable(1); // layer 1 = sky dome / stars / moon — excluded from the planar ocean reflection
 
   // Shared fly camera (three-instance-agnostic). Null in capture mode, where setView
   // pins the camera for deterministic frames. Main scene runs the orbit intro; the
@@ -237,6 +239,8 @@ export function createWebGLBackend({
     uOceanScatter: { value: new THREE.Color(oceanDefaults.scatter) },
     uOceanFog: { value: oceanDefaults.fog },
     uOceanWave: { value: oceanDefaults.wave },
+    uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
+    uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -294,13 +298,14 @@ export function createWebGLBackend({
   // Gradient backdrop dome (clouds are now the fullscreen CloudPass, composited over this + scene).
   // Kept centred on the camera each frame (render()) so the gradient sky is at infinity.
   const sky = buildSky();
+  sky.layers.set(1); // sky/stars/moon on layer 1 -> the planar reflection (the ocean does sky analytically)
   scene.add(sky);
   // Real-star background (async: the catalogue is code-split out of the main bundle). Added when it
   // resolves; the CloudPass then dims the stars where the cloud is thick.
   let starPoints = null;
   buildStarfield({ uTime: uniforms.uTime, uStarSize: uniforms.uStarSize, uStarTwinkle: uniforms.uStarTwinkle })
-    .then((m) => { bakeStarCubemap(renderer, m, starCubeRT); scene.add(m); starPoints = m; }).catch(() => {});
-  buildMoon(uniforms).then((m) => scene.add(m)).catch(() => {}); // additive moon billboard at uSunDir
+    .then((m) => { bakeStarCubemap(renderer, m, starCubeRT); m.layers.set(1); scene.add(m); starPoints = m; }).catch(() => {});
+  buildMoon(uniforms).then((m) => { m.layers.set(1); scene.add(m); }).catch(() => {}); // additive moon billboard at uSunDir
 
   // The scene renders into our own target so the CloudPass can read its depth and composite the
   // clouds IN FRONT of geometry (the march stops at that depth). Rebuilt on resize.
@@ -309,6 +314,17 @@ export function createWebGLBackend({
     depthTexture: new THREE.DepthTexture(Math.max(1, w | 0), Math.max(1, h | 0)),
   });
   let sceneRT = makeSceneRT(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+
+  // Planar ocean reflection: render the scene (objects + sprites + level — layer 0; the sky/stars are
+  // done analytically in the ocean shader) mirrored about the sea plane into a HALF-res target with
+  // alpha (object coverage), which the ocean samples. FPS-autoscaled: skipped under load.
+  const makeReflRT = (w, h) => new THREE.WebGLRenderTarget(Math.max(1, (w / 2) | 0), Math.max(1, (h / 2) | 0), { type: rtType });
+  let reflRT = makeReflRT(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+  const reflCam = new THREE.PerspectiveCamera();
+  reflCam.matrixAutoUpdate = false;
+  const reflMat = new THREE.Matrix4();
+  let oceanReflQuality = true; // gated by setQualityScale
+  uniforms.uOceanReflTex.value = reflRT.texture;
 
   const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
   const composer = new EffectComposer(renderer); // half-float render targets
@@ -443,6 +459,7 @@ export function createWebGLBackend({
       uniforms.uCloudLightCap.value = Math.max(8, Math.round(48 * s));
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(8, Math.round(uniforms.uMapBrushCount.value * s)) : 0; // raytraced map shadows
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
+      oceanReflQuality = s > 0.6; // shed the planar ocean reflection (a 2nd scene render) under load
     },
     mapDefaults,
     setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapGlowScale.value = p.glowScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
@@ -464,6 +481,9 @@ export function createWebGLBackend({
       const p = renderer.getPixelRatio();
       sceneRT.dispose();
       sceneRT = makeSceneRT(w * p, h * p);
+      reflRT.dispose();
+      reflRT = makeReflRT(w * p, h * p);
+      uniforms.uOceanReflTex.value = reflRT.texture;
     },
     render() {
       if (flycam) flycam.update(camera);
@@ -473,6 +493,23 @@ export function createWebGLBackend({
       sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
       if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
       uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
+      // Planar ocean reflection: render layer-0 geometry (objects + sprites + level) from the camera
+      // mirrored about the sea plane into reflRT. Gated by the FPS autoscaler (oceanReflQuality).
+      if (oceanReflQuality && uniforms.uOceanOn.value > 0.5) {
+        const h = uniforms.uOceanY.value;
+        reflMat.set(1, 0, 0, 0, 0, -1, 0, 2 * h, 0, 0, 1, 0, 0, 0, 0, 1); // mirror about y = h
+        reflCam.matrixWorld.multiplyMatrices(reflMat, camera.matrixWorld);
+        reflCam.matrixWorldInverse.copy(reflCam.matrixWorld).invert();
+        reflCam.projectionMatrix.copy(camera.projectionMatrix);
+        reflCam.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+        renderer.setRenderTarget(reflRT);
+        renderer.setClearColor(0x000000, 0); renderer.clear();
+        renderer.render(scene, reflCam); // layer 0 only (sky/stars/moon are layer 1 -> skipped)
+        renderer.setClearColor(0x050505, 1);
+        uniforms.uOceanReflOn.value = 1;
+      } else {
+        uniforms.uOceanReflOn.value = 0;
+      }
       renderer.setRenderTarget(sceneRT);
       renderer.render(scene, camera); // scene (objects + sprites + gradient dome) -> colour + depth
       cloudPass.setScene(sceneRT);
