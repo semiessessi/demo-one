@@ -205,10 +205,13 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
 // march, sharing the same coverage field, composites in front where it has detail). ~1 fbm/pixel.
 uniform float uFarDeckOn; // 0/1 toggle
 vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
-  if (uCloudsOn < 0.5 || uFarDeckOn < 0.5) return vec4(0.0);
+  if (uCloudsOn < 0.5 || uFarDeckOn < 0.5 || rd.y > -1e-3) return vec4(0.0); // off, or not looking down
   float yTop = uCloudBase + uCloudThick;
-  if (ro.y < yTop || rd.y > -1e-3) return vec4(0.0);            // only from above the deck, looking down
   float tTop = (yTop - ro.y) / rd.y;
+  if (tTop <= 0.0) return vec4(0.0);                            // deck plane behind/above -> camera still in or below the band
+  // Fade the deck IN over the first ~10 units above the band top so it doesn't POP on as the camera
+  // climbs through the cloud-tops (replaces a hard `ro.y < yTop` cutoff that snapped the deck in).
+  float hgate = smoothstep(yTop - 1.0, yTop + 10.0, ro.y);
   vec3 hit = ro + rd * tTop;
   // Sample the volume's coverage field (at band centre, where it's densest) -> deck opacity, so the
   // analytic deck lines up with the marched band's gaps and puffs.
@@ -219,7 +222,7 @@ vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
   float phase = 0.4 + 1.3 * mix(hg(cosD, uCloudHG), hg(cosD, -uCloudHGBack) + 0.5 * hg(cosD, uCloudHG), uCloudBackMix); // moon key (silver lining + back-lobe rim)
   vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + vec3(0.018, 0.024, 0.04);
   float fog = 1.0 - exp(-tTop * 0.0022);                        // aerial perspective -> dissolves at the horizon
-  return vec4(mix(lit, environment(rd), fog), cov * (1.0 - fog * 0.85));
+  return vec4(mix(lit, environment(rd), fog), cov * (1.0 - fog * 0.85) * hgate); // hgate fades the deck in on the climb
 }
 
 // Composite the cloud march over a given background colour (used by reflections).
