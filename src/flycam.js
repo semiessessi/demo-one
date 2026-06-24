@@ -66,6 +66,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   // Critically-damped output state (auto mode): smoothed position + look angles and their velocities.
   let outPx = px, outPy = py, outPz = pz, outVx = 0, outVy = 0, outVz = 0;
   let outYaw = 0, outPitch = 0, outVyaw = 0, outVpitch = 0, outInit = false;
+  let arenaPads = null; // wrackdm17 jump-pad arcs (world space, ordered around the yard), set after the BSP streams in
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
   function aim(tx, ty, tz) {
@@ -176,32 +177,54 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spy = sphereR * 0.35 - sphereR * 1.65 * dip;          // +0.35R down to -1.3R (the bottom)
           spz = Math.sin(wang) * wr;
           stx = 0; sty = 0; stz = 0;                            // look at the centre -> ends looking up
-        } else {
-          // Approach + tour the wrackdm17 arena. Continuous with the wide-orbit's bottom-centre end.
-          // Phase A: rise in from the LEFT (-x). B: fly DOWN THE MIDDLE (left->centre->right, look
-          // ahead). C: BOUNCE around the arena like the jump pads, settling on the central structures.
-          const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
-          const startY = -sphereR * 1.3; // = the wide-orbit's end, so fp=0 is seamless
-          if (fp < 0.4) {
-            const a = smooth(fp / 0.4);                         // rise from the bottom to the arena's left side
-            spx = -ARENA_HALF * 1.5 * a;
-            spy = startY + (ARENA_EYE - startY) * a;
-            spz = 0.0;
-            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;             // watch the arena as it approaches from the left
-          } else if (fp < 0.7) {
-            const a = smooth((fp - 0.4) / 0.3);                 // down the middle: left -> centre -> right
-            spx = -ARENA_HALF * 1.5 + ARENA_HALF * 2.4 * a;
-            spy = ARENA_EYE + Math.sin(a * Math.PI) * 8.0;      // a gentle rise over the centre
-            spz = 0.0;
-            stx = spx + 24.0; sty = ARENA_LOOK; stz = 0.0;      // look AHEAD down the middle (no look-at-centre degeneracy)
+        } else if (arenaPads) {
+          // BOUNCE on the real jump pads (positions from the BSP entities), looping around the yard.
+          // Entry: rise from the wide-orbit's bottom up ONTO the first pad. Then hop pad->pad forever
+          // (a continuous loop) on parabolic arcs toward each pad's real launch apex.
+          const pads = arenaPads, N = pads.length;
+          const startY = -sphereR * 1.3;  // = the wide-orbit's bottom-centre end -> seamless at the handoff
+          const ENTRY = 8.0;              // seconds rising up onto the first pad
+          const EYE = 5.0;                // camera height above a pad surface
+          const HOP = 1.7;                // seconds per pad-to-pad hop
+          const tIn = introT - FLYUP_START;
+          const p0 = pads[0], p1 = pads[1 % N];
+          if (tIn < ENTRY) {
+            const a = smooth(clamp(tIn / ENTRY, 0, 1)); // rise from below up onto the first pad
+            spx = p0.base[0] * a;
+            spy = startY + (p0.base[1] + EYE - startY) * a;
+            spz = p0.base[2] * a;
+            stx = p1.base[0] * a; sty = (p0.base[1] + 6.0) + (p1.base[1] - p0.base[1]) * a; stz = p1.base[2] * a; // ease look to the first landing pad
           } else {
-            const a = smooth((fp - 0.7) / 0.3);                 // bounce around the pads, then settle
-            const r = ARENA_HALF * 0.9;                          // = phase-B end x, so the handoff is seamless
-            const settle = 1.0 - smooth(clamp((a - 0.65) / 0.35, 0, 1)); // ease the hops to a stop at the very end
-            spx = Math.cos(a * TWO_PI) * r;
-            spz = Math.sin(a * TWO_PI) * r;
-            spy = ARENA_EYE + Math.abs(Math.sin(a * 3.0 * Math.PI)) * 16.0 * settle; // ~3 jump-pad hops
-            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;             // keep the central structure framed
+            const bt = (tIn - ENTRY) / HOP;
+            const seg = Math.floor(bt), u = bt - seg;   // hop index (loops via %N) + progress
+            const A = pads[((seg % N) + N) % N], B = pads[(((seg + 1) % N) + N) % N], C = pads[(((seg + 2) % N) + N) % N];
+            const arc = 4.0 * u * (1.0 - u);            // 0 -> 1 -> 0 parabola
+            const hopH = Math.min(Math.max(A.apex[1], B.base[1]) - A.base[1] + 6.0, 26.0); // toward the real apex, capped
+            spx = A.base[0] + (B.base[0] - A.base[0]) * u;
+            spz = A.base[2] + (B.base[2] - A.base[2]) * u;
+            spy = A.base[1] + EYE + (B.base[1] - A.base[1]) * u + arc * hopH;
+            stx = B.base[0] + (C.base[0] - B.base[0]) * u * 0.3; // look toward the landing pad, leading into the next
+            sty = B.base[1] + 6.0;
+            stz = B.base[2] + (C.base[2] - B.base[2]) * u * 0.3;
+          }
+        } else {
+          // Fallback until the BSP streams in: approach left -> down the middle -> bounce (approximation).
+          const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
+          const startY = -sphereR * 1.3;
+          if (fp < 0.4) {
+            const a = smooth(fp / 0.4);
+            spx = -ARENA_HALF * 1.5 * a; spy = startY + (ARENA_EYE - startY) * a; spz = 0.0;
+            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;
+          } else if (fp < 0.7) {
+            const a = smooth((fp - 0.4) / 0.3);
+            spx = -ARENA_HALF * 1.5 + ARENA_HALF * 2.4 * a; spy = ARENA_EYE + Math.sin(a * Math.PI) * 8.0; spz = 0.0;
+            stx = spx + 24.0; sty = ARENA_LOOK; stz = 0.0;
+          } else {
+            const a = smooth((fp - 0.7) / 0.3); const r = ARENA_HALF * 0.9;
+            const settle = 1.0 - smooth(clamp((a - 0.65) / 0.35, 0, 1));
+            spx = Math.cos(a * TWO_PI) * r; spz = Math.sin(a * TWO_PI) * r;
+            spy = ARENA_EYE + Math.abs(Math.sin(a * 3.0 * Math.PI)) * 16.0 * settle;
+            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;
           }
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
@@ -283,6 +306,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     mode = 'intro';
   }
   function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }
+  function setArenaPads(pads) { arenaPads = (pads && pads.length >= 2) ? pads : null; } // BSP jump-pad arcs -> finale bounce loop
   function dispose() {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
@@ -292,7 +316,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     window.removeEventListener('mousemove', onMouseMove);
   }
 
-  return { update, setPose, startIntro, setMusicLevel, dispose };
+  return { update, setPose, startIntro, setMusicLevel, setArenaPads, dispose };
 }
 
 // Sample the intro camera trajectory — the orbit spiral around `focal` (introT 0..ORBIT_DUR)

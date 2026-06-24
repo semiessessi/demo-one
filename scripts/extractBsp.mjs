@@ -67,14 +67,15 @@ function extractEntry(zip, wanted) {
   throw new Error(`entry not found: ${wanted}`);
 }
 
-// Repack a full IBSP down to only the lumps src/bsp.js reads (textures, planes, brushes,
-// brushsides, vertexes, meshverts, faces). Drops the big unused lumps (visdata, models, nodes,
-// leafs, lightmaps, lightgrid, entities) -> a much smaller file to stream. Stays a valid IBSP v46
+// Repack a full IBSP down to only the lumps src/bsp.js reads: the draw geometry (textures, planes,
+// brushes, brushsides, vertexes, meshverts, faces) PLUS entities(0) + models(7) — the latter two are
+// tiny (text + AABBs) and carry the jump-pad / teleporter entity data the finale camera bounces on.
+// Drops the big unused lumps (visdata, nodes, leafs, lightmaps, lightgrid). Stays a valid IBSP v46
 // (other lumps just have length 0), so the parser is unchanged.
 function slimBsp(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) !== 'IBSP') throw new Error('not IBSP');
-  const KEEP = new Set([1, 2, 8, 9, 10, 11, 13]);
+  const KEEP = new Set([0, 1, 2, 7, 8, 9, 10, 11, 13]);
   const lumps = [];
   for (let i = 0; i < 17; i++) lumps.push({ off: dv.getInt32(8 + i * 8, true), len: dv.getInt32(8 + i * 8 + 4, true) });
   let outLen = 144; // 8-byte header + 17 * 8-byte directory

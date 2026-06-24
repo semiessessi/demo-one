@@ -34,6 +34,7 @@ import { buildBspMesh, buildBspMaterial, buildGlowMaterial } from '../bspMesh.js
 import { streamBspTextures } from '../bspTextures.js';
 import { buildBspLights } from '../bspLights.js';
 import { buildBspOccluders } from '../bspOccluders.js';
+import { buildBspJumpPads } from '../bspJumpPads.js';
 
 // Fullscreen pass: composite the volumetric clouds over the rendered scene using its depth, so the
 // clouds sit IN FRONT of geometry (march stops at the scene distance). The scene target is set each
@@ -485,6 +486,8 @@ export function createWebGLBackend({
       const parsed = parseBSP(buf);
       const built = buildBspMesh(parsed, manifest); // { opaque, transparent, glow, transform }
       bspTransform = built.transform;
+      flycam?.setArenaPads(buildBspJumpPads(parsed, built.transform)); // real jump-pad arcs -> the finale bounce loop
+      if (flycam) console.log(`[map] jump pads: ${buildBspJumpPads(parsed, built.transform).length}`);
       // Synthesise the level's point lights (from emissive faces) + convex brush shadow occluders.
       const mapLights = buildBspLights(parsed, built.transform);
       const ld = new Float32Array(Math.max(1, mapLights.length) * 2 * 4);

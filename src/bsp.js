@@ -8,7 +8,7 @@
 
 // Canonical Q3 lump indices ("Unofficial Quake 3 BSP Format").
 const LUMP = {
-  TEXTURES: 1, PLANES: 2, BRUSHES: 8, BRUSHSIDES: 9,
+  ENTITIES: 0, TEXTURES: 1, PLANES: 2, MODELS: 7, BRUSHES: 8, BRUSHSIDES: 9,
   VERTEXES: 10, MESHVERTS: 11, FACES: 13,
 };
 
@@ -106,6 +106,30 @@ export function parseBSP(arrayBuffer) {
     });
   }
 
+  // --- Entities (lump 0): a text blob of { "key" "value" ... } blocks (jump pads, teleporters, etc.) ---
+  const eL = lump(LUMP.ENTITIES);
+  const entText = new TextDecoder().decode(new Uint8Array(arrayBuffer, eL.offset, eL.length));
+  const entities = [];
+  const block = /\{([^}]*)\}/g, kv = /"([^"]*)"\s*"([^"]*)"/g;
+  let mb;
+  while ((mb = block.exec(entText))) {
+    const ent = {}; let mk;
+    kv.lastIndex = 0;
+    while ((mk = kv.exec(mb[1]))) ent[mk[1]] = mk[2];
+    entities.push(ent);
+  }
+
+  // --- Models (lump 7): 40 bytes (mins.xyz, maxs.xyz, face, n_faces, brush, n_brushes). model "*N"
+  // (brush entities like trigger_push) -> models[N], whose AABB centre is the entity's world position.
+  const mL = lump(LUMP.MODELS);
+  const models = [];
+  for (let o = mL.offset; o + 40 <= mL.offset + mL.length; o += 40) {
+    models.push({
+      mins: [dv.getFloat32(o, true), dv.getFloat32(o + 4, true), dv.getFloat32(o + 8, true)],
+      maxs: [dv.getFloat32(o + 12, true), dv.getFloat32(o + 16, true), dv.getFloat32(o + 20, true)],
+    });
+  }
+
   return { version, textures, planes, brushes, brushSides,
-    verts: { position, normal, uv, color, count: nVerts }, meshverts, faces };
+    verts: { position, normal, uv, color, count: nVerts }, meshverts, faces, entities, models };
 }
