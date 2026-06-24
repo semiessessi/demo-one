@@ -22,6 +22,21 @@ export function createCloudLights(lights, lightsPerObject) {
   const st = { lightsPerObject, spawn: 0, lightTime: 0, musicTime: 0, amplitude: 0, ampGain: 0,
     beatTime: null, beatStrength: null, beatSeed: null, beatDecay: null };
 
+  // Cache of light indices whose HOST y is in/near the cloud band. Host y (lights[i].pos[1]) is
+  // static, so band membership only changes when uCloudBase/uCloudThick do (debug GUI) — rebuild
+  // then, not every frame. Replaces a full ~120k-light scan per frame with the in-band subset.
+  let bandIdx = new Int32Array(0);
+  let bandCount = 0;
+  let cachedYLo = NaN, cachedYHi = NaN;
+  function rebuildBand(yLo, yHi) {
+    let n = 0;
+    for (let i = 0; i < lights.length; i++) { const ly = lights[i].pos[1]; if (ly >= yLo && ly <= yHi) n++; }
+    if (bandIdx.length < n) bandIdx = new Int32Array(n);
+    let k = 0;
+    for (let i = 0; i < lights.length; i++) { const ly = lights[i].pos[1]; if (ly >= yLo && ly <= yHi) bandIdx[k++] = i; }
+    bandCount = n; cachedYLo = yLo; cachedYHi = yHi;
+  }
+
   // Reads the per-frame music/spawn state from `u` (the shared uniforms), repacks the texture and
   // sets u.uCloudLightCount. camPos is the camera world position (THREE.Vector3).
   function update(u, camPos) {
@@ -37,16 +52,16 @@ export function createCloudLights(lights, lightsPerObject) {
 
     const base = u.uCloudBase.value, thick = u.uCloudThick.value;
     const yLo = base - thick - BAND_MARGIN, yHi = base + thick + BAND_MARGIN;
+    if (yLo !== cachedYLo || yHi !== cachedYHi) rebuildBand(yLo, yHi);
     const cx = camPos.x, cy = camPos.y, cz = camPos.z;
 
     let count = 0, minScore = Infinity, minSlot = -1;
-    for (let i = 0; i < lights.length; i++) {
-      const ly = lights[i].pos[1];
-      if (ly < yLo || ly > yHi) continue; // only lights in/near the band light the cloud
+    for (let bi = 0; bi < bandCount; bi++) {
+      const i = bandIdx[bi]; // only lights in/near the band (cached)
       const b = cloudLightBrightness(i, st);
       if (b <= 1e-4) continue; // dark right now -> contributes nothing
       const p = lights[i].pos;
-      const dx = p[0] - cx, dy = ly - cy, dz = p[2] - cz;
+      const dx = p[0] - cx, dy = p[1] - cy, dz = p[2] - cz;
       const score = b / (1.0 + 0.01 * (dx * dx + dy * dy + dz * dz));
       if (count < cap) {
         pickIdx[count] = i; pickScore[count] = score; pickBright[count] = b;

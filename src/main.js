@@ -553,11 +553,14 @@ function frame() {
   }
   if (lightsMoving) lightTime += dt;
   if (!CAPTURE) updateMusic(dt); // advances scalePhase (note count) used by the spawn below
-  backend.setMorph(morphState.step(musicClock)); // CPU note-stepped morph -> per-object p
+  const morphP = morphState.step(musicClock); // CPU note-stepped morph -> per-object p
+  if (morphState.dirty) { backend.setMorph(morphP); morphState.clearDirty(); } // skip the upload on calm frames
+
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
   if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
-  if (!CAPTURE) backend.setAmplitude(audio.getAmplitude()); // measured RMS -> amplitude-reactive lights
+  const amp = audio.getAmplitude(); // measured RMS, once per frame (reused by the notes overlay below)
+  if (!CAPTURE) backend.setAmplitude(amp); // -> amplitude-reactive lights
   // Prompt for a click ONLY if audio is genuinely blocked: we're playing, the context still
   // isn't running, and it's had its grace window to autostart — so allowed-autoplay sessions
   // (where the music just starts) never flash the prompt.
@@ -589,7 +592,7 @@ function frame() {
     }
   }
   if (notesOn) {
-    const bars = Math.min(28, Math.round(audio.getAmplitude() * 90)); // output RMS -> a level bar
+    const bars = Math.min(28, Math.round(amp * 90)); // output RMS -> a level bar (reuses the cached amp)
     let s = `♪ ${musicClock.toFixed(2)}s\namp ${'█'.repeat(bars)}${'░'.repeat(28 - bars)}\n`;
     for (let b = 0; b < N_BANDS; b++) {
       if (musicClock - beatTime[b] < 0.4 && slotPitch[b] > 0) {

@@ -25,6 +25,9 @@ export function createMorphState(count) {
   const t0 = new Float32Array(count);     // music-clock time the current lerp started
   const dir = new Int8Array(count);       // +1 / -1 walk direction
   const animating = new Uint8Array(count);
+  // `dirty` tracks whether p changed since the last GPU upload, so the per-frame texture upload
+  // can be skipped on calm frames (no object morphing). Starts true so the seeded initial p uploads.
+  let dirty = true;
 
   function reset() {
     for (let i = 0; i < count; i++) {
@@ -36,6 +39,7 @@ export function createMorphState(count) {
     // in the journey (midToDodecaSegment ends at 8). Override after the seeding loop so the RNG
     // sequence for every other object is unchanged (capture stays deterministic).
     if (count > 0) { p[0] = 8; p0[0] = 8; target[0] = 8; }
+    dirty = true;
   }
   reset();
 
@@ -44,8 +48,8 @@ export function createMorphState(count) {
     for (let i = 0; i < count; i++) {
       if (!animating[i]) continue;
       const a = (now - t0[i]) / STEP_DUR;
-      if (a >= 1) { p[i] = target[i]; animating[i] = 0; }
-      else if (a > 0) p[i] = p0[i] + (target[i] - p0[i]) * smooth(a);
+      if (a >= 1) { p[i] = target[i]; animating[i] = 0; dirty = true; }
+      else if (a > 0) { p[i] = p0[i] + (target[i] - p0[i]) * smooth(a); dirty = true; }
     }
     return p;
   }
@@ -68,5 +72,5 @@ export function createMorphState(count) {
     }
   }
 
-  return { step, onNote, reset, p };
+  return { step, onNote, reset, p, get dirty() { return dirty; }, clearDirty() { dirty = false; } };
 }
