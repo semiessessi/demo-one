@@ -594,7 +594,12 @@ function frame() {
 
   backend.setTime(morphTime);
   backend.setLightTime(lightTime);
-  if (!CAPTURE) backend.setSpawn(Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE)));
+  // Spawn-in count from the music, then SHRINK the whole field back out over the finale climb
+  // (fieldFade 0->1 ramps uSpawn back to 0 — the inverse of the spawn-in), so dm17 stands alone.
+  if (!CAPTURE) {
+    const spawnN = Math.min(objects.length + 2, demoSpawnCount(scalePhase * SPAWN_NOTE_SCALE));
+    backend.setSpawn(spawnN * (1 - backend.fieldFade()));
+  }
   const amp = audio.getAmplitude(); // measured RMS, once per frame (reused by the notes overlay below)
   if (!CAPTURE) backend.setAmplitude(amp); // -> amplitude-reactive lights
   // Prompt for a click ONLY if audio is genuinely blocked: we're playing, the context still

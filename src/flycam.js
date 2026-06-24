@@ -27,6 +27,11 @@ const ROLL_SPEED = 1.2;         // peak barrel-roll rate (rad/s) -> a few full r
 const FINALE_START = 77.0;
 const FLYUP_START = 110.0;
 const FLYUP_END = 138.0;
+// Clear the object field (shapes + sprites + their lights + the cloud colour bleed) as the finale
+// climbs to the arena, so dm17 stands alone above the clouds. Driven by ramping uSpawn back to 0
+// (everything keys off the spawn fade), applied in main.js via fieldFade().
+const FIELD_CLEAR_START = FLYUP_START + 14.0; // ~124s — during the climb, as the look pans up to the level
+const FIELD_CLEAR_DUR = 11.0;
 const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const MAP_LOOK_Y = 92.0; // the finale settles looking back at the wrackdm17 level floating above the deck (bspMesh PLACE.floorY 64 + ~half height)
 // wrackdm17 arena (origin-centred above the clouds; bspMesh PLACE floor 64, footprint ~100u). The
@@ -316,7 +321,10 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     window.removeEventListener('mousemove', onMouseMove);
   }
 
-  return { update, setPose, startIntro, setMusicLevel, setArenaPads, dispose };
+  // 0..1 ramp over the finale climb -> main.js scales uSpawn down by it, shrinking the field out
+  // (the inverse of the spawn-in). Frozen in free/hold (introT not advancing) so manual flight keeps it.
+  function fieldFade() { return clamp((introT - FIELD_CLEAR_START) / FIELD_CLEAR_DUR, 0, 1); }
+  return { update, setPose, startIntro, setMusicLevel, setArenaPads, fieldFade, dispose };
 }
 
 // Sample the intro camera trajectory — the orbit spiral around `focal` (introT 0..ORBIT_DUR)

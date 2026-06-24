@@ -565,6 +565,8 @@ export function createWebGLBackend({
       }
     },
     startIntro() { flycam?.startIntro(); },
+    fieldFade: () => flycam ? flycam.fieldFade() : 0, // finale: 0..1 ramp to shrink the object field out
+
     setSize(w, h) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
