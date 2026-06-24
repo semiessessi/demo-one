@@ -544,7 +544,7 @@ export function createWebGLBackend({
       if (starPoints) starPoints.position.copy(camera.position); // keep the starfield centred on the camera -> infinity
       sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
       if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
-      uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
+      if (!capture) uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither (frozen in capture -> reproducible)
       if (oceanFFT && uniforms.uOceanFFTOn.value > 0.5) {
         oceanFFT.update(uniforms.uTime.value);         // evolve + IFFT the wave field, accumulate foam
         uniforms.uOceanFFTFoam.value = oceanFFT.foamTexture(); // ping-pong: rebind the latest foam buffer

@@ -7,13 +7,12 @@
 
 import { ChiptuneJsPlayer } from './vendor/chiptune3.js';
 import { N_BANDS } from './constants.js';
+import { clamp01 } from './math.js';
 
 const MODULE_URL = '/x-engage.it';
 const DEFAULT_VOLUME = 0.7;
 const FADE_IN = 1.0; // s, eases in the first time playback starts
 const RAMP = 0.15; // s, smooths pause / resume / volume / mute
-
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 export function createAudioManager() {
   let modulePromise = null; // Promise<ArrayBuffer | null>

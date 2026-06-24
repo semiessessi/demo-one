@@ -5,6 +5,8 @@
 // emission exactly (steady "bath" fill for non-amplitude lights -> always lit; the
 // ~30% amplitude subset rides uAmplitude and is dark when quiet).
 
+import { smoothstep } from './math.js';
+
 // pdx-gfx integer hash (lib.glsl hash()) emulated in uint32 via Math.imul + >>>0.
 export function hash(seed) {
   seed = (seed ^ 2747636419) >>> 0;
@@ -16,11 +18,6 @@ export function hash(seed) {
   return seed >>> 0;
 }
 export function hashUnit(h) { return (h & 0x00ffffff) / 16777215.0; }
-
-function smoothstep(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
 
 // lib.glsl: AMP_FRAC = 0.30, AMP_BASE = 0.5.
 const AMP_FRAC = 0.30;

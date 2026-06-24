@@ -5,6 +5,7 @@
 // bucket grid (ported from pdx-gfx), conservatively sized for the orbit.
 import { MAX_NORM_CIRCUMRADIUS } from './journey.js';
 import { cameraPathPoints } from './flycam.js';
+import { makeRng } from './math.js';
 
 const TARGET_OBJECTS = 3000;
 const VOLUME = 22; // cube side at 200 objects; scales with cbrt(count) to hold density
@@ -34,15 +35,6 @@ const REFL_ROUGHNESS_MAX = 0.35; // matches the shader: only objects below this 
 const REFLECTION_REACH = 26.0; // gather radius to reach ~1024 nearest occluders at this density
 const SEED = 0x1234abcd;
 const CAM_CLEARANCE = 0.8; // small gap, so the camera makes near-misses past objects (shows off reflections)
-
-// Small LCG (numerical-recipes constants) for reproducible randomness.
-function makeRng(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
 
 // opts.targetObjects / opts.lightsPerObject override the defaults for scale
 // testing; the volume grows with the cube root of the object count so packing

@@ -6,6 +6,13 @@ precision highp float;
 // 2D index into a row-wrapped data texture of width w.
 ivec2 texel(int i, int w) { return ivec2(i % w, i / w); }
 
+// Exact integer powers — cheaper than pow()'s exp2/log2 pair, used in the hot BRDF/cloud loops.
+float pow2(float x) { return x * x; }
+float pow3(float x) { return x * x * x; }
+float pow4(float x) { x *= x; return x * x; }
+float pow5(float x) { float x2 = x * x; return x2 * x2 * x; }
+float pow6(float x) { float x2 = x * x; return x2 * x2 * x2; }
+
 // Quaternion helpers.
 vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
 vec4 qconj(vec4 q) { return vec4(-q.xyz, q.w); }

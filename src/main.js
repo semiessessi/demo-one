@@ -522,6 +522,7 @@ if (CAPTURE) {
     test: [[4, 3.5, 9], [0, -1, 0]],
   };
   const preset = camPresets[params.get('cam')] || (TEST ? camPresets.test : camPresets['main-overview']);
+  perf.auto = false; // pin quality at full for reproducible, machine-independent captures (no autoscaler drift)
   backend.setView({ position: preset[0], target: preset[1], damping: false });
   morphTime = parseFloat(params.get('t') || '0');
   backend.setTime(morphTime);

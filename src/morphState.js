@@ -7,6 +7,7 @@
 // frame (the vertex geometry + the occluder hull). Initial shapes are seeded, so capture mode
 // (no music -> no steps) stays deterministic.
 import { NUM_SEGMENTS } from './journey.js';
+import { smooth, makeRng } from './math.js';
 
 const STEP_DUR = 0.2;        // seconds per shape transition (fast)
 const STEP_FRACTION = 0.0025; // fraction of objects that step on each note (calm, not epileptic)
@@ -15,12 +16,6 @@ const MIDPOINT_STOP = 0.5;   // at a midpoint: stop here (true) vs skip to the n
 // Which integer stops are the non-Platonic intermediate shapes (rhombic dodeca @2,4;
 // rhombic triacontahedron @7,9) — the ones that can be stopped-at or skipped.
 const IS_MIDPOINT = [false, false, true, false, true, false, false, true, false, true, false];
-
-const smooth = (t) => t * t * (3 - 2 * t);
-function makeRng(seed) {
-  let s = seed >>> 0;
-  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-}
 
 export function createMorphState(count) {
   const init = makeRng(0x5eed1234); // seeded -> deterministic initial shapes (capture-safe)

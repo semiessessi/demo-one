@@ -1,3 +1,5 @@
+import { clamp, smooth, lissajous3 } from './math.js';
+
 // Shared fly camera + pdx-style intro. Operates on a camera through .position and
 // .rotation only — no three import here, no cross-instance math objects.
 //
@@ -32,8 +34,6 @@ const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wid
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
 
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const smooth = (t) => t * t * (3 - 2 * t);
 const MOVE_KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyZ'];
 
 export function createFlyCam(domElement, introTarget, sphereR = 30) {
@@ -130,9 +130,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
       rollSmooth += (rollTarget - rollSmooth) * (1.0 - Math.exp(-dt / 0.6)); // finish the roll, settle level
       if (introT >= ORBIT_DUR) flyU += flySpeedSmooth * speedMultSmooth * dt;
       const U = flyU;
-      const fpx = FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]);
-      const fpy = FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]);
-      const fpz = FLY_AMP[2] * Math.sin(FLY_FREQ[2] * U + FLY_PHASE[2]);
+      const [fpx, fpy, fpz] = lissajous3(U, FLY_AMP, FLY_FREQ, FLY_PHASE);
       const vx = FLY_AMP[0] * FLY_FREQ[0] * Math.cos(FLY_FREQ[0] * U + FLY_PHASE[0]);
       const vy = FLY_AMP[1] * FLY_FREQ[1] * Math.cos(FLY_FREQ[1] * U + FLY_PHASE[1]);
       const vz = FLY_AMP[2] * FLY_FREQ[2] * Math.cos(FLY_FREQ[2] * U + FLY_PHASE[2]);
@@ -271,11 +269,7 @@ export function cameraPathPoints(focal) {
   }
   for (let i = 0; i <= FLY_N; i++) {
     const U = (i / FLY_N) * FLY_UMAX;
-    pts.push([
-      FLY_AMP[0] * Math.sin(FLY_FREQ[0] * U + FLY_PHASE[0]),
-      FLY_AMP[1] * Math.sin(FLY_FREQ[1] * U + FLY_PHASE[1]),
-      FLY_AMP[2] * Math.sin(FLY_FREQ[2] * U + FLY_PHASE[2]),
-    ]);
+    pts.push(lissajous3(U, FLY_AMP, FLY_FREQ, FLY_PHASE));
   }
   return pts;
 }
