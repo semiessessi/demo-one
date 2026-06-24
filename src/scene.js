@@ -67,6 +67,31 @@ export function generateBase(opts = {}) {
     return [f(0), f(8), f(4)];
   };
 
+  // Material classes. A surface's class sets its albedo/roughness/metalness "family" so the field
+  // reads as a mix of real materials (metal/chalk/marble/ceramic) instead of uniform random.
+  // REFLECTIVE classes (0 polished metal, 1 brushed metal, 3 marble) keep roughness < the shader's
+  // REFL_ROUGHNESS_MAX (0.35) so the CPU reflection lists are built for them; the matte classes
+  // (2 chalk, 4 ceramic) sit above 0.35 and skip SSR. `r` is a per-object [0,1) rng.
+  const MATERIAL_CLASSES = [
+    { color: (r) => hslToRgb(r(), 0.10, 0.62), rough: (r) => 0.04 + r() * 0.08, metal: 1.0 }, // 0 polished metal
+    { color: (r) => hslToRgb(r(), 0.12, 0.55), rough: (r) => 0.20 + r() * 0.10, metal: 1.0 }, // 1 brushed metal
+    { color: (r) => hslToRgb(r(), 0.05, 0.74), rough: (r) => 0.72 + r() * 0.20, metal: 0.0 }, // 2 chalk / matte
+    { color: (r) => hslToRgb(r(), 0.07, 0.80), rough: (r) => 0.16 + r() * 0.12, metal: 0.0 }, // 3 marble
+    { color: (r) => hslToRgb(r(), 0.55, 0.55), rough: (r) => 0.38 + r() * 0.12, metal: 0.0 }, // 4 ceramic / plastic
+  ];
+  // Cumulative weights -> fewer mirrors (expensive look), more matte; keeps the reflective fraction
+  // (~48%) near the old random one so the reflection-list memory/cost barely moves.
+  const CLASS_CDF = [0.12, 0.30, 0.58, 0.76, 1.0];
+  const pickClass = (u) => { for (let c = 0; c < 5; c++) if (u < CLASS_CDF[c]) return c; return 4; };
+  // Spatial cell hash (~CELL units) -> a stable [0,1) per cell, so neighbouring objects share a class
+  // and the field reads as regions of one material rather than salt-and-pepper.
+  const CELL = 6;
+  const cellHash01 = (x, y, z) => {
+    let n = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) >>> 0;
+    n ^= n >>> 13; n = Math.imul(n, 0x5bd1e995) >>> 0; n ^= n >>> 15;
+    return (n >>> 0) / 4294967296;
+  };
+
   const objects = [];
   const lights = [];
   const half = volume / 2;
@@ -167,8 +192,24 @@ export function generateBase(opts = {}) {
   objects.sort((a, b) =>
     (a.pos[0] ** 2 + a.pos[1] ** 2 + a.pos[2] ** 2) - (b.pos[0] ** 2 + b.pos[1] ** 2 + b.pos[2] ** 2));
 
-  // The closest object is the camera's opening hero — make it a strong chrome mirror.
-  if (objects.length) { objects[0].rough = 0.04; objects[0].metal = 1.0; }
+  // Assign materials in a POST-pass (after placement + sort) so object placement, the camera-path
+  // rejection, and the light generation below stay byte-identical to before — only the surface look
+  // changes. The inline color/rough/metal above are overwritten here. Class clusters by cell; a 25%
+  // per-object breakout adds variety. Deterministic from position + index, so every worker's
+  // generateBase() computes the SAME materials (the reflection-list inclusion reads o.rough).
+  objects.forEach((o, i) => {
+    const mrng = makeRng((SEED ^ Math.imul(i + 1, 2654435761)) >>> 0);
+    const cu = cellHash01(Math.floor(o.pos[0] / CELL), Math.floor(o.pos[1] / CELL), Math.floor(o.pos[2] / CELL));
+    let mt = pickClass(cu);
+    if (mrng() < 0.25) mt = pickClass(mrng()); // break the cluster -> variety within a region
+    const m = MATERIAL_CLASSES[mt];
+    o.materialType = mt;
+    o.color = m.color(mrng);
+    o.rough = m.rough(mrng);
+    o.metal = m.metal;
+  });
+  // The closest object is the camera's opening hero — force a strong chrome mirror (polished metal).
+  if (objects.length) { objects[0].materialType = 0; objects[0].color = [0.82, 0.85, 0.92]; objects[0].rough = 0.04; objects[0].metal = 1.0; }
 
   // Generate each object's lights, in sorted order (light i still belongs to object
   // floor(i / lightsPerObject) for spawn + indexing). ORBIT_FRACTION orbit their host object;
@@ -247,7 +288,7 @@ export function gatherChunk(base, start, end) {
 // adding ?test to the URL.
 export function generateTestScene() {
   const objects = [];
-  const makeObj = (pos, scale, color, rough, metal, phase = 3.0, morphSpeed = 0) => ({
+  const makeObj = (pos, scale, color, rough, metal, phase = 3.0, morphSpeed = 0, matType = 0) => ({
     pos,
     quat: [0, 0, 0, 1],
     spinAxis: [0, 1, 0],
@@ -260,18 +301,19 @@ export function generateTestScene() {
     color,
     rough,
     metal,
+    materialType: matType,
     lightOffset: 0, lightCount: 0,
     shadowOffset: 0, shadowCount: 0,
     reflOffset: 0, reflCount: 0,
   });
-  // Big flat receiver below: a large static cube whose top catches the shadows.
-  objects.push(makeObj([0, -3.6, 0], 4.0, [0.7, 0.7, 0.72], 0.75, 0, 3.0, 0.0));
+  // Big flat receiver below: a large static cube whose top catches the shadows (chalk/matte).
+  objects.push(makeObj([0, -3.6, 0], 4.0, [0.7, 0.7, 0.72], 0.75, 0, 3.0, 0.0, 2));
   // Morphing object above the floor: casts a clear, shape-changing shadow onto
   // the floor and shows a bright reflection in the icosahedron. Starts at the
-  // tetrahedron (phase 0) and ping-pongs through every shape.
-  objects.push(makeObj([-1.6, 1.2, 0.4], 1.2, [0.82, 0.8, 0.76], 0.55, 0, 0.0, 0.4));
-  // Shiny static icosahedron: reflects the morphing object + casts its own shadow.
-  objects.push(makeObj([1.7, 1.0, 0.6], 1.1, [0.95, 0.95, 1.0], 0.02, 1, 6.0, 0.0));
+  // tetrahedron (phase 0) and ping-pongs through every shape (marble).
+  objects.push(makeObj([-1.6, 1.2, 0.4], 1.2, [0.82, 0.8, 0.76], 0.55, 0, 0.0, 0.4, 3));
+  // Shiny static icosahedron: reflects the morphing object + casts its own shadow (polished metal).
+  objects.push(makeObj([1.7, 1.0, 0.6], 1.1, [0.95, 0.95, 1.0], 0.02, 1, 6.0, 0.0, 0));
 
   // One bright light above so both objects drop shadows onto the floor. It also
   // orbits its base point, so the test scene exercises moving lights + shadows.

@@ -55,7 +55,7 @@ export function buildOccluderTextures(objects, occluderIndices) {
 // shaded) plus the flat reflection-occluder index list. The morph VERTEX also reads
 // this (indexed by aOrigIndex) for all per-instance state, so it carries the full set:
 //   instance texel 0: [albedo.rgb, rough]
-//   instance texel 1: [lightOffset, lightCount, metal, 0]
+//   instance texel 1: [lightOffset, lightCount, metal, materialType]
 //   instance texel 2: [shadowOffset, shadowCount, reflOffset, reflCount]
 export function buildReflectionData(objects, reflectionIndices) {
   const inst = new Float32Array(objects.length * 3 * 4);
@@ -68,6 +68,7 @@ export function buildReflectionData(objects, reflectionIndices) {
     inst[a + 4] = o.lightOffset;
     inst[a + 5] = o.lightCount;
     inst[a + 6] = o.metal;
+    inst[a + 7] = o.materialType ?? 0; // material class id (was the unused texel1.w slot)
     inst[a + 8] = o.shadowOffset;
     inst[a + 9] = o.shadowCount;
     inst[a + 10] = o.reflOffset;

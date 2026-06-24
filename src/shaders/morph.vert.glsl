@@ -32,6 +32,7 @@ out vec3 vWorldPos;
 out vec3 vColor;
 out float vRough;
 out float vMetal;
+flat out float vMatType; // material class id (per-instance; selects the procedural texture)
 flat out int vLightOffset;
 flat out int vLightCount;
 flat out int vShadowOffset;
@@ -77,6 +78,7 @@ void main() {
   vColor = inst0.rgb;
   vRough = inst0.a;
   vMetal = inst1.z;
+  vMatType = inst1.w; // material class id (free texel1.w slot)
   vLightOffset = int(inst1.x + 0.5);
   vLightCount = int(inst1.y + 0.5);
   vShadowOffset = int(inst2.x + 0.5);
