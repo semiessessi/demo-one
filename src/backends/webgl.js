@@ -498,16 +498,20 @@ export function createWebGLBackend({
     },
     setMapVisible(v) { for (const m of bspMeshes || []) m.visible = v; }, // localhost debug toggle
     setQualityScale(s) {
+      // The ocean is the hero now, so PROTECT it: shed the map shadows/lights + cloud-light in-scatter
+      // FIRST (low), keep object/cloud quality in the middle, and degrade the ocean (FFT + its cloud
+      // reflection + planar) only at the very bottom of the range -> the sea stays detailed under load.
+      const low = Math.max(0.0, (s - 0.45) / 0.55); // hits 0 by s=0.45 (first to go)
       uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
-      uniforms.uReflCloudSteps.value = Math.max(4, Math.round(12 * s));
+      uniforms.uReflCloudSteps.value = Math.max(8, Math.round(12 * (0.6 + 0.4 * s))); // ocean cloud reflection — kept high
       uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
-      uniforms.uCloudLightCap.value = Math.max(8, Math.round(48 * s));
-      uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(8, Math.round(uniforms.uMapBrushCount.value * s)) : 0; // raytraced map shadows
-      uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
-      oceanReflQuality = !lowGfx && s > 0.6; // shed the planar ocean reflection (a 2nd scene render) under load / on mobile
-      if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.5) ? 1 : 0; // shed the FFT (-> analytic) under load
+      uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
+      uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
+      uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first
+      oceanReflQuality = !lowGfx && s > 0.4;  // planar ocean reflection — protected (was 0.6)
+      if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.2) ? 1 : 0; // FFT shed only at the very bottom (was 0.5)
     },
     mapDefaults,
     setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapGlowScale.value = p.glowScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },

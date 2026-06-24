@@ -73,7 +73,8 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   float tHit = (uOceanY - ro.y) / rd.y; // rd.y < 0 (downward) when this is called
   if (tHit <= 0.0) return environment(rd);
   vec3 hit = ro + rd * tHit;
-  float fade = exp(-tHit * 0.0028);           // flatten waves toward the horizon (anti-alias)
+  float fade = exp(-tHit * 0.0014);           // distance LOD (gentler -> detail survives from height)
+  float far = 1.0 - fade;                      // 0 near -> 1 far
   vec3 n; float h; float jac; float fftFoam = 0.0;
   if (uOceanFFTOn > 0.5) {
     // Invert the horizontal (choppy) displacement so the surface pinches into CUSPS at the crests:
@@ -86,9 +87,9 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
     vec3 dXp = texture(uOceanFFTDisp, suv + vec2(tx, 0.0)).xyz;
     vec3 dZp = texture(uOceanFFTDisp, suv + vec2(0.0, tx)).xyz;
     float hx = (dXp.y - d0.y) / texel, hz = (dZp.y - d0.y) / texel;
-    // Full wave steepness at all distances — the displacement texture's own detail + linear filtering
-    // handle the horizon (a mild far-flatten only at the very edge to curb sparkle aliasing).
-    float farFlat = mix(0.6, 1.0, fade);
+    // Keep wave steepness almost all the way out (only a slight far-flatten to curb sparkle aliasing);
+    // the lost sub-pixel detail is recovered as a wider specular shimmer below, not by going flat.
+    float farFlat = mix(0.82, 1.0, fade);
     n = normalize(vec3(-hx * uOceanWave * farFlat, 1.0, -hz * uOceanWave * farFlat));
     jac = 0.0;
     h = d0.y;
@@ -125,10 +126,13 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   vec3 scatter = (k1 + k2 + k3) * uOceanScatter * sunIrr * lit;
   scatter += uOceanColor + uOceanColor * environment(n) * 6.0; // deep-water base + sky-ambient fill (less empty)
 
-  // Cook-Torrance-ish GGX moon glints on the wave facets.
+  // Cook-Torrance-ish GGX moon glints. With distance the sub-pixel waves can't be resolved, so widen
+  // the roughness -> the sharp glints merge into a soft shimmering glitter band (the distant ocean
+  // sparkle) instead of aliasing or fading to flat. No *fade, so the shimmer survives from height.
   vec3 Hh = normalize(view + L);
-  float spec = ggxD(max(dot(n, Hh), 0.0), 0.13) * lit;
-  vec3 specular = sunIrr * spec * fres * 3.0 * fade;
+  float rough = mix(0.12, 0.45, clamp(far * 1.4, 0.0, 1.0));
+  float spec = ggxD(max(dot(n, Hh), 0.0), rough) * lit;
+  vec3 specular = sunIrr * spec * fres * 3.0;
 
   // Compose: transmitted body (1-F)·scatter + microfacet specular + Fresnel-weighted sky reflection.
   vec3 col = (1.0 - fres) * scatter + specular + fres * reflCol;
@@ -136,7 +140,7 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   // Foam: the FFT path uses the time-accumulated foam buffer (builds on breaking crests, decays over
   // seconds); the analytic path uses the instantaneous Jacobian fold. Blend to a moonlit foam colour.
   float foamRaw = (uOceanFFTOn > 0.5) ? fftFoam : smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac);
-  float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam * fade;
+  float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam * mix(1.0, 0.55, far); // distant whitecaps stay visible
   vec3 foamCol = vec3(0.78, 0.85, 0.9) * (0.4 + 0.75 * lit);
   col = mix(col, foamCol, foam);
 
