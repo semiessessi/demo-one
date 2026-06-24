@@ -66,7 +66,10 @@ float oceanWaves(vec2 pos, float t, out vec2 grad, out float jac) {
   return (h / wsum) * 2.0 - 1.0;                // ~[-1,1]
 }
 
-vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
+// full=true: the on-screen ocean (per-ray cloud march + planar scene reflection). full=false: the
+// lighter version for reflections-of-the-sea (object/surface reflection rays) — same waves, foam and
+// Atlas lighting, but the sky reflection skips the expensive cloud march + planar pass.
+vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   float tHit = (uOceanY - ro.y) / rd.y; // rd.y < 0 (downward) when this is called
   if (tHit <= 0.0) return environment(rd);
   vec3 hit = ro + rd * tHit;
@@ -100,8 +103,8 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   // (rippled by the wave normal), all weighted by a water Fresnel (F0 = 0.02).
   vec3 refl = reflect(rd, n); refl.y = abs(refl.y);
   vec3 reflCol = environment(refl) + texture(uStarCube, refl).rgb;
-  reflCol = skyCloudsOver(reflCol, hit, refl, t, 1e9, int(uReflCloudSteps));
-  if (uOceanReflOn > 0.5) {
+  if (full) reflCol = skyCloudsOver(reflCol, hit, refl, t, 1e9, int(uReflCloudSteps));
+  if (full && uOceanReflOn > 0.5) {
     vec2 ripple = n.xz * uOceanReflDistort * (1.0 + tHit * 0.01);
     vec4 sc = texture(uOceanReflTex, clamp(uv + ripple, 0.0, 1.0));
     reflCol = mix(reflCol, sc.rgb, clamp(sc.a, 0.0, 1.0));
@@ -139,3 +142,6 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
 
   return mix(col, environment(rd), clamp(1.0 - exp(-tHit * uOceanFog), 0.0, 1.0));
 }
+
+// The on-screen ocean (cloud pass) — full sky reflection.
+vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) { return oceanShade(ro, rd, t, uv, true); }

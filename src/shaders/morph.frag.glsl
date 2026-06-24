@@ -21,7 +21,7 @@ uniform float uAmpGain;    // how hard that subset reacts
 uniform int uShadowCap;    // FPS-autoscale caps (min'd with the distance-LOD caps below)
 uniform int uReflCap;
 uniform int uLightCap;
-uniform samplerCube uStarCube; // baked starfield -> real stars in reflections (sampled by direction)
+// uStarCube is declared by the prepended ocean.glsl (shared) -> avoid a duplicate-uniform link error
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
 uniform float uLightsPerObject; // lights per object, to map a light to its host's spawn rank
@@ -353,10 +353,8 @@ void main() {
   vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
 
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
-  // Full ambient/environment term (no AO): shadowing it hid the soft env reflection. The DOWNWARD
-  // half is a teal "sea bounce" so every object's underside picks up the ocean beneath it (reads on
-  // any material, not just the shiny ones), fading to the night-sky ambient on top.
-  lit += diffuseAlbedo * mix(vec3(0.015, 0.085, 0.075), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
+  // Full ambient/environment term (no AO): shadowing it hid the soft env reflection.
+  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
   // Directional moonlight on the scene, occluded by the clouds -> the field dapples under cover.
   lit += diffuseAlbedo * uSunColor * uMoonStrength * (0.3 + 0.7 * max(dot(N, uSunDir), 0.0))
        * cloudShadow(vWorldPos, uSunDir, uTime) * uLightScale;
@@ -377,17 +375,12 @@ void main() {
       refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 4, 32);
       refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
+    } else if (Rdir.y < -0.01 && uOceanOn > 0.5) {
+      // Reflected ray dives at the sea -> the ACTUAL ocean renderer (FFT waves, foam, Atlas lighting),
+      // minus the per-ray cloud march / planar pass. The same sea you see on screen, in the reflection.
+      refl = oceanShade(vWorldPos, Rdir, uTime, vec2(0.0), false);
     } else {
       refl = environment(Rdir) + texture(uStarCube, Rdir).rgb; // sky + real stars; clouds composited below
-      if (Rdir.y < 0.08) {
-        // Reflected ray dives at the sea below -> mirror the ocean: the moonlit sky the water reflects
-        // back up + a teal body + a moon glint, blended by how steeply it dives. Boosted so it reads on
-        // the objects (esp. the hero dodecahedron) despite the low face-on Fresnel.
-        vec3 up = vec3(Rdir.x, abs(Rdir.y) + 0.04, Rdir.z);
-        vec3 sea = vec3(0.04, 0.17, 0.15) + environment(up) * 0.9
-                 + uSunColor * uMoonStrength * pow(max(dot(up, uSunDir), 0.0), 70.0) * 7.0;
-        refl = mix(refl, sea, clamp(-Rdir.y * 3.5 + 0.35, 0.0, 1.0));
-      }
     }
     // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
     // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit
