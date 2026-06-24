@@ -441,6 +441,7 @@ if (isLocalhost) {
   of.add(oceanParams, 'on').name('ocean').onChange(applyOcean);
   of.add(oceanParams, 'y', -200, 20, 1).name('sea level').onChange(applyOcean);
   of.add(oceanParams, 'wave', 0, 4, 0.05).name('wave height').onChange(applyOcean);
+  of.add(oceanParams, 'foam', 0, 2, 0.05).name('foam').onChange(applyOcean);
   of.add(oceanParams, 'fog', 0, 0.03, 0.0005).name('horizon fade').onChange(applyOcean);
   of.addColor(oceanParams, 'color').name('water colour').onChange(applyOcean);
   of.addColor(oceanParams, 'scatter').name('scatter (crest)').onChange(applyOcean);

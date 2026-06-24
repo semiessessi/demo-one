@@ -56,6 +56,7 @@ class CloudPass extends Pass {
       uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
       uOceanScatter: shared.uOceanScatter, uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
+      uOceanFoam: shared.uOceanFoam, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
     };
@@ -141,7 +142,8 @@ export function createWebGLBackend({
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
-  const oceanDefaults = { on: true, y: -70, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0 };
+  // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
+  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, foam: 0.7, octaves: lowGfx ? 4 : 11 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -239,6 +241,8 @@ export function createWebGLBackend({
     uOceanScatter: { value: new THREE.Color(oceanDefaults.scatter) },
     uOceanFog: { value: oceanDefaults.fog },
     uOceanWave: { value: oceanDefaults.wave },
+    uOceanFoam: { value: oceanDefaults.foam },
+    uOceanOctaves: { value: oceanDefaults.octaves },
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
   };
@@ -323,7 +327,7 @@ export function createWebGLBackend({
   const reflCam = new THREE.PerspectiveCamera();
   reflCam.matrixAutoUpdate = false;
   const reflMat = new THREE.Matrix4();
-  let oceanReflQuality = true; // gated by setQualityScale
+  let oceanReflQuality = !lowGfx; // gated by setQualityScale; off on mobile (a 2nd scene render)
   uniforms.uOceanReflTex.value = reflRT.texture;
 
   const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
@@ -392,6 +396,7 @@ export function createWebGLBackend({
       uniforms.uOceanScatter.value.set(p.scatter);
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
+      uniforms.uOceanFoam.value = p.foam;
     },
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
     // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
@@ -459,7 +464,7 @@ export function createWebGLBackend({
       uniforms.uCloudLightCap.value = Math.max(8, Math.round(48 * s));
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(8, Math.round(uniforms.uMapBrushCount.value * s)) : 0; // raytraced map shadows
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
-      oceanReflQuality = s > 0.6; // shed the planar ocean reflection (a 2nd scene render) under load
+      oceanReflQuality = !lowGfx && s > 0.6; // shed the planar ocean reflection (a 2nd scene render) under load / on mobile
     },
     mapDefaults,
     setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapGlowScale.value = p.glowScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
