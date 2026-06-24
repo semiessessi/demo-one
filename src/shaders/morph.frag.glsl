@@ -377,6 +377,15 @@ void main() {
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
       refl = environment(Rdir) + texture(uStarCube, Rdir).rgb; // sky + real stars; clouds composited below
+      if (Rdir.y < -0.02) {
+        // Reflected ray dives at the sea below -> mirror the ocean: the moonlit sky the water reflects
+        // back up + a deep-teal body + a moon glint, blended by how steeply it dives. (So the chrome
+        // objects, esp. the hero dodecahedron, pick up the sea underneath them.)
+        vec3 up = vec3(Rdir.x, -Rdir.y, Rdir.z);
+        vec3 sea = vec3(0.012, 0.055, 0.052) + environment(up) * 0.6
+                 + uSunColor * uMoonStrength * pow(max(dot(up, uSunDir), 0.0), 100.0) * 3.0;
+        refl = mix(refl, sea, clamp(-Rdir.y * 2.5, 0.0, 1.0));
+      }
     }
     // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
     // hit (the swirling effect on the hero, which is what was visible before) PLUS the hit
