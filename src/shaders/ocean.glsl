@@ -16,6 +16,7 @@ uniform float uOceanWave;   // wave steepness scale
 uniform float uOceanFreq;   // base wave frequency (bigger = shorter, choppier waves)
 uniform float uOceanFoam;   // foam amount on the folds
 uniform float uOceanFoamThresh; // Jacobian level below which foam forms (1 = flat, <1 = pinching)
+uniform float uOceanCrestFoam;  // a little foam that always rides the wave crests (height-based)
 uniform int   uOceanOctaves;// wave octave count (LOD; fewer on mobile)
 uniform samplerCube uStarCube;   // baked starfield (reflected in the water)
 uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + level) mirrored about the sea
@@ -140,8 +141,10 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   // Foam: the FFT path uses the time-accumulated foam buffer (builds on breaking crests, decays over
   // seconds); the analytic path uses the instantaneous Jacobian fold. Blend to a moonlit foam colour.
   float foamRaw = (uOceanFFTOn > 0.5) ? fftFoam : smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac);
-  float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam * mix(1.0, 0.55, far); // distant whitecaps stay visible
-  vec3 foamCol = vec3(0.78, 0.85, 0.9) * (0.4 + 0.75 * lit);
+  float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam;            // fold/Jacobian whitecaps (FFT path: the foam buffer)
+  foam = max(foam, smoothstep(0.55, 1.0, H) * uOceanCrestFoam);  // a little foam always rides the wave crests
+  foam = clamp(foam, 0.0, 1.0) * mix(1.0, 0.6, far);             // distant whitecaps stay visible
+  vec3 foamCol = vec3(0.80, 0.86, 0.92) * (0.55 + 0.6 * lit);    // brighter floor -> foam isn't killed by the low moon
   col = mix(col, foamCol, foam);
 
   return mix(col, environment(rd), clamp(1.0 - exp(-tHit * uOceanFog), 0.0, 1.0));
