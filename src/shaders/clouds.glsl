@@ -31,6 +31,11 @@ uniform sampler2D uCloudLightsTex;
 uniform int   uCloudLightsTexW;
 uniform int   uCloudLightCount;    // lights currently packed (<= 64)
 uniform float uCloudLightGain;     // tunable in-scatter strength
+// God rays / crepuscular shafts: a clear-air haze in-scatter along the primary ray, gated by the
+// sun-shadow march so shafts brighten in cloud gaps and darken behind cloud.
+uniform float uGodRaySteps;        // shaft samples along the primary ray (autoscaled; 0 disables)
+uniform float uGodRayStrength;     // haze in-scatter strength
+uniform float uGodRayDecay;        // near-camera haze decay (per world unit) -> bounds the far cost
 
 // --- value-noise fbm ------------------------------------------------------
 float cloudHash(vec3 p) {
@@ -166,6 +171,31 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
     t += step;
     step *= growth; // distance LOD: each step a little longer
   }
+
+  // --- God rays / crepuscular shafts: clear-air haze in-scatter, gated by sun visibility ----------
+  // Runs ONLY on the primary ray (lightCap>0 -> never in reflections). Reuses the cheap 3-octave
+  // cloudDensitySun for the shaft occlusion: a sample brightens through a gap toward the moon and
+  // darkens behind cloud. grAccum*grDt is a Riemann integral, so brightness is step-count-independent
+  // (quality scaling changes only smoothness). Weighted by the post-march T so shafts behind the
+  // cloud the primary ray already crossed are correctly dimmed.
+  if (lightCap > 0 && uGodRaySteps > 0.5) {
+    int grSteps = int(uGodRaySteps);
+    float grFar = min(t1, 160.0);                      // bound the integration range (cost cap)
+    float grDt = (grFar - t0) / float(grSteps);
+    float gt = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * grDt; // share the per-frame dither
+    float grPhase = 0.25 + 0.75 * hg(cosT, uCloudHG);  // forward bias -> shafts strongest toward the moon
+    float grAccum = 0.0;
+    for (int g = 0; g < 32; g++) {       // static bound > the autoscaled max (24) -> smaller unrolled shader
+      if (g >= grSteps || gt >= grFar) break;
+      vec3 gp = ro + rd * gt;
+      float sd = 0.0;                                   // 4 taps (vs 6 in-cloud) of optical depth to the moon
+      for (int j = 1; j <= 4; j++) sd += cloudDensitySun(gp + uSunDir * lightStep * float(j) * 1.5, time);
+      grAccum += exp(-sd * 1.2) * exp(-gt * uGodRayDecay); // visibility * near-camera haze
+      gt += grDt;
+    }
+    scat += T * grAccum * grDt * uGodRayStrength * grPhase * uSunColor;
+  }
+
   oT = T;
   return vec4(scat, dot(T, vec3(0.2126, 0.7152, 0.0722))); // .a kept as luminance transmittance (legacy callers)
 }
