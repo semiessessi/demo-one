@@ -168,7 +168,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 24 };
+  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 24 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
