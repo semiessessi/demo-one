@@ -353,8 +353,10 @@ void main() {
   vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
 
   vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
-  // Full ambient/environment term (no AO): shadowing it hid the soft env reflection.
-  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
+  // Full ambient/environment term (no AO): shadowing it hid the soft env reflection. The DOWNWARD
+  // half is a teal "sea bounce" so every object's underside picks up the ocean beneath it (reads on
+  // any material, not just the shiny ones), fading to the night-sky ambient on top.
+  lit += diffuseAlbedo * mix(vec3(0.015, 0.085, 0.075), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
   // Directional moonlight on the scene, occluded by the clouds -> the field dapples under cover.
   lit += diffuseAlbedo * uSunColor * uMoonStrength * (0.3 + 0.7 * max(dot(N, uSunDir), 0.0))
        * cloudShadow(vWorldPos, uSunDir, uTime) * uLightScale;
@@ -377,14 +379,14 @@ void main() {
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else {
       refl = environment(Rdir) + texture(uStarCube, Rdir).rgb; // sky + real stars; clouds composited below
-      if (Rdir.y < -0.02) {
+      if (Rdir.y < 0.08) {
         // Reflected ray dives at the sea below -> mirror the ocean: the moonlit sky the water reflects
-        // back up + a deep-teal body + a moon glint, blended by how steeply it dives. (So the chrome
-        // objects, esp. the hero dodecahedron, pick up the sea underneath them.)
-        vec3 up = vec3(Rdir.x, -Rdir.y, Rdir.z);
-        vec3 sea = vec3(0.012, 0.055, 0.052) + environment(up) * 0.6
-                 + uSunColor * uMoonStrength * pow(max(dot(up, uSunDir), 0.0), 100.0) * 3.0;
-        refl = mix(refl, sea, clamp(-Rdir.y * 2.5, 0.0, 1.0));
+        // back up + a teal body + a moon glint, blended by how steeply it dives. Boosted so it reads on
+        // the objects (esp. the hero dodecahedron) despite the low face-on Fresnel.
+        vec3 up = vec3(Rdir.x, abs(Rdir.y) + 0.04, Rdir.z);
+        vec3 sea = vec3(0.04, 0.17, 0.15) + environment(up) * 0.9
+                 + uSunColor * uMoonStrength * pow(max(dot(up, uSunDir), 0.0), 70.0) * 7.0;
+        refl = mix(refl, sea, clamp(-Rdir.y * 3.5 + 0.35, 0.0, 1.0));
       }
     }
     // Reflect light sprites as blobs: the surface's OWN orbiting lights in front of the reflected
