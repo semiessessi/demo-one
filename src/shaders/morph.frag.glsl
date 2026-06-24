@@ -419,7 +419,7 @@ void main() {
       vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 3, uInstanceTexW), 0);
       vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 3 + 1, uInstanceTexW), 0);
       refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 4, 32);
-      refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
+      refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 4) * 0.3; // 2nd bounce: B reflects the sky + clouds (lighter march)
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);
     } else if (Rdir.y < -0.01 && uOceanOn > 0.5) {
       // Reflected ray dives at the sea -> the ACTUAL ocean renderer (FFT waves, foam, Atlas lighting),

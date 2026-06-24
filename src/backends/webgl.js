@@ -123,7 +123,7 @@ export function createWebGLBackend({
   const fftPlaceholder = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
   fftPlaceholder.needsUpdate = true;
   let fftWanted = !!oceanFFT; // user/GUI intent; the autoscaler may still shed it under load
-  renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
+  renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.3, window.devicePixelRatio)); // cap fill-rate (1.3 on hi-dpi: ~25% fewer fullscreen fragments for a slight softening; tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; // applied by the OutputPass
@@ -246,12 +246,12 @@ export function createWebGLBackend({
     uCloudPowder: { value: cloudLightDefaults.powder },
     uFarDeckOn: { value: 1 }, // analytic far cloud deck (infinite cloud top to the horizon)
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
-    uReflCloudSteps: { value: 10 },
+    uReflCloudSteps: { value: 7 }, // clouds inside object/ocean reflections — lighter (was 10)
     uFrame: { value: 0 }, // frame counter for the per-frame cloud dither
     uStarSize: { value: starDefaults.size },
     uStarTwinkle: { value: starDefaults.twinkle },
     uMoonSize: { value: cloudLightDefaults.moonSize }, // moon disc half-size (billboard at uSunDir)
-    uShadowCap: { value: 16 }, uReflCap: { value: 64 }, uLightCap: { value: 128 }, // FPS-autoscale caps
+    uShadowCap: { value: 12 }, uReflCap: { value: 48 }, uLightCap: { value: 96 }, // FPS-autoscale caps (trimmed for perf)
     // Object materials: roughness-aware specular punch + procedural-detail strength (autoscaled).
     uSpecBoostHi: { value: materialDefaults.specBoostHi },
     uSpecBoostLo: { value: materialDefaults.specBoostLo },
@@ -538,10 +538,10 @@ export function createWebGLBackend({
       // reflection + planar) only at the very bottom of the range -> the sea stays detailed under load.
       const low = Math.max(0.0, (s - 0.45) / 0.55); // hits 0 by s=0.45 (first to go)
       uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
-      uniforms.uReflCloudSteps.value = Math.max(8, Math.round(12 * (0.6 + 0.4 * s))); // ocean cloud reflection — kept high
-      uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
-      uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
-      uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
+      uniforms.uReflCloudSteps.value = Math.max(5, Math.round(8 * (0.6 + 0.4 * s))); // clouds in reflections — lighter (was 12)
+      uniforms.uShadowCap.value = Math.max(2, Math.round(12 * s));
+      uniforms.uReflCap.value = Math.max(4, Math.round(48 * s));
+      uniforms.uLightCap.value = Math.max(8, Math.round(96 * s));
       uniforms.uMaterialDetail.value = lowGfx ? 0 : Math.min(1, Math.max(0, (s - 0.35) / 0.3)); // procedural material detail — off on mobile/low, full by s~0.65
       uniforms.uGodRaySteps.value = Math.max(0, Math.round(16 * low)); // god rays are a bonus -> shed EARLY (before object quality)
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
