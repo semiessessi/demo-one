@@ -18,6 +18,7 @@ uniform int   uOceanOctaves;// wave octave count (LOD; fewer on mobile)
 uniform samplerCube uStarCube;   // baked starfield (reflected in the water)
 uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + level) mirrored about the sea
 uniform float uOceanReflOn;      // 1 when that reflection rendered this frame
+uniform float uOceanReflDistort; // how much the waves ripple-distort the planar reflection (screen-space)
 
 // FBM exponential-sine waves. Returns height; writes the xz gradient (for the analytic normal).
 float oceanWaves(vec2 pos, float t, out vec2 grad) {
@@ -57,7 +58,10 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   // ...then the planar reflection of the actual scene (objects + level) over it, distorted by the
   // wave normal (the sea-plane point projects to the same screen UV in the mirrored camera).
   if (uOceanReflOn > 0.5) {
-    vec4 sc = texture(uOceanReflTex, clamp(uv + n.xz * 0.06, 0.0, 1.0));
+    // Ripple the lookup by the wave normal — matched in spirit to the cloud reflection's full-ray bend,
+    // scaled up by distance so far (small-on-screen) waves still visibly distort the mirrored objects.
+    vec2 ripple = n.xz * uOceanReflDistort * (1.0 + tHit * 0.01);
+    vec4 sc = texture(uOceanReflTex, clamp(uv + ripple, 0.0, 1.0));
     reflCol = mix(reflCol, sc.rgb, clamp(sc.a, 0.0, 1.0));
   }
   float fres = clamp(0.02 + 0.98 * pow(1.0 - max(dot(view, n), 0.0), 5.0), 0.0, 1.0);

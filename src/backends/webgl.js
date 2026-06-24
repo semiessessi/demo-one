@@ -60,6 +60,7 @@ class CloudPass extends Pass {
       uOceanFoam: shared.uOceanFoam, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
+      uOceanReflDistort: shared.uOceanReflDistort,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -148,7 +149,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, foam: 0.7, octaves: lowGfx ? 4 : 11 };
+  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, foam: 0.7, distort: 0.35, octaves: lowGfx ? 4 : 11 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -251,6 +252,7 @@ export function createWebGLBackend({
     uOceanOctaves: { value: oceanDefaults.octaves },
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
+    uOceanReflDistort: { value: oceanDefaults.distort }, // wave ripple on the planar reflection
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -404,6 +406,7 @@ export function createWebGLBackend({
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
       uniforms.uOceanFoam.value = p.foam;
+      if (p.distort !== undefined) uniforms.uOceanReflDistort.value = p.distort;
     },
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
     // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
