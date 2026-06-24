@@ -46,12 +46,12 @@ uniform sampler2D uShadowIndexTex;
 uniform int uShadowIndexW;
 uniform sampler2D uReflIndexTex;
 uniform int uReflIndexW;
-uniform sampler2D uInstanceTex;     // 2 texels/object: [albedo.rgb, rough], [lo, lc, metal, _]
-uniform int uInstanceTexW;
+uniform sampler2D uInstanceTex;     // 3 texels/object: [albedo.rgb, rough], [lo, lc, metal, _], [shOff, shCnt, reflOff, reflCnt]
+uniform highp int uInstanceTexW;    // highp: shared with the vertex stage, must match precision
 uniform sampler2D uPlaneTex;        // 2 texels/triangle: [n0.xyz, d0], [n1.xyz, d1]
 uniform int uPlaneTexW;
-uniform sampler2D uOccTransformTex; // 4 texels/object: pos+scale, quat, spinAxis+speed, phase
-uniform int uOccTransformTexW;
+uniform sampler2D uOccTransformTex; // 4 texels/object: pos+scale, quat, spinAxis+speed, _
+uniform highp int uOccTransformTexW; // highp: shared with the vertex stage, must match precision
 uniform int uSegTriStart[16];
 uniform int uSegTriCount[16];
 
@@ -371,8 +371,8 @@ void main() {
     int reflLo = -1, reflLc = 0; // hit object's light list -> reflect its sprites as blobs
     if (traceReflection(vWorldPos + N * 0.02, Rdir, N, reflCap, ht, hN, hObj)) {
       vec3 hp = vWorldPos + ht * Rdir;
-      vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 2, uInstanceTexW), 0);
-      vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 2 + 1, uInstanceTexW), 0);
+      vec4 m0 = texelFetch(uInstanceTex, texel(hObj * 3, uInstanceTexW), 0);
+      vec4 m1 = texelFetch(uInstanceTex, texel(hObj * 3 + 1, uInstanceTexW), 0);
       refl = shadeDirect(hp, hN, -Rdir, m0.rgb, m0.a, m1.z, int(m1.x + 0.5), int(m1.y + 0.5), false, 4, 32);
       refl += m0.rgb * skyClouds(hp, reflect(Rdir, hN), uTime, 7) * 0.3; // 2nd bounce: B reflects the sky + clouds
       reflLo = int(m1.x + 0.5); reflLc = int(m1.y + 0.5);

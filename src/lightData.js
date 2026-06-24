@@ -52,13 +52,15 @@ export function buildOccluderTextures(objects, occluderIndices) {
 }
 
 // Reflection data: per-object material/light texture (so a reflection hit can be
-// shaded) plus the flat reflection-occluder index list.
+// shaded) plus the flat reflection-occluder index list. The morph VERTEX also reads
+// this (indexed by aOrigIndex) for all per-instance state, so it carries the full set:
 //   instance texel 0: [albedo.rgb, rough]
 //   instance texel 1: [lightOffset, lightCount, metal, 0]
+//   instance texel 2: [shadowOffset, shadowCount, reflOffset, reflCount]
 export function buildReflectionData(objects, reflectionIndices) {
-  const inst = new Float32Array(objects.length * 2 * 4);
+  const inst = new Float32Array(objects.length * 3 * 4);
   objects.forEach((o, i) => {
-    const a = i * 8;
+    const a = i * 12;
     inst[a] = o.color[0];
     inst[a + 1] = o.color[1];
     inst[a + 2] = o.color[2];
@@ -66,8 +68,12 @@ export function buildReflectionData(objects, reflectionIndices) {
     inst[a + 4] = o.lightOffset;
     inst[a + 5] = o.lightCount;
     inst[a + 6] = o.metal;
+    inst[a + 8] = o.shadowOffset;
+    inst[a + 9] = o.shadowCount;
+    inst[a + 10] = o.reflOffset;
+    inst[a + 11] = o.reflCount;
   });
-  const instTex = dataTexture(inst, objects.length * 2, 4);
+  const instTex = dataTexture(inst, objects.length * 3, 4);
   const reflIdxTex = dataTexture(reflectionIndices, reflectionIndices.length, 1);
   return {
     instanceTex: instTex.tex,

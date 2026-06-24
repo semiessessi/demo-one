@@ -40,38 +40,10 @@ export function buildUnifiedGeometry() {
   return g;
 }
 
-// Attach per-instance attributes from generated scene objects. Scalars are
-// packed into vec4s to stay under the 16 vertex-attribute limit.
-export function setInstanceAttributes(geometry, objects) {
-  const n = objects.length;
-  const pos = new Float32Array(n * 3);
-  const quat = new Float32Array(n * 4);
-  const spinAxis = new Float32Array(n * 3);
-  const misc = new Float32Array(n * 4); // spinSpeed, scale, phaseOffset, _
-  const color = new Float32Array(n * 3);
-  const material = new Float32Array(n * 4); // rough, metal, lightOffset, lightCount
-  const lists = new Float32Array(n * 4); // shadowOffset, shadowCount, reflOffset, reflCount
-
-  objects.forEach((o, i) => {
-    pos.set(o.pos, i * 3);
-    quat.set(o.quat, i * 4);
-    spinAxis.set(o.spinAxis, i * 3);
-    misc.set([o.spinSpeed, o.scale, o.phase, o.morphSpeed], i * 4);
-    color.set(o.color, i * 3);
-    material.set([o.rough, o.metal, o.lightOffset, o.lightCount], i * 4);
-    lists.set([o.shadowOffset, o.shadowCount, o.reflOffset, o.reflCount], i * 4);
-  });
-
-  const ia = (arr, size) => new THREE.InstancedBufferAttribute(arr, size);
-  geometry.setAttribute('aInstancePos', ia(pos, 3));
-  geometry.setAttribute('aQuat', ia(quat, 4));
-  geometry.setAttribute('aSpinAxis', ia(spinAxis, 3));
-  geometry.setAttribute('aMisc', ia(misc, 4));
-  geometry.setAttribute('aColor', ia(color, 3));
-  geometry.setAttribute('aMaterial', ia(material, 4));
-  geometry.setAttribute('aLists', ia(lists, 4));
-  geometry.instanceCount = n;
-}
+// Per-instance state (transform, material, light/shadow/reflection lists) is no longer stored
+// as instanced attributes — the vertex shader fetches it from the shared occluder-transform +
+// instance data textures by aOrigIndex (see cpuCull.js / morph.vert.glsl). Only aOrigIndex is a
+// per-instance attribute now, created + updated by the culler.
 
 export function buildMorphMaterial(uniforms) {
   return new THREE.RawShaderMaterial({
