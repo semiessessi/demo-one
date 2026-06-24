@@ -116,7 +116,7 @@ export function createWebGLBackend({
   const fftCapable = !lowGfx && !!gl.getExtension('EXT_color_buffer_float') && !!gl.getExtension('OES_texture_float_linear');
   // windDir matches the cloud wind (cloudDefaults windX/windZ = 2.5 / -2.9) so the swell travels with
   // the clouds; setClouds re-syncs it. Choppier/bigger: stronger wind + choppiness + displacement scale.
-  const oceanFFT = fftCapable ? createOceanFFT(renderer, { N: 256, L: 100, choppy: 1.4, windSpeed: 14, windDir: [2.5, -2.9], fetch: 14000, amplitude: 1.0, scale: 0.38, foamDecay: 0.95, foamInject: 0.06, foamThresh: 0.2 }) : null;
+  const oceanFFT = fftCapable ? createOceanFFT(renderer, { N: 256, L: 130, choppy: 1.4, windSpeed: 18, windDir: [2.5, -2.9], fetch: 18000, amplitude: 1.0, scale: 0.55, foamDecay: 0.95, foamInject: 0.06, foamThresh: 0.2 }) : null;
   const fftPlaceholder = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
   fftPlaceholder.needsUpdate = true;
   let fftWanted = !!oceanFFT; // user/GUI intent; the autoscaler may still shed it under load
@@ -162,7 +162,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 0.16, foamThresh: 0.65, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
+  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 0.16, foamThresh: 0.65, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
