@@ -51,6 +51,7 @@ class CloudPass extends Pass {
       uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
       uCloudHG: shared.uCloudHG, uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
+      uFarDeckOn: shared.uFarDeckOn,
       uCloudLightsTex: shared.uCloudLightsTex, uCloudLightsTexW: shared.uCloudLightsTexW,
       uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
       uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
@@ -101,6 +102,10 @@ export function createWebGLBackend({
   const halfFloatRenderable = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
   const rtType = halfFloatRenderable ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const starCubeRT = new THREE.WebGLCubeRenderTarget(1024, { type: rtType }); // baked starfield -> stars in reflections
+  // Allocate + clear all 6 faces now so the cube is a valid (black) sampler before the starfield bakes
+  // it — otherwise sampling the unrendered cube RT (ocean/morph reflections) throws on the first frames.
+  for (let f = 0; f < 6; f++) { renderer.setRenderTarget(starCubeRT, f); renderer.clear(); }
+  renderer.setRenderTarget(null);
   renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
@@ -131,7 +136,7 @@ export function createWebGLBackend({
   // localhost debug GUI (main.js reads backend.cloudDefaults to seed its sliders).
   const cloudDefaults = {
     cloudsOn: true, coverage: 0.55, density: 2.0, base: 24, thick: 32,
-    noiseScale: 0.05, windX: 2.5, windZ: -2.9, quality: 64,
+    noiseScale: 0.05, windX: 2.5, windZ: -2.9, quality: 64, farDeck: true,
   };
   // Lighting "look" defaults (debug-tunable): lightScale 0.4 = lights at 40% (the -60%).
   const lookDefaults = { lightScale: 0.4, ampGain: 20.0, bloom: test ? 0.25 : 0.2 };
@@ -213,6 +218,7 @@ export function createWebGLBackend({
     uCloudAmbient: { value: cloudLightDefaults.ambient },
     uCloudHG: { value: cloudLightDefaults.hg },
     uCloudPowder: { value: cloudLightDefaults.powder },
+    uFarDeckOn: { value: 1 }, // analytic far cloud deck (infinite cloud top to the horizon)
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
     uReflCloudSteps: { value: 10 },
     uFrame: { value: 0 }, // frame counter for the per-frame cloud dither
@@ -328,7 +334,7 @@ export function createWebGLBackend({
   reflCam.matrixAutoUpdate = false;
   const reflMat = new THREE.Matrix4();
   let oceanReflQuality = !lowGfx; // gated by setQualityScale; off on mobile (a 2nd scene render)
-  uniforms.uOceanReflTex.value = reflRT.texture;
+  // uOceanReflTex stays the placeholder until render() points it at reflRT.texture AFTER first drawing it.
 
   const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
   const composer = new EffectComposer(renderer); // half-float render targets
@@ -372,6 +378,7 @@ export function createWebGLBackend({
       uniforms.uCloudNoiseScale.value = p.noiseScale;
       uniforms.uCloudWind.value.set(p.windX, 0, p.windZ);
       uniforms.uCloudSteps.value = p.quality;
+      if (p.farDeck !== undefined) uniforms.uFarDeckOn.value = p.farDeck ? 1 : 0;
     },
     lookDefaults,
     setAmplitude(a) {
@@ -511,8 +518,10 @@ export function createWebGLBackend({
         renderer.setClearColor(0x000000, 0); renderer.clear();
         renderer.render(scene, reflCam); // layer 0 only (sky/stars/moon are layer 1 -> skipped)
         renderer.setClearColor(0x050505, 1);
+        uniforms.uOceanReflTex.value = reflRT.texture; // bind only AFTER it's been rendered this frame
         uniforms.uOceanReflOn.value = 1;
       } else {
+        uniforms.uOceanReflTex.value = mapPlaceholder.tex; // a valid placeholder when not reflecting
         uniforms.uOceanReflOn.value = 0;
       }
       renderer.setRenderTarget(sceneRT);

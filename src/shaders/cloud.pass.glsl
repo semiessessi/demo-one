@@ -50,6 +50,12 @@ void main() {
                       - max(max(sky.r, sky.g), sky.b) - 0.12) * 5.0, 0.0, 1.0); // bright sprites -> 1, dim stars -> 0
     sceneCol = mix(ocn, sceneCol, fg);
   }
+  // Analytic far cloud deck (infinite cloud top) over the background, BEHIND the near volumetric march
+  // (which composites in front where it has detail). Carries the deck to the horizon from above.
+  if (d >= 1.0) {
+    vec4 deck = farCloudDeck(uCamPos, rd, uTime);
+    sceneCol = mix(sceneCol, deck.rgb, deck.a);
+  }
   vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps), uCloudLightCap);
   fragColor = vec4(sceneCol * c.a + c.rgb, 1.0);
 }

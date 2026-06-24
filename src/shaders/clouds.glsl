@@ -146,6 +146,27 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
   return vec4(scat, T);
 }
 
+// Analytic far cloud deck: an infinite cloud-top plane for distant downward rays from ABOVE the band.
+// Beyond the volumetric march's reach it carries the cloud deck all the way to the horizon (the near
+// march, sharing the same coverage field, composites in front where it has detail). ~1 fbm/pixel.
+uniform float uFarDeckOn; // 0/1 toggle
+vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
+  if (uCloudsOn < 0.5 || uFarDeckOn < 0.5) return vec4(0.0);
+  float yTop = uCloudBase + uCloudThick;
+  if (ro.y < yTop || rd.y > -1e-3) return vec4(0.0);            // only from above the deck, looking down
+  float tTop = (yTop - ro.y) / rd.y;
+  vec3 hit = ro + rd * tTop;
+  // Sample the volume's coverage field (at band centre, where it's densest) -> deck opacity, so the
+  // analytic deck lines up with the marched band's gaps and puffs.
+  vec3 np = (vec3(hit.x, uCloudBase, hit.z) + uCloudWind * time) * uCloudNoiseScale;
+  float cov = clamp((cloudFbm(np) - (1.0 - uCoverage)) * 3.0, 0.0, 1.0);
+  if (cov <= 0.002) return vec4(0.0);
+  float phase = 0.4 + 1.3 * hg(dot(rd, uSunDir), uCloudHG);     // moon key (silver lining)
+  vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + 0.03;
+  float fog = 1.0 - exp(-tTop * 0.0022);                        // aerial perspective -> dissolves at the horizon
+  return vec4(mix(lit, environment(rd), fog), cov * (1.0 - fog * 0.85));
+}
+
 // Composite the cloud march over a given background colour (used by reflections).
 vec3 skyCloudsOver(vec3 bg, vec3 ro, vec3 rd, float time, float tMax, int steps) {
   vec4 c = marchClouds(ro, rd, time, tMax, steps, 0); // reflections skip the point-light in-scatter

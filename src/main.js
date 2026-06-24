@@ -404,6 +404,7 @@ if (isLocalhost) {
   cf.add(cloudParams, 'windX', -3, 3, 0.05).name('wind x').onChange(applyClouds);
   cf.add(cloudParams, 'windZ', -3, 3, 0.05).name('wind z').onChange(applyClouds);
   cf.add(cloudParams, 'quality', 8, 120, 1).name('quality (steps)').onChange(applyClouds);
+  cf.add(cloudParams, 'farDeck').name('far deck (horizon)').onChange(applyClouds);
   const lookParams = { ...backend.lookDefaults };
   const applyLook = () => backend.setLook(lookParams);
   const lf = debugGui.addFolder('look');
