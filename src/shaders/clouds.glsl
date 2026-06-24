@@ -19,6 +19,7 @@ uniform float uCloudAmbient;  // sky-ambient fill strength
 uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
 uniform float uCloudHGBack;   // back-lobe anisotropy magnitude (silver-lining rim toward the moon)
 uniform float uCloudBackMix;  // 0..1 weight of the back lobe (0 = old single forward lobe)
+uniform vec3  uCloudExtinction; // per-channel extinction tint (mean ~1 -> silhouette unchanged): R>B = warm thin edges, cool depth
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
@@ -94,7 +95,8 @@ float cloudShadow(vec3 worldPos, vec3 sunDir, float time) {
 
 // Core march: premultiplied in-scatter (rgb) + transmittance (a), bounded by tMax (depth/hit
 // stop). Composite over the background behind via `bg*a + rgb` (see skyCloudsOver).
-vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightCap) {
+vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightCap, out vec3 oT) {
+  oT = vec3(1.0); // per-channel transmittance the caller multiplies the background by (set on every return path)
   if (uCloudsOn < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
   float yLo = uCloudBase - uCloudThick;
   float yHi = uCloudBase + uCloudThick;
@@ -124,12 +126,12 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
   // (doesn't replace) the forward scatter, so uCloudBackMix=0 reverts exactly to the old single lobe.
   float phF = hg(cosT, uCloudHG);
   float phase = 0.35 + 1.4 * mix(phF, hg(cosT, -uCloudHGBack) + 0.5 * phF, uCloudBackMix); // isotropic base + dual lobe
-  vec3 ambient = environment(rd) * uCloudAmbient + 0.03; // sky fill + non-black floor
-  float T = 1.0;          // transmittance
+  vec3 ambient = environment(rd) * uCloudAmbient + vec3(0.018, 0.024, 0.04); // sky fill + a COOL (not grey) floor
+  vec3 T = vec3(1.0);     // per-channel transmittance (extinction is wavelength-tinted)
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
   float t = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * minStep; // per-frame blue-noise jitter -> no slice banding/layering
   for (int i = 0; i < 192; i++) {
-    if (i >= steps || t >= t1 || T < 0.02) break;
+    if (i >= steps || t >= t1 || max(max(T.r, T.g), T.b) < 0.02) break;
     vec3 p = ro + rd * t;
     float dens = cloudDensity(p, time);
     if (dens <= 0.002) { t += step * 1.6; step *= growth; continue; } // coarse-step empty patches (step keeps growing)
@@ -154,13 +156,14 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
       float att = clamp(1.0 - dist / lp.w, 0.0, 1.0); att *= att;                   // soft glow lobe
       S += lc.rgb * att * hg(dot(rd, dl / max(dist, 1e-4)), uCloudHG) * uCloudLightGain;
     }
-    float dT = exp(-dens * step * 1.5);
+    vec3 dT = exp(-dens * step * 1.5 * uCloudExtinction); // per-channel extinction -> wavelength-tinted depth
     scat += T * (1.0 - dT) * S;
     T *= dT;
     t += step;
     step *= growth; // distance LOD: each step a little longer
   }
-  return vec4(scat, T);
+  oT = T;
+  return vec4(scat, dot(T, vec3(0.2126, 0.7152, 0.0722))); // .a kept as luminance transmittance (legacy callers)
 }
 
 // Analytic far cloud deck: an infinite cloud-top plane for distant downward rays from ABOVE the band.
@@ -180,15 +183,15 @@ vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
   if (cov <= 0.002) return vec4(0.0);
   float cosD = dot(rd, uSunDir);
   float phase = 0.4 + 1.3 * mix(hg(cosD, uCloudHG), hg(cosD, -uCloudHGBack) + 0.5 * hg(cosD, uCloudHG), uCloudBackMix); // moon key (silver lining + back-lobe rim)
-  vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + 0.03;
+  vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + vec3(0.018, 0.024, 0.04);
   float fog = 1.0 - exp(-tTop * 0.0022);                        // aerial perspective -> dissolves at the horizon
   return vec4(mix(lit, environment(rd), fog), cov * (1.0 - fog * 0.85));
 }
 
 // Composite the cloud march over a given background colour (used by reflections).
 vec3 skyCloudsOver(vec3 bg, vec3 ro, vec3 rd, float time, float tMax, int steps) {
-  vec4 c = marchClouds(ro, rd, time, tMax, steps, 0); // reflections skip the point-light in-scatter
-  return bg * c.a + c.rgb;
+  vec3 oT; vec4 c = marchClouds(ro, rd, time, tMax, steps, 0, oT); // reflections skip the point-light in-scatter
+  return bg * oT + c.rgb; // per-channel transmittance tints the background behind the cloud
 }
 // Unbounded clouds composited over the environment() sky (reflections call this).
 vec3 skyClouds(vec3 ro, vec3 rd, float time, int steps) {

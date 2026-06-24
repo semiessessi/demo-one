@@ -51,6 +51,7 @@ class CloudPass extends Pass {
       uCloudSteps: shared.uCloudSteps,
       uSunDir: shared.uSunDir, uSunColor: shared.uSunColor, uCloudAmbient: shared.uCloudAmbient,
       uCloudHG: shared.uCloudHG, uCloudHGBack: shared.uCloudHGBack, uCloudBackMix: shared.uCloudBackMix,
+      uCloudExtinction: shared.uCloudExtinction,
       uCloudPowder: shared.uCloudPowder, uFrame: shared.uFrame,
       uFarDeckOn: shared.uFarDeckOn,
       uCloudLightsTex: shared.uCloudLightsTex, uCloudLightsTexW: shared.uCloudLightsTexW,
@@ -160,7 +161,7 @@ export function createWebGLBackend({
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
   // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
-  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, hgBack: 0.2, backMix: 0.35, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0 };
+  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, hgBack: 0.2, backMix: 0.35, powder: 0.7, moonStrength: 0.5, lightScatter: 2.0, moonSize: 10.0, extR: 1.06, extG: 1.0, extB: 0.94 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
@@ -236,6 +237,7 @@ export function createWebGLBackend({
     uCloudHG: { value: cloudLightDefaults.hg },
     uCloudHGBack: { value: cloudLightDefaults.hgBack },
     uCloudBackMix: { value: cloudLightDefaults.backMix },
+    uCloudExtinction: { value: new THREE.Vector3(cloudLightDefaults.extR, cloudLightDefaults.extG, cloudLightDefaults.extB) },
     uCloudPowder: { value: cloudLightDefaults.powder },
     uFarDeckOn: { value: 1 }, // analytic far cloud deck (infinite cloud top to the horizon)
     uMoonStrength: { value: cloudLightDefaults.moonStrength },
@@ -302,6 +304,7 @@ export function createWebGLBackend({
     uniforms.uCloudHG.value = p.hg;
     uniforms.uCloudHGBack.value = p.hgBack;
     uniforms.uCloudBackMix.value = p.backMix;
+    uniforms.uCloudExtinction.value.set(p.extR, p.extG, p.extB);
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
     uniforms.uCloudLightGain.value = p.lightScatter;

@@ -56,6 +56,6 @@ void main() {
     vec4 deck = farCloudDeck(uCamPos, rd, uTime);
     sceneCol = mix(sceneCol, deck.rgb, deck.a);
   }
-  vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps), uCloudLightCap);
-  fragColor = vec4(sceneCol * c.a + c.rgb, 1.0);
+  vec3 oT; vec4 c = marchClouds(uCamPos, rd, uTime, sceneDist, int(uCloudSteps), uCloudLightCap, oT);
+  fragColor = vec4(sceneCol * oT + c.rgb, 1.0); // per-channel transmittance tints the scene behind the cloud
 }
