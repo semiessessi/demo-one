@@ -440,6 +440,7 @@ if (isLocalhost) {
   const applyOcean = () => backend.setOcean(oceanParams);
   const of = debugGui.addFolder('ocean');
   of.add(oceanParams, 'on').name('ocean').onChange(applyOcean);
+  if (backend.hasFFT) of.add(oceanParams, 'fft').name('FFT waves').onChange(applyOcean);
   of.add(oceanParams, 'y', -200, 20, 1).name('sea level').onChange(applyOcean);
   of.add(oceanParams, 'wave', 0, 4, 0.05).name('wave height').onChange(applyOcean);
   of.add(oceanParams, 'freq', 0.02, 0.4, 0.005).name('wave freq').onChange(applyOcean);

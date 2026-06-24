@@ -20,6 +20,9 @@ uniform samplerCube uStarCube;   // baked starfield (reflected in the water)
 uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + level) mirrored about the sea
 uniform float uOceanReflOn;      // 1 when that reflection rendered this frame
 uniform float uOceanReflDistort; // how much the waves ripple-distort the planar reflection (screen-space)
+uniform sampler2D uOceanFFTDisp; // GPU FFT displacement (dx, dy, dz), tiled over world XZ
+uniform float uOceanFFTOn;       // 0 analytic, 1 FFT, 2 FFT debug (height as grey)
+uniform float uOceanFFTL;        // FFT tile size (world units)
 
 const float OCEAN_PI = 3.14159265;
 
@@ -66,8 +69,25 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   if (tHit <= 0.0) return environment(rd);
   vec3 hit = ro + rd * tHit;
   float fade = exp(-tHit * 0.0028);           // flatten waves toward the horizon (anti-alias)
-  vec2 grad; float jac; float h = oceanWaves(hit.xz, t, grad, jac);
-  vec3 n = normalize(vec3(-grad.x * uOceanWave * fade, 1.0, -grad.y * uOceanWave * fade));
+  vec3 n; float h; float jac;
+  if (uOceanFFTOn > 0.5) {
+    // Sample the GPU FFT displacement field; derive the normal + foam Jacobian by finite differences.
+    vec2 suv = hit.xz / uOceanFFTL;
+    float tx = 1.0 / 256.0, texel = uOceanFFTL / 256.0;
+    vec3 d0 = texture(uOceanFFTDisp, suv).xyz;
+    if (uOceanFFTOn > 1.5) return vec3(d0.y * 0.5 + 0.5); // debug: raw height field
+    vec3 dXp = texture(uOceanFFTDisp, suv + vec2(tx, 0.0)).xyz;
+    vec3 dZp = texture(uOceanFFTDisp, suv + vec2(0.0, tx)).xyz;
+    float hx = (dXp.y - d0.y) / texel, hz = (dZp.y - d0.y) / texel;
+    n = normalize(mix(vec3(0.0, 1.0, 0.0), normalize(vec3(-hx * uOceanWave, 1.0, -hz * uOceanWave)), fade));
+    float jxx = 1.0 + (dXp.x - d0.x) / texel, jzz = 1.0 + (dZp.z - d0.z) / texel;
+    float jxz = (dZp.x - d0.x) / texel, jzx = (dXp.z - d0.z) / texel;
+    jac = jxx * jzz - jxz * jzx;
+    h = d0.y;
+  } else {
+    vec2 grad; h = oceanWaves(hit.xz, t, grad, jac);
+    n = normalize(vec3(-grad.x * uOceanWave * fade, 1.0, -grad.y * uOceanWave * fade));
+  }
   vec3 view = -rd;
 
   // Fresnel reflection of the whole sky: gradient + stars + clouds, then the planar scene reflection
@@ -84,7 +104,7 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
 
   // GGX moon glints on the wave facets (sharp sparkle along the moon path).
   vec3 Hh = normalize(view + uSunDir);
-  float spec = ggxD(max(dot(n, Hh), 0.0), 0.09) * max(uSunDir.y, 0.0);
+  float spec = ggxD(max(dot(n, Hh), 0.0), 0.13) * max(uSunDir.y, 0.0); // softer glints (less FFT-normal aliasing)
   // Subsurface scatter: moonlight transmitting through the wave crests (Atlas/Acerola model) — a teal
   // glow strongest on the back of tall waves toward the moon, plus a soft ambient term.
   float crest = max(h, 0.0);

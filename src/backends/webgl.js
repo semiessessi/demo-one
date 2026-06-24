@@ -27,6 +27,7 @@ import libGlsl from '../shaders/lib.glsl?raw';
 import cloudsGlsl from '../shaders/clouds.glsl?raw';
 import cloudPassFrag from '../shaders/cloud.pass.glsl?raw';
 import oceanGlsl from '../shaders/ocean.glsl?raw';
+import { createOceanFFT } from '../oceanFFT.js';
 import { buildStarfield, bakeStarCubemap } from '../starfield.js';
 import { buildMoon } from '../moon.js';
 import { parseBSP } from '../bsp.js';
@@ -62,6 +63,7 @@ class CloudPass extends Pass {
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
       uOceanReflDistort: shared.uOceanReflDistort,
+      uOceanFFTDisp: shared.uOceanFFTDisp, uOceanFFTOn: shared.uOceanFFTOn, uOceanFFTL: shared.uOceanFFTL,
     };
     this.u = u;
     this.material = new THREE.RawShaderMaterial({
@@ -108,6 +110,13 @@ export function createWebGLBackend({
   // it — otherwise sampling the unrendered cube RT (ocean/morph reflections) throws on the first frames.
   for (let f = 0; f < 6; f++) { renderer.setRenderTarget(starCubeRT, f); renderer.clear(); }
   renderer.setRenderTarget(null);
+  // GPU FFT ocean — needs full-float render targets (EXT_color_buffer_float) + float linear filtering.
+  // Off on mobile; the analytic ocean is the fallback. dispTexture holds (dx, dy, dz) per FFT texel.
+  const fftCapable = !lowGfx && !!gl.getExtension('EXT_color_buffer_float') && !!gl.getExtension('OES_texture_float_linear');
+  const oceanFFT = fftCapable ? createOceanFFT(renderer, { N: 256, L: 80, choppy: 1.0, windSpeed: 11, fetch: 12000, amplitude: 1.0, scale: 0.08 }) : null;
+  const fftPlaceholder = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
+  fftPlaceholder.needsUpdate = true;
+  let fftWanted = !!oceanFFT; // user/GUI intent; the autoscaler may still shed it under load
   renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.5, window.devicePixelRatio)); // cap fill-rate (tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
@@ -150,7 +159,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 0.9, foamThresh: 0.92, distort: 0.35, octaves: lowGfx ? 4 : 11 };
+  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 1.0, foamThresh: 0.65, distort: 0.35, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -256,6 +265,10 @@ export function createWebGLBackend({
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
     uOceanReflDistort: { value: oceanDefaults.distort }, // wave ripple on the planar reflection
+    // GPU FFT ocean: (dx, dy, dz) displacement texture + tile size; 0/1/2 = analytic / FFT / FFT-debug.
+    uOceanFFTDisp: { value: oceanFFT ? oceanFFT.dispTexture : fftPlaceholder },
+    uOceanFFTOn: { value: oceanFFT ? 1 : 0 },
+    uOceanFFTL: { value: oceanFFT ? oceanFFT.L : 200 },
   };
 
   // Moon direction = elevation + azimuth -> uSunDir (shared by the moonlight + the moon disc).
@@ -412,7 +425,13 @@ export function createWebGLBackend({
       uniforms.uOceanFoam.value = p.foam;
       if (p.foamThresh !== undefined) uniforms.uOceanFoamThresh.value = p.foamThresh;
       if (p.distort !== undefined) uniforms.uOceanReflDistort.value = p.distort;
+      if (p.fft !== undefined && oceanFFT) { fftWanted = !!p.fft; uniforms.uOceanFFTOn.value = fftWanted ? 1 : 0; }
     },
+    setFFTMode(m) { if (oceanFFT) uniforms.uOceanFFTOn.value = m; }, // 0 analytic, 1 FFT, 2 debug height
+    setFFTScale(v) { if (oceanFFT) oceanFFT.setScale(v); },
+    setFFTChoppy(v) { if (oceanFFT) oceanFFT.setChoppy(v); },
+    setFFTSpectrum(o) { if (oceanFFT) oceanFFT.rebuildSpectrum(o); },
+    hasFFT: !!oceanFFT,
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
     // so it never blocks first paint. Builds the mesh, shades it with the demo's lighting, adds it.
     async loadBspMap(url) {
@@ -480,6 +499,7 @@ export function createWebGLBackend({
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(8, Math.round(uniforms.uMapBrushCount.value * s)) : 0; // raytraced map shadows
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * s));
       oceanReflQuality = !lowGfx && s > 0.6; // shed the planar ocean reflection (a 2nd scene render) under load / on mobile
+      if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.5) ? 1 : 0; // shed the FFT (-> analytic) under load
     },
     mapDefaults,
     setMap(p) { mapShadowsOn = p.shadows; uniforms.uMapLightScale.value = p.lightScale; uniforms.uMapGlowScale.value = p.glowScale; uniforms.uMapShadowCap.value = p.shadows ? uniforms.uMapBrushCount.value : 0; },
@@ -513,6 +533,7 @@ export function createWebGLBackend({
       sky.position.copy(camera.position); // dome follows the camera too -> the gradient sky is at infinity
       if (moonrise.on) applySunDir(-10.0 + (moonTargetElev + 10.0) * THREE.MathUtils.smoothstep(uniforms.uTime.value, 0, moonrise.dur)); // moonrise tracks the demo clock
       uniforms.uFrame.value = (uniforms.uFrame.value + 1) % 1024; // advance the per-frame cloud dither
+      if (oceanFFT && uniforms.uOceanFFTOn.value > 0.5) oceanFFT.update(uniforms.uTime.value); // evolve + IFFT the wave field
       // Planar ocean reflection: render layer-0 geometry (objects + sprites + level) from the camera
       // mirrored about the sea plane into reflRT. Gated by the FPS autoscaler (oceanReflQuality).
       if (oceanReflQuality && uniforms.uOceanOn.value > 0.5) {
