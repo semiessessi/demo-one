@@ -103,10 +103,15 @@
         text-align: right;
         margin: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 12px;
+        font-size: 15px;
+        font-weight: 700;
         line-height: 1.4;
         color: #7fd08a;
-        text-shadow: 0 0 2px #000;
+        /* thick black outline (8-way) + a soft glow so it reads over any background */
+        text-shadow:
+          -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000,
+          -2px 0 0 #000, 2px 0 0 #000, 0 -2px 0 #000, 0 2px 0 #000,
+          0 0 4px #000;
         white-space: pre;
         pointer-events: none;
         display: none;
