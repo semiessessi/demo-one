@@ -440,6 +440,15 @@ if (isLocalhost) {
   clf.add(clParams, 'moonStrength', 0, 3, 0.05).name('moon on scene').onChange(applyCloudLight);
   clf.add(clParams, 'lightScatter', 0, 6, 0.1).name('lights -> cloud').onChange(applyCloudLight);
   clf.add(clParams, 'moonSize', 0, 20, 0.5).name('moon size').onChange(applyCloudLight);
+  // God rays + silver-lining + per-channel tint (mean ~1 -> R>B = warm thin edges, cool depth).
+  const grf = clf.addFolder('god rays + tint');
+  grf.add(clParams, 'godrayStrength', 0, 0.3, 0.005).name('god rays').onChange(applyCloudLight);
+  grf.add(clParams, 'godrayDecay', 0.005, 0.1, 0.005).name('god ray reach').onChange(applyCloudLight);
+  grf.add(clParams, 'hgBack', 0, 0.9, 0.01).name('silver back').onChange(applyCloudLight);
+  grf.add(clParams, 'backMix', 0, 1, 0.01).name('silver mix').onChange(applyCloudLight);
+  grf.add(clParams, 'extR', 0.6, 1.4, 0.01).name('tint R').onChange(applyCloudLight);
+  grf.add(clParams, 'extG', 0.6, 1.4, 0.01).name('tint G').onChange(applyCloudLight);
+  grf.add(clParams, 'extB', 0.6, 1.4, 0.01).name('tint B').onChange(applyCloudLight);
   const mrParams = { moonrise: true };
   clf.add(mrParams, 'moonrise').name('moonrise (-10->elev)').onChange((v) => backend.setMoonrise(v));
   // Live readout of the CURRENT moon elevation (the rise animates it from -10 up to 'moon elevation').
@@ -447,6 +456,14 @@ if (isLocalhost) {
   const moonLive = { elev: clParams.sunElev };
   const moonLiveCtrl = clf.add(moonLive, 'elev', -10, 90, 0.1).name('elevation (live)').disable();
   debugFrameHook = () => { moonLive.elev = Math.round(backend.sunElevDeg() * 10) / 10; moonLiveCtrl.updateDisplay(); };
+  // Object materials: procedural-detail strength + the specular punch at the mirror/matte ends.
+  // 'detail' is also FPS-autoscaled, so turn off 'perf > fps autoscale' to pin it while tweaking.
+  const matParams = { ...backend.materialDefaults };
+  const applyMaterials = () => backend.setMaterials(matParams);
+  const matf = debugGui.addFolder('materials');
+  matf.add(matParams, 'detail', 0, 1, 0.01).name('procedural detail').onChange(applyMaterials);
+  matf.add(matParams, 'specBoostHi', 0, 40, 0.5).name('spec (metal)').onChange(applyMaterials);
+  matf.add(matParams, 'specBoostLo', 0, 20, 0.5).name('spec (matte)').onChange(applyMaterials);
   const mapParams = { ...backend.mapDefaults };
   const applyMap = () => backend.setMap(mapParams);
   const mf = debugGui.addFolder('wrackdm17 (m)');
@@ -463,6 +480,7 @@ if (isLocalhost) {
   of.add(oceanParams, 'freq', 0.02, 0.4, 0.005).name('wave freq').onChange(applyOcean);
   of.add(oceanParams, 'foam', 0, 2, 0.05).name('foam').onChange(applyOcean);
   of.add(oceanParams, 'foamThresh', 0.2, 1.2, 0.01).name('foam fold').onChange(applyOcean);
+  of.add(oceanParams, 'crestFoam', 0, 1, 0.01).name('crest foam').onChange(applyOcean);
   of.add(oceanParams, 'distort', 0, 1, 0.01).name('refl ripple').onChange(applyOcean);
   of.add(oceanParams, 'fog', 0, 0.03, 0.0005).name('horizon fade').onChange(applyOcean);
   of.addColor(oceanParams, 'color').name('water colour').onChange(applyOcean);
