@@ -224,7 +224,7 @@ float falloff(float dist, float radius) {
 vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist, float fallD, float fallS) {
   vec3 H = normalize(V + L);
   float NdotL = max(dot(N, L), 0.0), NdotV = max(dot(N, V), 1e-4), NdotH = max(dot(N, H), 0.0), LdotH = max(dot(L, H), 0.0);
-  float specRough = min(roughness, 0.18); float alpha = specRough * specRough;
+  float specRough = clamp(roughness, 0.04, 1.0); float alpha = specRough * specRough; // honour roughness (was clamped to 0.18 -> insane tight glints)
   float wAlpha = clamp(alpha + 0.015 / (3.0 * dist), 0.0, 1.0); float wAlpha2 = wAlpha * wAlpha;
   float energy = (alpha / wAlpha) * (alpha / wAlpha);
   float dDen = NdotH * NdotH * (wAlpha2 - 1.0) + 1.0; float D = energy * wAlpha2 / (dDen * dDen);
@@ -233,7 +233,7 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, 
   float smithL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
   float Vis = 0.5 / max(smithV + smithL, 1e-5);
   vec3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
-  return (diffuseAlbedo * fallD + D * Vis * F * 8.0 * fallS) * NdotL;
+  return (diffuseAlbedo * fallD + D * Vis * F * 1.6 * fallS) * NdotL; // arena surfaces read DIFFUSE (spec 8.0 -> 1.6)
 }
 
 // Ray vs one convex brush (world-space half-space planes, static): the traceHull slab loop.
@@ -290,7 +290,10 @@ vec3 shadeMapLights(vec3 p, vec3 N, vec3 V, vec3 albedo) {
     float flare = musicFlare(band, uBeatTime[band], uBeatStrength[band], uMusicTime, uBeatDecay[band]);
     float emission = MAP_BASE + 0.6 * flare + uAmplitude * uAmpGain * 0.15;
     float sh = mapShadow(p + N * 0.02, L, dist);
-    lit += brdf(N, V, L, albedo, F0, 0.5, dist, falloff(dist, l1.w), fallS) * l1.rgb * uMapLightScale * sh * emission;
+    // Mostly-matte arena surfaces, spatially MODULATED (so it's not a uniform sheen) — brighter/metal
+    // bits a touch glossier, the rest rough concrete. cloudFbm comes from the prepended clouds.glsl.
+    float gloss = clamp(0.55 + 0.30 * (cloudFbm(p * 0.15, 2) - 0.5) + 0.12 * max(max(albedo.r, albedo.g), albedo.b), 0.45, 0.95);
+    lit += brdf(N, V, L, albedo, F0, gloss, dist, falloff(dist, l1.w), fallS) * l1.rgb * uMapLightScale * sh * emission;
   }
   return lit;
 }
