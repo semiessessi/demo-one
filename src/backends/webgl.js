@@ -57,7 +57,8 @@ class CloudPass extends Pass {
       uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
       uOceanScatter: shared.uOceanScatter, uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
-      uOceanFoam: shared.uOceanFoam, uOceanOctaves: shared.uOceanOctaves,
+      uOceanFreq: shared.uOceanFreq,
+      uOceanFoam: shared.uOceanFoam, uOceanFoamThresh: shared.uOceanFoamThresh, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
       uOceanReflDistort: shared.uOceanReflDistort,
@@ -149,7 +150,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, foam: 0.7, distort: 0.35, octaves: lowGfx ? 4 : 11 };
+  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 0.9, foamThresh: 0.92, distort: 0.35, octaves: lowGfx ? 4 : 11 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -248,7 +249,9 @@ export function createWebGLBackend({
     uOceanScatter: { value: new THREE.Color(oceanDefaults.scatter) },
     uOceanFog: { value: oceanDefaults.fog },
     uOceanWave: { value: oceanDefaults.wave },
+    uOceanFreq: { value: oceanDefaults.freq },
     uOceanFoam: { value: oceanDefaults.foam },
+    uOceanFoamThresh: { value: oceanDefaults.foamThresh },
     uOceanOctaves: { value: oceanDefaults.octaves },
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
@@ -405,7 +408,9 @@ export function createWebGLBackend({
       uniforms.uOceanScatter.value.set(p.scatter);
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
+      if (p.freq !== undefined) uniforms.uOceanFreq.value = p.freq;
       uniforms.uOceanFoam.value = p.foam;
+      if (p.foamThresh !== undefined) uniforms.uOceanFoamThresh.value = p.foamThresh;
       if (p.distort !== undefined) uniforms.uOceanReflDistort.value = p.distort;
     },
     // Stream the wrackdm17 level in after the first frame (mirrors the starfield/scene hot-swaps),
