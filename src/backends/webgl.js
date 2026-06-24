@@ -55,7 +55,7 @@ class CloudPass extends Pass {
       uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
       uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
-      uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
+      uOceanScatter: shared.uOceanScatter, uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
     };
     this.u = u;
@@ -139,7 +139,7 @@ export function createWebGLBackend({
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
-  const oceanDefaults = { on: true, y: -70, color: 0x05161e, fog: 0.006, wave: 1.0 };
+  const oceanDefaults = { on: true, y: -70, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -234,6 +234,7 @@ export function createWebGLBackend({
     uOceanOn: { value: oceanDefaults.on ? 1 : 0 },
     uOceanY: { value: oceanDefaults.y },
     uOceanColor: { value: new THREE.Color(oceanDefaults.color) },
+    uOceanScatter: { value: new THREE.Color(oceanDefaults.scatter) },
     uOceanFog: { value: oceanDefaults.fog },
     uOceanWave: { value: oceanDefaults.wave },
   };
@@ -372,6 +373,7 @@ export function createWebGLBackend({
       uniforms.uOceanOn.value = p.on ? 1 : 0;
       uniforms.uOceanY.value = p.y;
       uniforms.uOceanColor.value.set(p.color);
+      uniforms.uOceanScatter.value.set(p.scatter);
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
     },
