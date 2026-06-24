@@ -1,4 +1,4 @@
-import { clamp, smooth, lissajous3 } from './math.js';
+import { clamp, smooth, lissajous3, smoothDamp, smoothDampAngle } from './math.js';
 
 // Shared fly camera + pdx-style intro. Operates on a camera through .position and
 // .rotation only — no three import here, no cross-instance math objects.
@@ -30,6 +30,12 @@ const FLYUP_END = 138.0;
 const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const MAP_LOOK_Y = 92.0; // the finale settles looking back at the wrackdm17 level floating above the deck (bspMesh PLACE.floorY 64 + ~half height)
 const TWO_PI = Math.PI * 2.0;
+// Output smoothing of the AUTO camera: a critically-damped spring on the final position + look
+// angles smooths both the value AND its derivative, so path/blend/look-offset velocity kinks and
+// frame hitches stop reading as little jerks. Position time is kept tight so the smoothed pose barely
+// leaves the keep-out path (no new object clipping). Free flight stays direct (no spring).
+const POS_SMOOTH = 0.10;   // seconds — position critically-damped follow
+const LOOK_SMOOTH = 0.18;  // seconds — yaw/pitch critically-damped follow (look jerks are the most visible)
 const FLY_AMP = [16.0, 10.0, 16.0];  // fly extent per axis (x, y-up, z) — wide so it isn't stuck in the centre
 const FLY_FREQ = [1.0, 0.73, 1.31];  // Lissajous frequencies (pdx-gfx scene 0)
 const FLY_PHASE = [0.0, 1.7, 3.1];   // Lissajous phases
@@ -52,6 +58,9 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   let rollSmooth = 0;             // smoothed camera roll (3rd euler)
   let musicLevel = 0;             // 0..1 music amplitude (note density), set by setMusicLevel
   let sox = 0, soy = 0, soz = 0, lookSmoothInit = false; // smoothed look-offset -> calms the auto-camera's view swings
+  // Critically-damped output state (auto mode): smoothed position + look angles and their velocities.
+  let outPx = px, outPy = py, outPz = pz, outVx = 0, outVy = 0, outVz = 0;
+  let outYaw = 0, outPitch = 0, outVyaw = 0, outVpitch = 0, outInit = false;
 
   // Point the camera from its current position at (tx,ty,tz); leaves mode unchanged.
   function aim(tx, ty, tz) {
@@ -198,7 +207,25 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
         const lsa = 1.0 - Math.exp(-dt / 0.5);
         sox += (ox - sox) * lsa; soy += (oy - soy) * lsa; soz += (oz - soz) * lsa;
       }
-      aim(px + sox, py + soy, pz + soz);
+      // Critically-damped output spring: ease the final position + look angles toward the
+      // choreographed targets, smoothing the VALUE and its DERIVATIVE so kinks/hitches don't jerk.
+      const tlen = Math.hypot(sox, soy, soz) || 1;
+      const tYaw = Math.atan2(-sox, -soz);
+      const tPitch = clamp(Math.asin(clamp(soy / tlen, -1, 1)), -PITCH_LIMIT, PITCH_LIMIT);
+      if (!outInit) {
+        outPx = px; outPy = py; outPz = pz; outVx = outVy = outVz = 0;
+        outYaw = tYaw; outPitch = tPitch; outVyaw = outVpitch = 0;
+        outInit = true;
+      } else {
+        [outPx, outVx] = smoothDamp(outPx, outVx, px, POS_SMOOTH, dt);
+        [outPy, outVy] = smoothDamp(outPy, outVy, py, POS_SMOOTH, dt);
+        [outPz, outVz] = smoothDamp(outPz, outVz, pz, POS_SMOOTH, dt);
+        [outYaw, outVyaw] = smoothDampAngle(outYaw, outVyaw, tYaw, LOOK_SMOOTH, dt);
+        [outPitch, outVpitch] = smoothDamp(outPitch, outVpitch, tPitch, LOOK_SMOOTH, dt);
+      }
+      // Feed the smoothed pose to the shared camera set below (and to a seamless free-flight handoff).
+      px = outPx; py = outPy; pz = outPz;
+      yaw = outYaw; pitch = outPitch;
     }
     if (mode === 'free') {
       const cp = Math.cos(pitch), sp = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);
@@ -238,6 +265,7 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
     climaxRoll = 0;
     rollSmooth = 0;
     sox = soy = soz = 0; lookSmoothInit = false;
+    outInit = false; // re-seed the output spring at the new start pose (no cold-start lag)
     mode = 'intro';
   }
   function setMusicLevel(level) { musicLevel = clamp(level, 0, 1); }

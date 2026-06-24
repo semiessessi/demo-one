@@ -19,6 +19,26 @@ export function makeRng(seed) {
   };
 }
 
+// Critically-damped spring smoothing (Unity-style SmoothDamp): eases `x` toward `target` with NO
+// overshoot, smoothing both the value AND its velocity (C1), so velocity kinks / frame hitches in the
+// target don't read as jerks. `v` is the carried velocity; returns [newX, newV]. `smoothTime` ~ the
+// time it takes to substantially reach a moving target. Frame-rate independent.
+export function smoothDamp(x, v, target, smoothTime, dt) {
+  const omega = 2 / Math.max(smoothTime, 1e-4);
+  const a = omega * dt;
+  const exp = 1 / (1 + a + 0.48 * a * a + 0.235 * a * a * a); // approximates e^-a, stable for any dt
+  const change = x - target;
+  const temp = (v + omega * change) * dt;
+  const newV = (v - omega * temp) * exp;
+  return [target + (change + temp) * exp, newV];
+}
+// SmoothDamp for an angle (radians): takes the shortest wrapped path so it never spins the long way.
+export function smoothDampAngle(x, v, target, smoothTime, dt) {
+  let d = (target - x) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2; else if (d < -Math.PI) d += Math.PI * 2;
+  return smoothDamp(x, v, x + d, smoothTime, dt);
+}
+
 // 3-axis Lissajous sample: position[i] = amp[i] * sin(freq[i] * U + phase[i]).
 export const lissajous3 = (U, amp, freq, phase) => [
   amp[0] * Math.sin(freq[0] * U + phase[0]),
