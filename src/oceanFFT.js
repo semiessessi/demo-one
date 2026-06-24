@@ -74,6 +74,28 @@ void main(){
   oCol = vec4(hdx.z * norm * uChoppy, hdx.x * norm, dz * norm * uChoppy, 1.0);
 }`;
 
+// Persistent foam: where the displacement folds (Jacobian determinant < threshold) inject foam, then
+// carry the previous frame's foam forward with an exponential decay -> whitecaps that build on breaking
+// crests and dissipate over the next seconds (the GodotOceanWaves "grow linearly, decay exponentially").
+const FOAM_FRAG = /* glsl */`
+precision highp float;
+in vec2 vUv;
+out vec4 oCol;
+uniform sampler2D uDisp, uPrevFoam;
+uniform float uN, uTexel, uDecay, uInject, uThresh;
+void main(){
+  float tx = 1.0 / uN;
+  vec3 d0 = texture(uDisp, vUv).xyz;
+  vec3 dXp = texture(uDisp, vUv + vec2(tx, 0.0)).xyz;
+  vec3 dZp = texture(uDisp, vUv + vec2(0.0, tx)).xyz;
+  float jxx = 1.0 + (dXp.x - d0.x) / uTexel, jzz = 1.0 + (dZp.z - d0.z) / uTexel;
+  float jxz = (dZp.x - d0.x) / uTexel, jzx = (dXp.z - d0.z) / uTexel;
+  float jac = jxx * jzz - jxz * jzx;
+  float fold = smoothstep(uThresh, uThresh - 0.3, jac) * uInject; // injected only where it strongly folds
+  float prev = texture(uPrevFoam, vUv).r;
+  oCol = vec4(min(prev * uDecay + fold, 1.0));
+}`;
+
 function bitReverse(i, bits) {
   let r = 0;
   for (let b = 0; b < bits; b++) { r = (r << 1) | (i & 1); i >>= 1; }
@@ -174,6 +196,8 @@ export function createOceanFFT(renderer, opts = {}) {
   const ping2 = [new THREE.WebGLRenderTarget(N, N, rtOpts), new THREE.WebGLRenderTarget(N, N, rtOpts)];
   const dispRT = new THREE.WebGLRenderTarget(N, N, { ...rtOpts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
   dispRT.texture.wrapS = dispRT.texture.wrapT = THREE.RepeatWrapping;
+  const foam = [0, 1].map(() => { const r = new THREE.WebGLRenderTarget(N, N, { ...rtOpts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }); r.texture.wrapS = r.texture.wrapT = THREE.RepeatWrapping; return r; });
+  let foamRead = 0;
 
   const scene = new THREE.Scene();
   const cam = new THREE.Camera();
@@ -186,8 +210,13 @@ export function createOceanFFT(renderer, opts = {}) {
     uniforms: { uButterfly: { value: butterfly }, uData: { value: null }, uStage: { value: 0 }, uN: { value: N }, uDir: { value: 0 }, uBits: { value: bits } } });
   const combineMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: FFT_VERT, fragmentShader: COMBINE_FRAG,
     uniforms: { uHDx: { value: null }, uDz: { value: null }, uN: { value: N }, uChoppy: { value: opts.choppy ?? 1.1 }, uScale: { value: opts.scale ?? (1.0 / N) } } });
+  const foamMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: FFT_VERT, fragmentShader: FOAM_FRAG,
+    uniforms: { uDisp: { value: dispRT.texture }, uPrevFoam: { value: null }, uN: { value: N }, uTexel: { value: L / N },
+      uDecay: { value: opts.foamDecay ?? 0.97 }, uInject: { value: opts.foamInject ?? 1.0 }, uThresh: { value: opts.foamThresh ?? 0.9 } } });
 
   const draw = (mat, target) => { quad.material = mat; renderer.setRenderTarget(target); renderer.render(scene, cam); };
+  for (const f of foam) { renderer.setRenderTarget(f); renderer.clear(); } // start with no foam
+  renderer.setRenderTarget(null);
 
   // One 2D IFFT: log2(N) horizontal then log2(N) vertical butterfly stages, ping-ponging two buffers.
   const ifft2d = (srcTex, buf) => {
@@ -216,13 +245,18 @@ export function createOceanFFT(renderer, opts = {}) {
       combineMat.uniforms.uHDx.value = ifft2d(evolve0.texture, ping);
       combineMat.uniforms.uDz.value = ifft2d(evolve1.texture, ping2);
       draw(combineMat, dispRT);
+      foamMat.uniforms.uPrevFoam.value = foam[foamRead].texture; // accumulate + decay foam from last frame
+      draw(foamMat, foam[1 - foamRead]);
+      foamRead = 1 - foamRead;
       renderer.setRenderTarget(prev);
     },
+    foamTexture() { return foam[foamRead].texture; },
     setChoppy(c) { combineMat.uniforms.uChoppy.value = c; },
     setScale(v) { combineMat.uniforms.uScale.value = v; },
+    setFoam(p) { if (p.decay !== undefined) foamMat.uniforms.uDecay.value = p.decay; if (p.inject !== undefined) foamMat.uniforms.uInject.value = p.inject; if (p.thresh !== undefined) foamMat.uniforms.uThresh.value = p.thresh; },
     rebuildSpectrum(newOpts) { Object.assign(opts, newOpts); fillH0Data(h0.image.data, N, L, opts); h0.needsUpdate = true; },
     dispose() {
-      [evolve0, evolve1, ...ping, ...ping2, dispRT].forEach((r) => r.dispose());
+      [evolve0, evolve1, ...ping, ...ping2, dispRT, ...foam].forEach((r) => r.dispose());
       [h0, butterfly].forEach((t) => t.dispose());
       quad.geometry.dispose();
     },

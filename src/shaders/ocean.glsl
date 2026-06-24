@@ -22,6 +22,7 @@ uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + leve
 uniform float uOceanReflOn;      // 1 when that reflection rendered this frame
 uniform float uOceanReflDistort; // how much the waves ripple-distort the planar reflection (screen-space)
 uniform sampler2D uOceanFFTDisp; // GPU FFT displacement (dx, dy, dz), tiled over world XZ
+uniform sampler2D uOceanFFTFoam; // accumulated foam (evolves over time), same tiling
 uniform float uOceanFFTOn;       // 0 analytic, 1 FFT, 2 FFT debug (height as grey)
 uniform float uOceanFFTL;        // FFT tile size (world units)
 
@@ -70,21 +71,25 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   if (tHit <= 0.0) return environment(rd);
   vec3 hit = ro + rd * tHit;
   float fade = exp(-tHit * 0.0028);           // flatten waves toward the horizon (anti-alias)
-  vec3 n; float h; float jac;
+  vec3 n; float h; float jac; float fftFoam = 0.0;
   if (uOceanFFTOn > 0.5) {
-    // Sample the GPU FFT displacement field; derive the normal + foam Jacobian by finite differences.
+    // Invert the horizontal (choppy) displacement so the surface pinches into CUSPS at the crests:
+    // find the undisplaced sample point p with p + D(p) = hit.xz (fixed-point p = hit.xz − D(p)).
     vec2 suv = hit.xz / uOceanFFTL;
+    for (int i = 0; i < 4; i++) suv = (hit.xz - texture(uOceanFFTDisp, suv).xz) / uOceanFFTL;
     float tx = 1.0 / 256.0, texel = uOceanFFTL / 256.0;
     vec3 d0 = texture(uOceanFFTDisp, suv).xyz;
     if (uOceanFFTOn > 1.5) return vec3(d0.y * 0.5 + 0.5); // debug: raw height field
     vec3 dXp = texture(uOceanFFTDisp, suv + vec2(tx, 0.0)).xyz;
     vec3 dZp = texture(uOceanFFTDisp, suv + vec2(0.0, tx)).xyz;
     float hx = (dXp.y - d0.y) / texel, hz = (dZp.y - d0.y) / texel;
-    n = normalize(mix(vec3(0.0, 1.0, 0.0), normalize(vec3(-hx * uOceanWave, 1.0, -hz * uOceanWave)), fade));
-    float jxx = 1.0 + (dXp.x - d0.x) / texel, jzz = 1.0 + (dZp.z - d0.z) / texel;
-    float jxz = (dZp.x - d0.x) / texel, jzx = (dXp.z - d0.z) / texel;
-    jac = jxx * jzz - jxz * jzx;
+    // Full wave steepness at all distances — the displacement texture's own detail + linear filtering
+    // handle the horizon (a mild far-flatten only at the very edge to curb sparkle aliasing).
+    float farFlat = mix(0.6, 1.0, fade);
+    n = normalize(vec3(-hx * uOceanWave * farFlat, 1.0, -hz * uOceanWave * farFlat));
+    jac = 0.0;
     h = d0.y;
+    fftFoam = texture(uOceanFFTFoam, suv).r;
   } else {
     vec2 grad; h = oceanWaves(hit.xz, t, grad, jac);
     n = normalize(vec3(-grad.x * uOceanWave * fade, 1.0, -grad.y * uOceanWave * fade));
@@ -125,11 +130,12 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   // Compose: transmitted body (1-F)·scatter + microfacet specular + Fresnel-weighted sky reflection.
   vec3 col = (1.0 - fres) * scatter + specular + fres * reflCol;
 
-  // Jacobian foam (bubbles) where the choppy displacement folds: roughen + blend to foam colour. Soft,
-  // distance-faded, lit by moon + ambient — no noise texture.
-  float foam = smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac) * uOceanFoam * fade;
-  vec3 foamCol = vec3(0.78, 0.85, 0.9) * (0.25 + 0.75 * lit + 0.15);
-  col = mix(col, foamCol, clamp(foam, 0.0, 1.0));
+  // Foam: the FFT path uses the time-accumulated foam buffer (builds on breaking crests, decays over
+  // seconds); the analytic path uses the instantaneous Jacobian fold. Blend to a moonlit foam colour.
+  float foamRaw = (uOceanFFTOn > 0.5) ? fftFoam : smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac);
+  float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam * fade;
+  vec3 foamCol = vec3(0.78, 0.85, 0.9) * (0.4 + 0.75 * lit);
+  col = mix(col, foamCol, foam);
 
   return mix(col, environment(rd), clamp(1.0 - exp(-tHit * uOceanFog), 0.0, 1.0));
 }
