@@ -17,6 +17,8 @@ uniform vec3  uSunDir;        // moonlight direction (the cloud key light)
 uniform vec3  uSunColor;      // moonlight colour * intensity
 uniform float uCloudAmbient;  // sky-ambient fill strength
 uniform float uCloudHG;       // Henyey-Greenstein anisotropy (forward scatter)
+uniform float uCloudHGBack;   // back-lobe anisotropy magnitude (silver-lining rim toward the moon)
+uniform float uCloudBackMix;  // 0..1 weight of the back lobe (0 = old single forward lobe)
 uniform float uCloudPowder;   // 0..1 Beer-Powder dark-edge strength
 uniform float uMoonStrength;  // directional moonlight on the SCENE (occluded by clouds) — morph.frag
 uniform float uReflCloudSteps; // cloud march steps for reflections — morph.frag (autoscaled)
@@ -117,7 +119,11 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
   float cosT = dot(rd, uSunDir);
   float lightStep = uCloudThick * 0.12;     // world-scale spacing of the sun light-march
   // Per-ray constants, hoisted out of the march (they don't vary per step):
-  float phase = 0.35 + 1.4 * hg(cosT, uCloudHG); // isotropic base + forward HG lobe (silver lining)
+  // Dual-lobe HG: forward lobe (uCloudHG, silver lining toward the moon) + a softer BACK lobe
+  // (negative g) for the rim glow when looking through thin cloud at the moon. The back lobe ADDS to
+  // (doesn't replace) the forward scatter, so uCloudBackMix=0 reverts exactly to the old single lobe.
+  float phF = hg(cosT, uCloudHG);
+  float phase = 0.35 + 1.4 * mix(phF, hg(cosT, -uCloudHGBack) + 0.5 * phF, uCloudBackMix); // isotropic base + dual lobe
   vec3 ambient = environment(rd) * uCloudAmbient + 0.03; // sky fill + non-black floor
   float T = 1.0;          // transmittance
   vec3 scat = vec3(0.0);  // accumulated in-scatter (premultiplied)
@@ -172,7 +178,8 @@ vec4 farCloudDeck(vec3 ro, vec3 rd, float time) {
   vec3 np = (vec3(hit.x, uCloudBase, hit.z) + uCloudWind * time) * uCloudNoiseScale;
   float cov = clamp((cloudFbm(np, 4) - (1.0 - uCoverage)) * 3.0, 0.0, 1.0);
   if (cov <= 0.002) return vec4(0.0);
-  float phase = 0.4 + 1.3 * hg(dot(rd, uSunDir), uCloudHG);     // moon key (silver lining)
+  float cosD = dot(rd, uSunDir);
+  float phase = 0.4 + 1.3 * mix(hg(cosD, uCloudHG), hg(cosD, -uCloudHGBack) + 0.5 * hg(cosD, uCloudHG), uCloudBackMix); // moon key (silver lining + back-lobe rim)
   vec3 lit = uSunColor * phase * (0.6 + 0.4 * cov) + environment(rd) * uCloudAmbient + 0.03;
   float fog = 1.0 - exp(-tTop * 0.0022);                        // aerial perspective -> dissolves at the horizon
   return vec4(mix(lit, environment(rd), fog), cov * (1.0 - fog * 0.85));
