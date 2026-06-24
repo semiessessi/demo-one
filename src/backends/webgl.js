@@ -124,6 +124,26 @@ export function createWebGLBackend({
   const fftPlaceholder = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
   fftPlaceholder.needsUpdate = true;
   let fftWanted = !!oceanFFT; // user/GUI intent; the autoscaler may still shed it under load
+  // GPU frame-time via a timer query (EXT_disjoint_timer_query_webgl2): measures actual GPU render
+  // time per frame, INDEPENDENT of vsync, so the autoscaler can target a budget (90fps = 11.1ms) and
+  // find headroom the vsync-capped wall clock can't see. A small ring (results land a frame or two
+  // late). Null without the ext -> the autoscaler falls back to wall-clock.
+  const timerExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  const TQ = timerExt ? [gl.createQuery(), gl.createQuery(), gl.createQuery()] : null;
+  let tqHead = 0, tqTail = 0, tqLen = 0, gpuMs = 0, tqActive = false;
+  const gpuTimerBegin = () => { if (!timerExt || tqLen >= TQ.length) { tqActive = false; return; } gl.beginQuery(timerExt.TIME_ELAPSED_EXT, TQ[tqHead]); tqActive = true; };
+  const gpuTimerEnd = () => { if (!tqActive) return; gl.endQuery(timerExt.TIME_ELAPSED_EXT); tqHead = (tqHead + 1) % TQ.length; tqLen++; tqActive = false; };
+  const gpuTimerPoll = () => {
+    while (tqLen > 0) {
+      const q = TQ[tqTail];
+      if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
+      if (!gl.getParameter(timerExt.GPU_DISJOINT_EXT)) {
+        const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; // ns -> ms
+        gpuMs = gpuMs > 0 ? gpuMs * 0.85 + ms * 0.15 : ms;          // smooth
+      }
+      tqTail = (tqTail + 1) % TQ.length; tqLen--;
+    }
+  };
   renderer.setPixelRatio(Math.min(lowGfx ? 1.0 : 1.3, window.devicePixelRatio)); // cap fill-rate (1.3 on hi-dpi: ~25% fewer fullscreen fragments for a slight softening; tighter on mobile)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x050505, 1);
@@ -580,7 +600,9 @@ export function createWebGLBackend({
       reflRT = makeReflRT(w * p, h * p);
       uniforms.uOceanReflTex.value = reflRT.texture;
     },
+    gpuFrameMs: () => (timerExt ? gpuMs : 0), // smoothed GPU render time (ms); 0 = unsupported -> use wall clock
     render() {
+      gpuTimerPoll(); gpuTimerBegin(); // bracket this frame's GPU work (CPU between here and the draws adds ~0)
       if (flycam) flycam.update(camera);
       culler.cull(camera); // frustum-cull + compact the instances for this view
       cloudLights.update(uniforms, camera.position); // re-pick the lights that colour the cloud band
@@ -616,6 +638,7 @@ export function createWebGLBackend({
       cloudPass.setScene(sceneRT);
       cloudPass.setCamera(camera); // matrixWorld is current after the render above
       composer.render(); // CloudPass (clouds over the scene) -> bloom -> output
+      gpuTimerEnd();
     },
     debugInfo: () => ({ pixelRatio: renderer.getPixelRatio(), rtType: rtType === THREE.HalfFloatType ? 'half-float' : '8-bit', halfFloatRenderable, cloudsOn: !!uniforms.uCloudsOn.value, objects: objects.length }),
     // Hot-swap the progressively-gathered full light/occluder/reflection lists in: rebuild the index

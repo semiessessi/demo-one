@@ -391,7 +391,7 @@ let statsAcc = 0;
 // FPS autoscaler state (runs for everyone; the localhost GUI tunes target/auto).
 let qualityScale = isMobile ? 0.4 : 1; // lower starting quality on mobile; the autoscaler ramps from here
 let lastQAdjust = 0;
-const perf = { auto: true, targetFps: isMobile ? 45 : 60 };
+const perf = { auto: true, targetFps: isMobile ? 45 : 90 }; // desktop targets 90 via the GPU timer (vsync stays on; falls back to 60 if no timer)
 if (qualityScale !== 1) backend.setQualityScale(qualityScale); // apply the mobile start now (the controller only adjusts every 500ms)
 
 // --- Localhost-only debug controls: toggle the geometry + light sprites -----
@@ -620,15 +620,22 @@ function frame() {
   // reflection/light caps) when slow, restoring it when there's headroom.
   if (perf.auto && t - lastQAdjust > 500) {
     lastQAdjust = t;
-    const fps = 1000 / emaMs;
-    if (fps < perf.targetFps - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.18 : 0.12));
-    else if (fps > perf.targetFps + 8) qualityScale = Math.min(1, qualityScale + 0.06);
+    // Prefer the GPU timer (finer than vsync) so we can target >60 with vsync on; otherwise fall back
+    // to the wall clock, whose target is capped at 60 (it can never read higher than the refresh rate).
+    const gpuMs = backend.gpuFrameMs ? backend.gpuFrameMs() : 0;
+    const useGpu = gpuMs > 0.05;
+    const fps = 1000 / (useGpu ? gpuMs : emaMs);
+    const target = useGpu ? perf.targetFps : Math.min(perf.targetFps, 60);
+    if (fps < target - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.18 : 0.12));
+    else if (fps > target + 8) qualityScale = Math.min(1, qualityScale + 0.06);
     backend.setQualityScale(qualityScale);
   }
   if (statsOn) {
     statsAcc += 1;
     if (statsAcc >= 8) {
-      statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms\n♪ ${musicClock.toFixed(1)}s`;
+      const gMs = backend.gpuFrameMs ? backend.gpuFrameMs() : 0; // GPU render time (finer than vsync)
+      const gpuLine = gMs > 0.05 ? `\n${gMs.toFixed(2)} ms gpu (${(1000 / gMs).toFixed(0)})` : '';
+      statsEl.textContent = `${(1000 / emaMs).toFixed(0)} fps\n${emaMs.toFixed(2)} ms${gpuLine}\n♪ ${musicClock.toFixed(1)}s`;
       statsAcc = 0;
     }
   }
