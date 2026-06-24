@@ -178,7 +178,7 @@ console.log(`wrote ${out} (${(slim.length / 1048576).toFixed(2)} MB, slimmed fro
 // shader-aware manifest (name -> {diffuse, mode, glow, glowWave, cull}). ---
 const parsed = parseBSP(slim.buffer.slice(slim.byteOffset, slim.byteOffset + slim.byteLength));
 const wantNames = [...new Set(parsed.textures.map((t) => t.name))]
-  .filter((n) => n.startsWith('textures/') && !n.includes('common/'));
+  .filter((n) => (n.startsWith('textures/') || n.startsWith('models/')) && !n.includes('common/')); // models/ = mapobject shaders (teleporters)
 
 const texPaks = ['pak6-patch088.pk3', 'pak6-patch085.pk3', 'pak4-textures.pk3', 'pak0.pk3', 'pak6-misc.pk3']
   .map((f) => join(oaDir, 'baseoa', f)).filter(existsSync);
