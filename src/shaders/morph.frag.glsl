@@ -196,7 +196,7 @@ bool traceHull(int oi, vec3 roW, vec3 rdW, out float tHit, out vec3 nW) {
   if (seg >= int(uNumSegments + 0.5)) { seg = int(uNumSegments + 0.5) - 1; localT = 1.0; }
 
   vec4 q = qmul(quatAxisAngle(t2.xyz, uTime * t2.w + spinKick(oi, uBeatTime[oi % 32], uBeatSeed[oi % 32], uMusicTime)), baseQ);
-  float S = scale * lookupNorm(p) * musicScale(oi, uScaleNotes) * reveal; // match the vertex's scale incl. spawn-in
+  float S = scale * lookupNorm(p) * musicScale(oi, uScaleNotes) * (1.0 + scaleKick(oi, uBeatTime[oi % 32], uBeatSeed[oi % 32], uMusicTime)) * reveal; // match the vertex (incl. beat scale pop)
 
   // Ray into the occluder's morph-local space (t parameter is preserved).
   vec3 roL = qrot(qconj(q), roW - center) / S;

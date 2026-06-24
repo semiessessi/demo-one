@@ -108,14 +108,23 @@ float spinKick(int idx, float beatTime, float seed, float now) {
   float x = age * 2.5;
   return musicBeatLit(idx, seed) * 0.9 * x * exp(1.0 - x); // smooth spin bump on the object's notes
 }
+// Beat-reactive scale POP: the same fresh per-note subset briefly SWELLS, so the shapes pulse their
+// size vigorously with the music. Transient (peaks ~0.3s) so a swollen shape barely overlaps its
+// neighbours. Used by the vertex AND the occluder hull (kept in lockstep so shadows/reflections match).
+float scaleKick(int idx, float beatTime, float seed, float now) {
+  float age = now - beatTime;
+  if (age < 0.0) return 0.0;
+  float x = age * 4.5;
+  return musicBeatLit(idx, seed) * 0.55 * x * exp(1.0 - x); // up to ~+55% swell, snappy (peak ~0.22s)
+}
 
 // pdx-gfx music-reactive object scale: steps every 20 notes (uScaleNotes = a smoothed note
 // count), easing between random per-object scales in [0.2,1.0].
 float musicScale(int i, float notes) {
-  float off = hashUnit(hash(uint(i) * 5u + 7u)) * 100.0; // NotesPerChange = 100 (5x less frequent)
-  float prog = (notes + off) / 100.0;
+  float off = hashUnit(hash(uint(i) * 5u + 7u)) * 32.0; // NotesPerChange = 32 -> changes ~3x more often
+  float prog = (notes + off) / 32.0;
   float epoch = floor(prog);
-  float blend = smoothstep(0.0, 0.9, prog - epoch); // 3x slower transition
+  float blend = smoothstep(0.0, 0.3, prog - epoch); // SNAP to the new size in the first ~30% of the epoch, then hold
   uint cs = uint(epoch);
   float prev = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ ((cs - 1u) * 2246822519u))));
   float cur  = mix(0.2, 1.0, hashUnit(hash(uint(i) ^ (cs * 2246822519u))));

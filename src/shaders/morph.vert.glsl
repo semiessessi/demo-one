@@ -54,7 +54,8 @@ void main() {
   float spinSpeed = xf2.w;
   // spawn rank by stable object id, so the reveal order survives the frustum compaction
   // (gl_InstanceID is the draw slot, not the object).
-  float scale = xf0.w * spawnReveal(float(oi), uSpawn) * musicScale(oi, uScaleNotes);
+  float scale = xf0.w * spawnReveal(float(oi), uSpawn) * musicScale(oi, uScaleNotes)
+              * (1.0 + scaleKick(oi, uBeatTime[oi % 32], uBeatSeed[oi % 32], uMusicTime)); // beat-reactive size pop
   // Morph position is CPU-driven (note-stepped), uploaded per object, indexed by the stable id.
   float p = texelFetch(uMorphPTex, texel(oi, uMorphPTexW), 0).r;
   int seg = int(floor(p));
