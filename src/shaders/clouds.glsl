@@ -153,8 +153,12 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
       float dist = length(dl);
       if (dist > lp.w) continue;
       vec4 lc = texelFetch(uCloudLightsTex, texel(k * 2 + 1, uCloudLightsTexW), 0); // premult colour
-      float att = clamp(1.0 - dist / lp.w, 0.0, 1.0); att *= att;                   // soft glow lobe
-      S += lc.rgb * att * hg(dot(rd, dl / max(dist, 1e-4)), uCloudHG) * uCloudLightGain;
+      float a = clamp(1.0 - dist / lp.w, 0.0, 1.0);
+      float att = a * a + 0.25 * a;                                                 // quadratic core + a wider linear colour bleed
+      // Isotropic floor on the phase so a nearby light tints the cloud around it even edge-on (was
+      // pure forward hg -> near-zero unless looking straight along it); this is the night-scene colour.
+      float lphase = 0.5 + hg(dot(rd, dl / max(dist, 1e-4)), uCloudHG);
+      S += lc.rgb * att * lphase * uCloudLightGain;
     }
     vec3 dT = exp(-dens * step * 1.5 * uCloudExtinction); // per-channel extinction -> wavelength-tinted depth
     scat += T * (1.0 - dT) * S;
