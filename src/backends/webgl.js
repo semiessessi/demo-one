@@ -518,6 +518,7 @@ export function createWebGLBackend({
       uniforms.uShadowCap.value = Math.max(2, Math.round(16 * s));
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
+      uniforms.uMaterialDetail.value = lowGfx ? 0 : Math.min(1, Math.max(0, (s - 0.35) / 0.3)); // procedural material detail — off on mobile/low, full by s~0.65
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first

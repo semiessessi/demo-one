@@ -1,9 +1,11 @@
 // (lib.glsl prepended: precision + texel/quat helpers/pingpong/environment)
 
 in vec3 vWorldPos;
+in vec3 vLocalPos;      // object-local position (procedural surface texture is locked to the shape)
 in vec3 vColor;
 in float vRough;
 in float vMetal;
+flat in float vMatType; // material class id (0 polished, 1 brushed, 2 chalk, 3 marble, 4 ceramic)
 flat in int vLightOffset;
 flat in int vLightCount;
 flat in int vShadowOffset;
@@ -23,6 +25,7 @@ uniform int uReflCap;
 uniform int uLightCap;
 uniform float uSpecBoostHi; // specular punch for near-mirror materials (low roughness)
 uniform float uSpecBoostLo; // specular punch for matte materials (high roughness)
+uniform float uMaterialDetail; // 0..1 procedural surface-texture strength (autoscaled; 0 off, off on mobile)
 // uStarCube is declared by the prepended ocean.glsl (shared) -> avoid a duplicate-uniform link error
 uniform float uLightTime; // separate clock for the orbiting lights (toggleable)
 uniform float uSpawn;       // spawn-in intro clock (object scale + light reveal/ignite)
@@ -69,6 +72,15 @@ float lookupNorm(float p) {
 float falloff(float dist, float radius) {
   float a = clamp(1.0 - pow4(dist / radius), 0.0, 1.0);
   return a * a / (dist * dist + 1.0);
+}
+
+// --- Per-class procedural surface detail ---------------------------------------------------------
+// Sampled on the stable object-local coord (vLocalPos), so it morphs WITH the shape instead of
+// swimming. cloudFbm/cloudNoise (value noise) come from the prepended clouds.glsl -> no duplicate
+// noise field here. Marble veins: turbulence-warped sine bands -> sharp light/dark veining.
+float marbleVein(vec3 lp, int oct) {
+  float turb = cloudFbm(lp * 2.5, oct);
+  return abs(sin((lp.x * 2.2 + lp.y * 1.3 + turb * 3.5) * 3.14159));
 }
 
 vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 diffuseAlbedo, vec3 F0, float roughness, float dist, float fallD, float fallS) {
@@ -359,20 +371,45 @@ void main() {
   int reflCap = min(int(mix(float(vReflCount), 8.0, lod)), uReflCap);
   int lightCap = min(int(mix(float(vLightCount), 12.0, lod)), uLightCap); // far surfaces shade fewer; the autoscaler caps further
 
-  vec3 lit = shadeDirect(vWorldPos, N, V, vColor, vRough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
+  // Per-class procedural surface detail (off on mobile / low quality via uMaterialDetail; faded out
+  // with distance so far objects don't shimmer). Modulates albedo + roughness + a small normal break;
+  // the SSR gate below still uses the AUTHORED vRough so reflection-list membership stays consistent.
+  vec3 albedo = vColor;
+  float rough = vRough;
+  vec3 Npert = N;
+  float matDetail = uMaterialDetail * (1.0 - lod);
+  if (matDetail > 0.003) {
+    int matType = int(vMatType + 0.5);
+    int oct = uMaterialDetail > 0.5 ? 3 : 2;
+    vec3 lp = vLocalPos;
+    if (matType == 3) {              // marble: subtle light/dark veining
+      float v = marbleVein(lp, oct);
+      albedo *= mix(1.0, 0.80 + 0.30 * v, matDetail);
+    } else if (matType == 2) {       // chalk: micro-roughness grain + a tiny normal break
+      float c = cloudFbm(lp * 7.0, oct);
+      rough = clamp(rough + (c - 0.5) * 0.25 * matDetail, 0.45, 1.0);
+      Npert = normalize(N + matDetail * 0.12 * vec3(dFdx(c), dFdy(c), 0.0));
+    } else if (matType == 1) {       // brushed metal: anisotropic streaks along the local y axis
+      float b = cloudFbm(vec3(lp.x * 22.0, lp.y * 1.5, lp.z * 22.0), oct);
+      rough = clamp(rough + (b - 0.5) * 0.16 * matDetail, 0.06, 0.5);
+    }
+    // classes 0 (polished) + 4 (ceramic) stay clean.
+  }
 
-  vec3 diffuseAlbedo = vColor * (1.0 - vMetal);
+  vec3 lit = shadeDirect(vWorldPos, Npert, V, albedo, rough, vMetal, vLightOffset, vLightCount, true, shadowCap, lightCap);
+
+  vec3 diffuseAlbedo = albedo * (1.0 - vMetal);
   // Full ambient/environment term (no AO): shadowing it hid the soft env reflection.
-  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * N.y);
+  lit += diffuseAlbedo * mix(vec3(0.02, 0.02, 0.03), vec3(0.05, 0.05, 0.06), 0.5 + 0.5 * Npert.y);
   // Directional moonlight on the scene, occluded by the clouds -> the field dapples under cover.
-  lit += diffuseAlbedo * uSunColor * uMoonStrength * (0.3 + 0.7 * max(dot(N, uSunDir), 0.0))
+  lit += diffuseAlbedo * uSunColor * uMoonStrength * (0.3 + 0.7 * max(dot(Npert, uSunDir), 0.0))
        * cloudShadow(vWorldPos, uSunDir, uTime) * uLightScale;
 
-  if (vRough < REFL_ROUGHNESS_MAX) {
-    vec3 F0 = mix(vec3(0.04), vColor, vMetal);
+  if (vRough < REFL_ROUGHNESS_MAX) { // gate on AUTHORED roughness (matches the CPU reflection list)
+    vec3 F0 = mix(vec3(0.04), albedo, vMetal);
     vec3 Rdir = reflect(-V, N);
     float NdotV = max(dot(N, V), 0.0);
-    vec3 envF = F0 + (max(vec3(1.0 - vRough), F0) - F0) * pow5(1.0 - NdotV);
+    vec3 envF = F0 + (max(vec3(1.0 - rough), F0) - F0) * pow5(1.0 - NdotV);
 
     float ht; vec3 hN; int hObj;
     vec3 refl;

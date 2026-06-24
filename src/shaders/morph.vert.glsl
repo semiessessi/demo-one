@@ -29,6 +29,7 @@ uniform float uBeatSeed[32];   // per-slot note seed (which objects kick this no
 uniform float uMusicTime;      // music clock for the beat timestamps
 
 out vec3 vWorldPos;
+out vec3 vLocalPos; // object-local position (pre-transform) for procedural surface texture
 out vec3 vColor;
 out float vRough;
 out float vMetal;
@@ -68,6 +69,7 @@ void main() {
   int i0 = int(floor(fp));
   int i1 = min(i0 + 1, 127);
   local *= mix(uNormScale[i0], uNormScale[i1], fp - float(i0));
+  vLocalPos = local; // stable object-local coord -> procedural texture is locked to the shape (morphs with it, no swim)
 
   int oslot = oi % 32; // music slot -> beat-reactive spin kick
   vec4 spin = quatAxisAngle(xf2.xyz, uTime * spinSpeed + spinKick(oi, uBeatTime[oslot], uBeatSeed[oslot], uMusicTime));
