@@ -17,6 +17,7 @@ uniform float uOceanFreq;   // base wave frequency (bigger = shorter, choppier w
 uniform float uOceanFoam;   // foam amount on the folds
 uniform float uOceanFoamThresh; // Jacobian level below which foam forms (1 = flat, <1 = pinching)
 uniform float uOceanCrestFoam;  // a little foam that always rides the wave crests (height-based)
+uniform float uOceanDisp;       // on-screen heightfield-raymarch steps (0 = flat plane); real surface relief/parallax
 uniform int   uOceanOctaves;// wave octave count (LOD; fewer on mobile)
 uniform samplerCube uStarCube;   // baked starfield (reflected in the water)
 uniform sampler2D uOceanReflTex; // planar reflection: the scene (objects + level) mirrored about the sea
@@ -73,6 +74,30 @@ float oceanWaves(vec2 pos, float t, out vec2 grad, out float jac) {
 vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   float tHit = (uOceanY - ro.y) / rd.y; // rd.y < 0 (downward) when this is called
   if (tHit <= 0.0) return environment(rd);
+  // On-screen sea (full) with FFT: raymarch the heightfield so the surface has real RELIEF + parallax
+  // instead of a flat normal-mapped plane (the "flat and weird" look). Reflections + analytic/mobile
+  // keep the cheap flat-plane hit. Height-only samples (skip the choppy inverse) keep each step cheap;
+  // the full inversion below still runs at the final hit for the shading normals.
+  float dispFade = exp(-tHit * 0.003); // relief on the near/mid sea only; far flattens (no distance aliasing, cheaper)
+  if (full && uOceanDisp > 0.5 && uOceanFFTOn > 0.5 && dispFade > 0.04) {
+    // FFT height field is ~[-1,1]; scale it by uOceanWave (same factor the normals use) so the
+    // wave-height slider drives real geometry, faded with distance, and size the march band to it.
+    float amp = max(1.0, uOceanWave) * 1.4 * dispFade;
+    float tTop = (uOceanY + amp - ro.y) / rd.y;            // band top, above every crest
+    float tBot = (uOceanY - amp - ro.y) / rd.y;            // band bottom, below every trough
+    float ta = max(min(tTop, tBot), 0.0), tb = max(tTop, tBot);
+    int steps = int(uOceanDisp);
+    float dt = (tb - ta) / float(steps);
+    float tt = ta, prevDiff = 1e9;
+    for (int i = 0; i < 48; i++) {
+      if (i >= steps) break;
+      vec3 p = ro + rd * tt;
+      float surf = uOceanY + texture(uOceanFFTDisp, p.xz / uOceanFFTL).y * uOceanWave * dispFade; // height-only sample
+      float diff = p.y - surf;                              // >0 above the surface, <0 below
+      if (diff < 0.0) { tHit = tt - dt * (1.0 - prevDiff / max(prevDiff - diff, 1e-4)); break; } // lerp the crossing
+      prevDiff = diff; tt += dt;
+    }
+  }
   vec3 hit = ro + rd * tHit;
   float fade = exp(-tHit * 0.0014);           // distance LOD (gentler -> detail survives from height)
   float far = 1.0 - fade;                      // 0 near -> 1 far
@@ -142,7 +167,7 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   // seconds); the analytic path uses the instantaneous Jacobian fold. Blend to a moonlit foam colour.
   float foamRaw = (uOceanFFTOn > 0.5) ? fftFoam : smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac);
   float foam = clamp(foamRaw, 0.0, 1.0) * uOceanFoam;            // fold/Jacobian whitecaps (FFT path: the foam buffer)
-  foam = max(foam, smoothstep(0.55, 1.0, H) * uOceanCrestFoam);  // a little foam always rides the wave crests
+  foam = max(foam, smoothstep(0.72, 0.98, H) * uOceanCrestFoam); // sharp foam on the wave TOPS only (less coverage)
   foam = clamp(foam, 0.0, 1.0) * mix(1.0, 0.6, far);             // distant whitecaps stay visible
   vec3 foamCol = vec3(0.80, 0.86, 0.92) * (0.55 + 0.6 * lit);    // brighter floor -> foam isn't killed by the low moon
   col = mix(col, foamCol, foam);

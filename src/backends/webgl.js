@@ -61,7 +61,8 @@ class CloudPass extends Pass {
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
       uOceanScatter: shared.uOceanScatter, uOceanScatterAmt: shared.uOceanScatterAmt,
       uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave, uOceanFreq: shared.uOceanFreq,
-      uOceanFoam: shared.uOceanFoam, uOceanFoamThresh: shared.uOceanFoamThresh, uOceanCrestFoam: shared.uOceanCrestFoam, uOceanOctaves: shared.uOceanOctaves,
+      uOceanFoam: shared.uOceanFoam, uOceanFoamThresh: shared.uOceanFoamThresh, uOceanCrestFoam: shared.uOceanCrestFoam,
+      uOceanDisp: shared.uOceanDisp, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
       uOceanReflDistort: shared.uOceanReflDistort,
@@ -118,7 +119,7 @@ export function createWebGLBackend({
   const fftCapable = !lowGfx && !!gl.getExtension('EXT_color_buffer_float') && !!gl.getExtension('OES_texture_float_linear');
   // windDir matches the cloud wind (cloudDefaults windX/windZ = 2.5 / -2.9) so the swell travels with
   // the clouds; setClouds re-syncs it. Choppier/bigger: stronger wind + choppiness + displacement scale.
-  const oceanFFT = fftCapable ? createOceanFFT(renderer, { N: 256, L: 130, choppy: 1.4, windSpeed: 18, windDir: [2.5, -2.9], fetch: 18000, amplitude: 1.0, scale: 0.55, foamDecay: 0.95, foamInject: 0.06, foamThresh: 0.2 }) : null;
+  const oceanFFT = fftCapable ? createOceanFFT(renderer, { N: 256, L: 130, choppy: 1.4, windSpeed: 18, windDir: [2.5, -2.9], fetch: 6400, amplitude: 1.0, scale: 0.55, foamDecay: 0.95, foamInject: 0.06, foamThresh: 0.2 }) : null;
   const fftPlaceholder = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
   fftPlaceholder.needsUpdate = true;
   let fftWanted = !!oceanFFT; // user/GUI intent; the autoscaler may still shed it under load
@@ -167,7 +168,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 0.35, foamThresh: 0.8, crestFoam: 0.22, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
+  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 24 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -281,6 +282,7 @@ export function createWebGLBackend({
     uOceanFoam: { value: oceanDefaults.foam },
     uOceanFoamThresh: { value: oceanDefaults.foamThresh },
     uOceanCrestFoam: { value: oceanDefaults.crestFoam },
+    uOceanDisp: { value: oceanDefaults.disp }, // on-screen sea heightfield-raymarch steps (0 = flat plane; off on mobile / autoscaled)
     uOceanOctaves: { value: oceanDefaults.octaves },
     uOceanReflTex: { value: mapPlaceholder.tex }, // planar reflection (objects+level mirrored on the water)
     uOceanReflOn: { value: 0 },                    // 1 when the planar reflection rendered this frame
@@ -454,10 +456,16 @@ export function createWebGLBackend({
       if (p.scatterAmt !== undefined) uniforms.uOceanScatterAmt.value = p.scatterAmt;
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
-      if (p.freq !== undefined) uniforms.uOceanFreq.value = p.freq;
+      if (p.freq !== undefined) {
+        uniforms.uOceanFreq.value = p.freq; // analytic path
+        // FFT path ignores uOceanFreq (its frequency lives in the baked spectrum), so map the slider
+        // to the JONSWAP fetch: shorter fetch -> shorter, higher-frequency waves (~freq^-1.5).
+        if (oceanFFT) oceanFFT.rebuildSpectrum({ fetch: 144 * Math.pow(Math.max(p.freq, 0.01), -1.5) });
+      }
       uniforms.uOceanFoam.value = p.foam;
       if (p.foamThresh !== undefined) uniforms.uOceanFoamThresh.value = p.foamThresh;
       if (p.crestFoam !== undefined) uniforms.uOceanCrestFoam.value = p.crestFoam;
+      if (p.disp !== undefined) uniforms.uOceanDisp.value = p.disp;
       if (p.distort !== undefined) uniforms.uOceanReflDistort.value = p.distort;
       if (p.fft !== undefined && oceanFFT) { fftWanted = !!p.fft; uniforms.uOceanFFTOn.value = fftWanted ? 1 : 0; }
     },
@@ -539,6 +547,7 @@ export function createWebGLBackend({
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first
+      uniforms.uOceanDisp.value = lowGfx ? 0 : Math.round(24 * s); // sea heightfield-raymarch steps — rides s, off on mobile
       oceanReflQuality = !lowGfx && s > 0.4;  // planar ocean reflection — protected (was 0.6)
       if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.2) ? 1 : 0; // FFT shed only at the very bottom (was 0.5)
     },
