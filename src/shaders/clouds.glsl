@@ -185,12 +185,12 @@ vec4 marchClouds(vec3 ro, vec3 rd, float time, float tMax, int steps, int lightC
     float gt = t0 + fract(ign(gl_FragCoord.xy) + uFrame * 0.61803399) * grDt; // share the per-frame dither
     float grPhase = 0.25 + 0.75 * hg(cosT, uCloudHG);  // forward bias -> shafts strongest toward the moon
     float grAccum = 0.0;
-    for (int g = 0; g < 32; g++) {       // static bound > the autoscaled max (24) -> smaller unrolled shader
+    for (int g = 0; g < 16; g++) {       // static bound = the autoscaled max -> smaller unrolled shader, better occupancy
       if (g >= grSteps || gt >= grFar) break;
       vec3 gp = ro + rd * gt;
-      float sd = 0.0;                                   // 4 taps (vs 6 in-cloud) of optical depth to the moon
-      for (int j = 1; j <= 4; j++) sd += cloudDensitySun(gp + uSunDir * lightStep * float(j) * 1.5, time);
-      grAccum += exp(-sd * 1.2) * exp(-gt * uGodRayDecay); // visibility * near-camera haze
+      float sd = 0.0;                                   // 3 taps of optical depth to the moon (exponent rescaled to match)
+      for (int j = 1; j <= 3; j++) sd += cloudDensitySun(gp + uSunDir * lightStep * float(j) * 2.0, time);
+      grAccum += exp(-sd * 1.6) * exp(-gt * uGodRayDecay); // visibility * near-camera haze
       gt += grDt;
     }
     scat += T * grAccum * grDt * uGodRayStrength * grPhase * uSunColor;

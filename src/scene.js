@@ -79,9 +79,9 @@ export function generateBase(opts = {}) {
     { color: (r) => hslToRgb(r(), 0.07, 0.80), rough: (r) => 0.16 + r() * 0.12, metal: 0.0 }, // 3 marble
     { color: (r) => hslToRgb(r(), 0.55, 0.55), rough: (r) => 0.38 + r() * 0.12, metal: 0.0 }, // 4 ceramic / plastic
   ];
-  // Cumulative weights -> fewer mirrors (expensive look), more matte; keeps the reflective fraction
-  // (~48%) near the old random one so the reflection-list memory/cost barely moves.
-  const CLASS_CDF = [0.12, 0.30, 0.58, 0.76, 1.0];
+  // Cumulative weights -> fewer mirrors (expensive look), more matte. Reflective classes (0,1,3) sum
+  // to ~0.38 so the SSR-trace cost (the dominant object-shader cost) stays near the old random ~0.40.
+  const CLASS_CDF = [0.10, 0.24, 0.60, 0.74, 1.0];
   const pickClass = (u) => { for (let c = 0; c < 5; c++) if (u < CLASS_CDF[c]) return c; return 4; };
   // Spatial cell hash (~CELL units) -> a stable [0,1) per cell, so neighbouring objects share a class
   // and the field reads as regions of one material rather than salt-and-pepper.

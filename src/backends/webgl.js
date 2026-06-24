@@ -168,7 +168,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 24 };
+  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 16 };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -240,7 +240,7 @@ export function createWebGLBackend({
     uCloudHGBack: { value: cloudLightDefaults.hgBack },
     uCloudBackMix: { value: cloudLightDefaults.backMix },
     uCloudExtinction: { value: new THREE.Vector3(cloudLightDefaults.extR, cloudLightDefaults.extG, cloudLightDefaults.extB) },
-    uGodRaySteps: { value: 24 }, // autoscaled in setQualityScale; full at capture (perf.auto off)
+    uGodRaySteps: { value: 16 }, // autoscaled in setQualityScale; full at capture (perf.auto off)
     uGodRayStrength: { value: cloudLightDefaults.godrayStrength },
     uGodRayDecay: { value: cloudLightDefaults.godrayDecay },
     uCloudPowder: { value: cloudLightDefaults.powder },
@@ -543,11 +543,11 @@ export function createWebGLBackend({
       uniforms.uReflCap.value = Math.max(4, Math.round(64 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(128 * s));
       uniforms.uMaterialDetail.value = lowGfx ? 0 : Math.min(1, Math.max(0, (s - 0.35) / 0.3)); // procedural material detail — off on mobile/low, full by s~0.65
-      uniforms.uGodRaySteps.value = Math.max(0, Math.round(24 * s)); // god-ray shaft samples — rides the main s (off near the bottom)
+      uniforms.uGodRaySteps.value = Math.max(0, Math.round(16 * low)); // god rays are a bonus -> shed EARLY (before object quality)
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first
-      uniforms.uOceanDisp.value = lowGfx ? 0 : Math.round(24 * s); // sea heightfield-raymarch steps — rides s, off on mobile
+      uniforms.uOceanDisp.value = lowGfx ? 0 : Math.round(16 * low); // sea relief is a bonus -> shed EARLY (before object quality); off on mobile
       oceanReflQuality = !lowGfx && s > 0.4;  // planar ocean reflection — protected (was 0.6)
       if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.2) ? 1 : 0; // FFT shed only at the very bottom (was 0.5)
     },

@@ -81,15 +81,16 @@ vec3 oceanShade(vec3 ro, vec3 rd, float t, vec2 uv, bool full) {
   float dispFade = exp(-tHit * 0.003); // relief on the near/mid sea only; far flattens (no distance aliasing, cheaper)
   if (full && uOceanDisp > 0.5 && uOceanFFTOn > 0.5 && dispFade > 0.04) {
     // FFT height field is ~[-1,1]; scale it by uOceanWave (same factor the normals use) so the
-    // wave-height slider drives real geometry, faded with distance, and size the march band to it.
-    float amp = max(1.0, uOceanWave) * 1.4 * dispFade;
+    // wave-height slider drives real geometry, faded with distance. Size the march band to the ACTUAL
+    // amplitude (not a fixed floor) so steps aren't wasted in empty space above/below small waves.
+    float amp = max(0.05, uOceanWave * 1.4) * dispFade;
     float tTop = (uOceanY + amp - ro.y) / rd.y;            // band top, above every crest
     float tBot = (uOceanY - amp - ro.y) / rd.y;            // band bottom, below every trough
     float ta = max(min(tTop, tBot), 0.0), tb = max(tTop, tBot);
     int steps = int(uOceanDisp);
     float dt = (tb - ta) / float(steps);
     float tt = ta, prevDiff = 1e9;
-    for (int i = 0; i < 48; i++) {
+    for (int i = 0; i < 16; i++) {
       if (i >= steps) break;
       vec3 p = ro + rd * tt;
       float surf = uOceanY + texture(uOceanFFTDisp, p.xz / uOceanFFTL).y * uOceanWave * dispFade; // height-only sample
