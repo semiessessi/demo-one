@@ -21,6 +21,7 @@ export function streamBspTextures(tasks) {
     if (!file) continue;
     loadTexture('/' + String(file).replace(/^\/+/, '')).then((tex) => {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping; // Q3 textures tile across surfaces
+      tex.flipY = false; // Q3 BSP UVs are top-left origin; default flipY reverses directional decals (pad arrows)
       tex.anisotropy = 4;
       tex.needsUpdate = true;
       material.uniforms.uMap.value = tex;
