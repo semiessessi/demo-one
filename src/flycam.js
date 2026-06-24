@@ -29,6 +29,11 @@ const FLYUP_START = 110.0;
 const FLYUP_END = 138.0;
 const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const MAP_LOOK_Y = 92.0; // the finale settles looking back at the wrackdm17 level floating above the deck (bspMesh PLACE.floorY 64 + ~half height)
+// wrackdm17 arena (origin-centred above the clouds; bspMesh PLACE floor 64, footprint ~100u). The
+// finale tours it: rise in from the LEFT, fly DOWN THE MIDDLE, then BOUNCE around like the jump pads.
+const ARENA_HALF = 48.0; // footprint half-extent (tune to the real long axis)
+const ARENA_EYE = 74.0;  // camera height while touring (floor 64, structures up to ~92)
+const ARENA_LOOK = 76.0; // look height — the central structures
 const TWO_PI = Math.PI * 2.0;
 // Output smoothing of the AUTO camera: a critically-damped spring on the final position + look
 // angles smooths both the value AND its derivative, so path/blend/look-offset velocity kinks and
@@ -172,23 +177,32 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           spz = Math.sin(wang) * wr;
           stx = 0; sty = 0; stz = 0;                            // look at the centre -> ends looking up
         } else {
-          // Climb up out of the field, rise ABOVE THE CLOUDS, and settle looking out at the horizon
-          // (a calm, held final shot — no more fly-through-the-middle).
+          // Approach + tour the wrackdm17 arena. Continuous with the wide-orbit's bottom-centre end.
+          // Phase A: rise in from the LEFT (-x). B: fly DOWN THE MIDDLE (left->centre->right, look
+          // ahead). C: BOUNCE around the arena like the jump pads, settling on the central structures.
           const fp = clamp((introT - FLYUP_START) / (FLYUP_END - FLYUP_START), 0, 1);
-          const fpe = smooth(fp);
-          const ang = 2.0 + fpe * 1.1;                          // a gentle outward arc while climbing
-          const outR = WIDE_R * 1.15 * fpe;                     // ease out from centre (fp=0 = the wide-orbit's bottom-centre)
-          spx = Math.cos(ang) * outR;
-          spy = -sphereR * 1.3 + (CLOUD_OVER + sphereR * 1.3) * fpe; // the bottom (-1.3R) up to above the clouds
-          spz = Math.sin(ang) * outR;
-          // GRADUALLY pan the look: keep watching the object field while we climb up THROUGH it, then
-          // ease UP to the wrackdm17 level (it floats above the deck at the origin) as we clear the
-          // cloud-tops — so emerging above the clouds reveals the level, not empty sky. lookT 0 =
-          // field centre, 1 = the floating level.
-          const lookT = smooth(clamp((fp - 0.62) / 0.33, 0, 1)); // pan up to the level LATER (was 0.45 -> blended too early)
-          stx = 0.0;             // the level sits over the origin...
-          sty = MAP_LOOK_Y * lookT; // ...so pan up from the field centre to it
-          stz = 0.0;
+          const startY = -sphereR * 1.3; // = the wide-orbit's end, so fp=0 is seamless
+          if (fp < 0.4) {
+            const a = smooth(fp / 0.4);                         // rise from the bottom to the arena's left side
+            spx = -ARENA_HALF * 1.5 * a;
+            spy = startY + (ARENA_EYE - startY) * a;
+            spz = 0.0;
+            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;             // watch the arena as it approaches from the left
+          } else if (fp < 0.7) {
+            const a = smooth((fp - 0.4) / 0.3);                 // down the middle: left -> centre -> right
+            spx = -ARENA_HALF * 1.5 + ARENA_HALF * 2.4 * a;
+            spy = ARENA_EYE + Math.sin(a * Math.PI) * 8.0;      // a gentle rise over the centre
+            spz = 0.0;
+            stx = spx + 24.0; sty = ARENA_LOOK; stz = 0.0;      // look AHEAD down the middle (no look-at-centre degeneracy)
+          } else {
+            const a = smooth((fp - 0.7) / 0.3);                 // bounce around the pads, then settle
+            const r = ARENA_HALF * 0.9;                          // = phase-B end x, so the handoff is seamless
+            const settle = 1.0 - smooth(clamp((a - 0.65) / 0.35, 0, 1)); // ease the hops to a stop at the very end
+            spx = Math.cos(a * TWO_PI) * r;
+            spz = Math.sin(a * TWO_PI) * r;
+            spy = ARENA_EYE + Math.abs(Math.sin(a * 3.0 * Math.PI)) * 16.0 * settle; // ~3 jump-pad hops
+            stx = 0.0; sty = ARENA_LOOK; stz = 0.0;             // keep the central structure framed
+          }
         }
         const fb = smooth(clamp((introT - FINALE_START) / 6.0, 0, 1)); // ease the fly -> finale handoff
         px += (spx - px) * fb; py += (spy - py) * fb; pz += (spz - pz) * fb;
