@@ -57,8 +57,8 @@ class CloudPass extends Pass {
       uCloudLightCount: shared.uCloudLightCount, uCloudLightCap: shared.uCloudLightCap,
       uCloudLightGain: shared.uCloudLightGain, uMoonStrength: shared.uMoonStrength,
       uOceanOn: shared.uOceanOn, uOceanY: shared.uOceanY, uOceanColor: shared.uOceanColor,
-      uOceanScatter: shared.uOceanScatter, uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave,
-      uOceanFreq: shared.uOceanFreq,
+      uOceanScatter: shared.uOceanScatter, uOceanScatterAmt: shared.uOceanScatterAmt,
+      uOceanFog: shared.uOceanFog, uOceanWave: shared.uOceanWave, uOceanFreq: shared.uOceanFreq,
       uOceanFoam: shared.uOceanFoam, uOceanFoamThresh: shared.uOceanFoamThresh, uOceanOctaves: shared.uOceanOctaves,
       uStarCube: shared.uStarCube, uReflCloudSteps: shared.uReflCloudSteps,
       uOceanReflTex: shared.uOceanReflTex, uOceanReflOn: shared.uOceanReflOn,
@@ -159,7 +159,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 1.0, foamThresh: 0.65, distort: 0.35, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
+  const oceanDefaults = { on: true, y: -48, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.006, wave: 1.0, freq: 0.04, foam: 1.0, foamThresh: 0.65, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -256,6 +256,7 @@ export function createWebGLBackend({
     uOceanY: { value: oceanDefaults.y },
     uOceanColor: { value: new THREE.Color(oceanDefaults.color) },
     uOceanScatter: { value: new THREE.Color(oceanDefaults.scatter) },
+    uOceanScatterAmt: { value: oceanDefaults.scatterAmt },
     uOceanFog: { value: oceanDefaults.fog },
     uOceanWave: { value: oceanDefaults.wave },
     uOceanFreq: { value: oceanDefaults.freq },
@@ -419,6 +420,7 @@ export function createWebGLBackend({
       uniforms.uOceanY.value = p.y;
       uniforms.uOceanColor.value.set(p.color);
       uniforms.uOceanScatter.value.set(p.scatter);
+      if (p.scatterAmt !== undefined) uniforms.uOceanScatterAmt.value = p.scatterAmt;
       uniforms.uOceanFog.value = p.fog;
       uniforms.uOceanWave.value = p.wave;
       if (p.freq !== undefined) uniforms.uOceanFreq.value = p.freq;

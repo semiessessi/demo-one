@@ -9,7 +9,8 @@
 uniform float uOceanOn;     // 0/1 master switch
 uniform float uOceanY;      // plane altitude (world y)
 uniform vec3  uOceanColor;  // deep-water tint
-uniform vec3  uOceanScatter;// subsurface-scatter colour (crest glow)
+uniform vec3  uOceanScatter;// subsurface-scatter colour (water body glow)
+uniform float uOceanScatterAmt; // multiple-scattering strength (fills the water with colour)
 uniform float uOceanFog;    // aerial-perspective fade into the horizon (per world unit)
 uniform float uOceanWave;   // wave steepness scale
 uniform float uOceanFreq;   // base wave frequency (bigger = shorter, choppier waves)
@@ -102,23 +103,33 @@ vec3 ocean(vec3 ro, vec3 rd, float t, vec2 uv) {
   }
   float fres = clamp(0.02 + 0.98 * pow(1.0 - max(dot(view, n), 0.0), 5.0), 0.0, 1.0);
 
-  // GGX moon glints on the wave facets (sharp sparkle along the moon path).
-  vec3 Hh = normalize(view + uSunDir);
-  float spec = ggxD(max(dot(n, Hh), 0.0), 0.13) * max(uSunDir.y, 0.0); // softer glints (less FFT-normal aliasing)
-  // Subsurface scatter: moonlight transmitting through the wave crests (Atlas/Acerola model) — a teal
-  // glow strongest on the back of tall waves toward the moon, plus a soft ambient term.
-  float crest = max(h, 0.0);
-  float sss = crest * pow(max(dot(uSunDir, -view), 0.0), 4.0) * pow(max(0.5 - 0.5 * dot(uSunDir, n), 0.0), 3.0)
-            + crest * 0.2 * max(dot(view, n), 0.0);
-  sss *= max(uSunDir.y, 0.0);
+  // --- Water shading: the Atlas/Acerola multiple-scattering model (GarrettGunnell/Water FFTWater). ---
+  vec3 L = uSunDir;
+  vec3 sunIrr = uSunColor * uMoonStrength;
+  float H = max(h, 0.0);                                 // wave height above mean (crest scatter)
+  float ndotl = max(dot(n, L), 0.0);
+  float lit = max(L.y, 0.0);                              // no moon contribution below the horizon
+  // Subsurface / multiple scattering: k1 = peak backscatter toward the moon, k2 = view-dependent body
+  // glow that fills the water with colour (the term that was missing), k3 = ambient diffuse scatter.
+  float k1 = uOceanScatterAmt * 4.0 * H * pow(max(dot(L, -view), 0.0), 4.0) * pow(max(0.5 - 0.5 * dot(L, n), 0.0), 3.0);
+  float k2 = uOceanScatterAmt * 1.2 * pow(max(dot(view, n), 0.0), 2.0);
+  float k3 = uOceanScatterAmt * 0.3 * ndotl;
+  vec3 scatter = (k1 + k2 + k3) * uOceanScatter * sunIrr * lit;
+  scatter += uOceanColor + uOceanColor * environment(n) * 6.0; // deep-water base + sky-ambient fill (less empty)
 
-  vec3 water = uOceanColor * (0.5 + 0.5 * max(n.y, 0.0)) + uOceanScatter * uSunColor * sss * 4.0;
-  vec3 col = mix(water, reflCol, fres) + uSunColor * uMoonStrength * spec * fres * 3.0 * fade;
+  // Cook-Torrance-ish GGX moon glints on the wave facets.
+  vec3 Hh = normalize(view + L);
+  float spec = ggxD(max(dot(n, Hh), 0.0), 0.13) * lit;
+  vec3 specular = sunIrr * spec * fres * 3.0 * fade;
 
-  // Jacobian foam: whitecaps where the choppy displacement folds (det J below the threshold). Soft,
-  // distance-faded, moonlit — no noise texture.
+  // Compose: transmitted body (1-F)·scatter + microfacet specular + Fresnel-weighted sky reflection.
+  vec3 col = (1.0 - fres) * scatter + specular + fres * reflCol;
+
+  // Jacobian foam (bubbles) where the choppy displacement folds: roughen + blend to foam colour. Soft,
+  // distance-faded, lit by moon + ambient — no noise texture.
   float foam = smoothstep(uOceanFoamThresh, uOceanFoamThresh - 0.45, jac) * uOceanFoam * fade;
-  col = mix(col, vec3(0.74, 0.82, 0.86) * (0.4 + 0.6 * max(uSunDir.y, 0.0)), clamp(foam, 0.0, 1.0));
+  vec3 foamCol = vec3(0.78, 0.85, 0.9) * (0.25 + 0.75 * lit + 0.15);
+  col = mix(col, foamCol, clamp(foam, 0.0, 1.0));
 
   return mix(col, environment(rd), clamp(1.0 - exp(-tHit * uOceanFog), 0.0, 1.0));
 }
