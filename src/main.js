@@ -172,10 +172,17 @@ let beatTickCounter = 0; // marches beat-sample pulses (basstick/thumper) throug
 // pitch proxy toward the sample-length factor over the first DECAY_FADE_SECS of play.
 let instrumentDur = null;
 let instrumentNames = null;
+let instrumentBoost = null; // per-instrument beat-pulse kind: 0 none, 1 basstick (early), 2 thumper (later)
 const DECAY_FADE_SECS = 30;
 try {
   const sdWorker = new Worker(new URL('./sampleDurations.worker.js', import.meta.url), { type: 'module' });
-  sdWorker.onmessage = (e) => { instrumentDur = e.data.dur; instrumentNames = e.data.names; sdWorker.terminate(); }; // one-shot: free the worker once it has posted the durations
+  sdWorker.onmessage = (e) => {
+    instrumentDur = e.data.dur;
+    instrumentNames = e.data.names;
+    // Classify each instrument once (was a per-beat label.includes() in the hot updateMusic loop).
+    instrumentBoost = instrumentNames.map((n) => (n.includes('basstick') ? 1 : n.includes('thumper') ? 2 : 0));
+    sdWorker.terminate(); // one-shot: free the worker once it has posted the durations
+  };
 } catch (e) { /* enhancement only — stays on the pitch proxy */ }
 // Flash on REAL tracker note-ons (no FFT): audio.js reads the .it's note column per
 // channel and folds the channels into N_BANDS slots. A note-on stamps that slot's beat;
@@ -213,13 +220,11 @@ function updateMusic(dt) {
   // "thumper" is an important later beat. Each hit pulses a different slot (scrambled %32 march)
   // with a fresh light subset, so a long, non-repeating set of lights reacts to the beat.
   const tickBoost = musicClock < 12 ? 1 : (musicClock > 15 ? 0 : 1 - (musicClock - 12) / 3);
-  if (instrumentNames) {
+  if (instrumentBoost) {
     for (let b = 0; b < N_BANDS; b++) {
       if (!slotNote[b]) continue;
-      const label = instrumentNames[slotInst[b]] || '';
-      let boost = 0;
-      if (label.includes('basstick')) boost = tickBoost; // early-focused
-      else if (label.includes('thumper')) boost = 1.0;    // important throughout (plays later)
+      const kind = instrumentBoost[slotInst[b]] || 0; // 1 basstick (early-focused), 2 thumper (throughout)
+      const boost = kind === 1 ? tickBoost : kind === 2 ? 1.0 : 0;
       if (boost > 0) {
         const target = (beatTickCounter * 13) % N_BANDS; // scrambled march through the slots
         beatTickCounter++;
@@ -342,7 +347,19 @@ if (!CAPTURE && !TEST) {
   // Start playing on the first gesture, then resume the audio context on EVERY gesture until it's
   // actually running — iOS needs the resume() inside a tap, and a single autostart-created context
   // stays suspended, so one-shot handlers (and the prior `kicked` guard) left iPad silent on tap.
-  const kickoff = () => { if (!playing) setPlaying(true); audio.resumeContext(); };
+  // If the browser blocked autoplay, the demo has been running SILENTLY (synthetic beats) and is
+  // already past its opening. The first gesture is what unlocks sound — so restart the whole demo
+  // from the top WITH sound, so the music always lines up with the same parts of the visuals.
+  // Once sound is actually playing (autoplay worked, or a gesture already unlocked it), later
+  // gestures leave the running demo alone.
+  let soundUnlocked = false;
+  const kickoff = () => {
+    audio.resumeContext(); // iOS: must run inside the gesture; no-op once the context is running
+    if (soundUnlocked) return;
+    if (audio.isRunning) { soundUnlocked = true; return; } // autoplay already gave us synced sound
+    soundUnlocked = true;
+    setPlaying(true); // restart from the top with sound -> music + visuals in sync
+  };
   ['pointerdown', 'touchstart', 'click', 'keydown', 'wheel'].forEach((ev) =>
     window.addEventListener(ev, kickoff, { passive: true }));
   setTimeout(() => { if (!playing) setPlaying(true); }, 600); // autostart promptly, right behind the fade
