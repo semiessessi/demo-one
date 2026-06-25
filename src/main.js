@@ -620,6 +620,15 @@ function frame() {
   }
   backend.render();
   reveal(); // first frame is on screen — start the fade-up from black
+  // TEMP (demo ending): once the finale has done its first 5 jump-pad bounces, fade the music down
+  // and the screen to black over 7s (flycam.endFade is the 0..1 ramp). Remove to restore the loop.
+  if (!CAPTURE) {
+    const ef = backend.endFade ? backend.endFade() : 0;
+    if (ef > 0) {
+      audio.setVolume((volume.value / 100) * (1 - ef));
+      if (fadeEl) { fadeEl.style.transition = 'none'; fadeEl.style.opacity = String(ef); }
+    }
+  }
   debugFrameHook?.(); // live moon-elevation readout (localhost debug GUI only)
 
   // Measure real frame time.

@@ -32,6 +32,11 @@ const FLYUP_END = 138.0;
 // (everything keys off the spawn fade), applied in main.js via fieldFade().
 const FIELD_CLEAR_START = FLYUP_START + 14.0; // ~124s — during the climb, as the look pans up to the level
 const FIELD_CLEAR_DUR = 11.0;
+// TEMP (demo ending): after the finale's first 5 jump-pad bounces, fade music + screen to black over 7s.
+const ARENA_ENTRY = 8.0;   // seconds rising onto the first pad (shared with the bounce loop below)
+const ARENA_HOP = 1.7;     // seconds per pad-to-pad hop (shared with the bounce loop below)
+const END_FADE_START = FLYUP_START + ARENA_ENTRY + 5 * ARENA_HOP; // 126.5s — once the 5th bounce completes
+const END_FADE_DUR = 7.0;
 const CLOUD_OVER = 88.0; // final camera height — above the cloud layer (cloudDefaults base 24 + thick 32 ≈ top 56)
 const MAP_LOOK_Y = 92.0; // the finale settles looking back at the wrackdm17 level floating above the deck (bspMesh PLACE.floorY 64 + ~half height)
 // wrackdm17 arena (origin-centred above the clouds; bspMesh PLACE floor 64, footprint ~100u). The
@@ -188,9 +193,9 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
           // (a continuous loop) on parabolic arcs toward each pad's real launch apex.
           const pads = arenaPads, N = pads.length;
           const startY = -sphereR * 1.3;  // = the wide-orbit's bottom-centre end -> seamless at the handoff
-          const ENTRY = 8.0;              // seconds rising up onto the first pad
+          const ENTRY = ARENA_ENTRY;      // seconds rising up onto the first pad
           const EYE = 5.0;                // camera height above a pad surface
-          const HOP = 1.7;                // seconds per pad-to-pad hop
+          const HOP = ARENA_HOP;          // seconds per pad-to-pad hop
           const tIn = introT - FLYUP_START;
           const p0 = pads[0], p1 = pads[1 % N];
           if (tIn < ENTRY) {
@@ -324,7 +329,9 @@ export function createFlyCam(domElement, introTarget, sphereR = 30) {
   // 0..1 ramp over the finale climb -> main.js scales uSpawn down by it, shrinking the field out
   // (the inverse of the spawn-in). Frozen in free/hold (introT not advancing) so manual flight keeps it.
   function fieldFade() { return clamp((introT - FIELD_CLEAR_START) / FIELD_CLEAR_DUR, 0, 1); }
-  return { update, setPose, startIntro, setMusicLevel, setArenaPads, fieldFade, dispose };
+  // TEMP (demo): 0..1 eased ramp over 7s after the finale's 5th bounce -> main.js fades music + screen to black.
+  function endFade() { return smooth(clamp((introT - END_FADE_START) / END_FADE_DUR, 0, 1)); }
+  return { update, setPose, startIntro, setMusicLevel, setArenaPads, fieldFade, endFade, dispose };
 }
 
 // Sample the intro camera trajectory — the orbit spiral around `focal` (introT 0..ORBIT_DUR)

@@ -606,6 +606,7 @@ export function createWebGLBackend({
     },
     startIntro() { flycam?.startIntro(); },
     fieldFade: () => flycam ? flycam.fieldFade() : 0, // finale: 0..1 ramp to shrink the object field out
+    endFade: () => flycam ? flycam.endFade() : 0,     // finale: 0..1 ramp (after 5th bounce) -> fade music + screen to black
 
     setSize(w, h) {
       camera.aspect = w / h;
