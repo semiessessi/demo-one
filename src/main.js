@@ -446,6 +446,7 @@ if (isLocalhost) {
   clf.add(clParams, 'moonSize', 0, 20, 0.5).name('moon size').onChange(applyCloudLight);
   // God rays + silver-lining + per-channel tint (mean ~1 -> R>B = warm thin edges, cool depth).
   const grf = clf.addFolder('god rays + tint');
+  grf.add(clParams, 'godrays').name('god rays ON').onChange(applyCloudLight); // OFF by default (looked bad over the sea)
   grf.add(clParams, 'godrayStrength', 0, 0.3, 0.005).name('god rays').onChange(applyCloudLight);
   grf.add(clParams, 'godrayDecay', 0.005, 0.1, 0.005).name('god ray reach').onChange(applyCloudLight);
   grf.add(clParams, 'hgBack', 0, 0.9, 0.01).name('silver back').onChange(applyCloudLight);

@@ -184,12 +184,20 @@ export function createWebGLBackend({
   // Cloud moonlight defaults (the rich-lighting key light); colour is a cool pale moon.
   // sunAzim 270 + low sunElev put the risen moon on the horizon in the finale's look direction (it
   // settles looking out at ~azimuth 272). moonSize larger so the disc reads.
-  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, hgBack: 0.2, backMix: 0.35, powder: 0.7, moonStrength: 0.5, lightScatter: 3.0, moonSize: 10.0, extR: 1.06, extG: 1.0, extB: 0.94, godrayStrength: 0.04, godrayDecay: 0.02 };
+  const cloudLightDefaults = { sunElev: 12, sunAzim: 270, sunIntensity: 0.5, ambient: 0.5, hg: 0.5, hgBack: 0.2, backMix: 0.35, powder: 0.7, moonStrength: 0.5, lightScatter: 3.0, moonSize: 10.0, extR: 1.06, extG: 1.0, extB: 0.94, godrays: false, godrayStrength: 0.04, godrayDecay: 0.02 };
   const MOON_BASE = new THREE.Color(0.75, 0.82, 1.0);
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
   const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.001, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 16, reflect: !lowGfx, relief: !lowGfx, cloudRefl: true };
+  // Quality state + per-feature toggles (GUI) that OVERRIDE the autoscaler. Declared up here because
+  // the setters below (setCloudLight/setOcean) are CALLED during setup and reference them.
+  let oceanReflQuality = !lowGfx;   // planar reflection gate (off on mobile — a 2nd scene render)
+  let oceanReflWanted = !lowGfx;    // planar reflection toggle
+  let oceanDispWanted = !lowGfx;    // wave relief (displacement) toggle
+  let oceanReflCloudWanted = true;  // clouds-in-reflection toggle
+  let godRayWanted = false;         // god-ray shafts — DISABLED for now (ugly over the sea at high quality); GUI re-enables
+  let lastS = 1;                    // last qualityScale, so a toggle re-applies instantly
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -336,6 +344,8 @@ export function createWebGLBackend({
     uniforms.uCloudExtinction.value.set(p.extR, p.extG, p.extB);
     uniforms.uGodRayStrength.value = p.godrayStrength;
     uniforms.uGodRayDecay.value = p.godrayDecay;
+    if (p.godrays !== undefined) godRayWanted = !!p.godrays; // re-apply steps now (autoscaler honours the flag too)
+    uniforms.uGodRaySteps.value = godRayWanted ? Math.max(0, Math.round(16 * Math.max(0, (lastS - 0.45) / 0.55))) : 0;
     uniforms.uCloudPowder.value = p.powder;
     uniforms.uMoonStrength.value = p.moonStrength;
     uniforms.uCloudLightGain.value = p.lightScatter;
@@ -400,13 +410,6 @@ export function createWebGLBackend({
   const reflCam = new THREE.PerspectiveCamera();
   reflCam.matrixAutoUpdate = false;
   const reflMat = new THREE.Matrix4();
-  let oceanReflQuality = !lowGfx; // gated by setQualityScale; off on mobile (a 2nd scene render)
-  // Per-feature WATER toggles (localhost GUI) that OVERRIDE the autoscaler — flip each to find the
-  // one that looks ugly at high quality. lastS lets a toggle re-apply instantly at the current scale.
-  let oceanReflWanted = !lowGfx;    // planar reflection (mirrored scene in the sea)
-  let oceanDispWanted = !lowGfx;    // wave relief (heightfield displacement)
-  let oceanReflCloudWanted = true;  // clouds marched inside the sea's reflection
-  let lastS = 1;
   // uOceanReflTex stays the placeholder until render() points it at reflRT.texture AFTER first drawing it.
 
   const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
@@ -583,7 +586,7 @@ export function createWebGLBackend({
       uniforms.uReflCap.value = Math.max(4, Math.round(48 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(96 * s));
       uniforms.uMaterialDetail.value = lowGfx ? 0 : Math.min(1, Math.max(0, (s - 0.35) / 0.3)); // procedural material detail — off on mobile/low, full by s~0.65
-      uniforms.uGodRaySteps.value = Math.max(0, Math.round(16 * low)); // god rays are a bonus -> shed EARLY (before object quality)
+      uniforms.uGodRaySteps.value = godRayWanted ? Math.max(0, Math.round(16 * low)) : 0; // god rays (toggle); shed EARLY when on
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first
