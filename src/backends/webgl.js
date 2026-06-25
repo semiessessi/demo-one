@@ -189,7 +189,7 @@ export function createWebGLBackend({
   const starDefaults = { size: 2.0, twinkle: 0.4 };
   // Ocean ground: a wavy reflective sea well below the world (object field bottoms at ~-34).
   // Mobile LOD: fewer wave octaves + no planar reflection (a 2nd scene render) on lowGfx devices.
-  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.001, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 16 };
+  const oceanDefaults = { on: true, y: -62, color: 0x05161e, scatter: 0x1a5a4a, fog: 0.001, wave: 0.15, freq: 0.08, foam: 0.05, foamThresh: 0.8, crestFoam: 0.35, distort: 0.35, scatterAmt: 1.0, octaves: lowGfx ? 4 : 11, fft: !!oceanFFT, disp: lowGfx ? 0 : 16, reflect: !lowGfx, relief: !lowGfx, cloudRefl: true };
 
   // The N cloud-relevant lights, re-picked + re-packed each frame for the cloud march's coloured
   // in-scatter: each frame the nearest/brightest band lights are packed with their orbiting position
@@ -401,6 +401,12 @@ export function createWebGLBackend({
   reflCam.matrixAutoUpdate = false;
   const reflMat = new THREE.Matrix4();
   let oceanReflQuality = !lowGfx; // gated by setQualityScale; off on mobile (a 2nd scene render)
+  // Per-feature WATER toggles (localhost GUI) that OVERRIDE the autoscaler — flip each to find the
+  // one that looks ugly at high quality. lastS lets a toggle re-apply instantly at the current scale.
+  let oceanReflWanted = !lowGfx;    // planar reflection (mirrored scene in the sea)
+  let oceanDispWanted = !lowGfx;    // wave relief (heightfield displacement)
+  let oceanReflCloudWanted = true;  // clouds marched inside the sea's reflection
+  let lastS = 1;
   // uOceanReflTex stays the placeholder until render() points it at reflRT.texture AFTER first drawing it.
 
   const cloudPass = new CloudPass(uniforms); // composites clouds over the scene (reads sceneRT each frame)
@@ -490,6 +496,15 @@ export function createWebGLBackend({
       if (p.disp !== undefined) uniforms.uOceanDisp.value = p.disp;
       if (p.distort !== undefined) uniforms.uOceanReflDistort.value = p.distort;
       if (p.fft !== undefined && oceanFFT) { fftWanted = !!p.fft; uniforms.uOceanFFTOn.value = fftWanted ? 1 : 0; }
+      // Per-feature water TOGGLES (override the autoscaler). Re-apply at the current scale so they
+      // take effect immediately (whether the autoscaler is on or off).
+      if (p.reflect !== undefined) oceanReflWanted = !!p.reflect;
+      if (p.relief !== undefined) oceanDispWanted = !!p.relief;
+      if (p.cloudRefl !== undefined) oceanReflCloudWanted = !!p.cloudRefl;
+      const low = Math.max(0.0, (lastS - 0.45) / 0.55);
+      oceanReflQuality = oceanReflWanted && lastS > 0.4;
+      uniforms.uOceanDisp.value = (oceanDispWanted && !lowGfx) ? Math.round(16 * low) : 0;
+      uniforms.uReflCloudSteps.value = oceanReflCloudWanted ? Math.max(5, Math.round(8 * (0.6 + 0.4 * lastS))) : 0;
     },
     setFFTMode(m) { if (oceanFFT) uniforms.uOceanFFTOn.value = m; }, // 0 analytic, 1 FFT, 2 debug height
     setFFTScale(v) { if (oceanFFT) oceanFFT.setScale(v); },
@@ -560,9 +575,10 @@ export function createWebGLBackend({
       // The ocean is the hero now, so PROTECT it: shed the map shadows/lights + cloud-light in-scatter
       // FIRST (low), keep object/cloud quality in the middle, and degrade the ocean (FFT + its cloud
       // reflection + planar) only at the very bottom of the range -> the sea stays detailed under load.
+      lastS = s; // remember for instant toggle re-apply in setOcean
       const low = Math.max(0.0, (s - 0.45) / 0.55); // hits 0 by s=0.45 (first to go)
       uniforms.uCloudSteps.value = Math.max(12, Math.round(64 * s));
-      uniforms.uReflCloudSteps.value = Math.max(5, Math.round(8 * (0.6 + 0.4 * s))); // clouds in reflections — lighter (was 12)
+      uniforms.uReflCloudSteps.value = oceanReflCloudWanted ? Math.max(5, Math.round(8 * (0.6 + 0.4 * s))) : 0; // clouds in reflections (toggle)
       uniforms.uShadowCap.value = Math.max(2, Math.round(12 * s));
       uniforms.uReflCap.value = Math.max(4, Math.round(48 * s));
       uniforms.uLightCap.value = Math.max(8, Math.round(96 * s));
@@ -571,8 +587,8 @@ export function createWebGLBackend({
       uniforms.uCloudLightCap.value = Math.max(4, Math.round(48 * low));   // cloud-light in-scatter — shed first
       uniforms.uMapShadowCap.value = mapShadowsOn ? Math.max(4, Math.round(uniforms.uMapBrushCount.value * low)) : 0; // raytraced map shadows — shed first
       uniforms.uMapLightCap.value = Math.max(8, Math.round(80 * low));     // map lights — shed first
-      uniforms.uOceanDisp.value = lowGfx ? 0 : Math.round(16 * low); // sea relief is a bonus -> shed EARLY (before object quality); off on mobile
-      oceanReflQuality = !lowGfx && s > 0.4;  // planar ocean reflection — protected (was 0.6)
+      uniforms.uOceanDisp.value = (oceanDispWanted && !lowGfx) ? Math.round(16 * low) : 0; // wave relief (toggle); off on mobile
+      oceanReflQuality = oceanReflWanted && s > 0.4;  // planar ocean reflection (toggle)
       if (oceanFFT) uniforms.uOceanFFTOn.value = (fftWanted && s > 0.2) ? 1 : 0; // FFT shed only at the very bottom (was 0.5)
     },
     mapDefaults,

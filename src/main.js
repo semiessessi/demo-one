@@ -479,6 +479,10 @@ if (isLocalhost) {
   const of = debugGui.addFolder('ocean');
   of.add(oceanParams, 'on').name('ocean').onChange(applyOcean);
   if (backend.hasFFT) of.add(oceanParams, 'fft').name('FFT waves').onChange(applyOcean);
+  // Per-feature toggles to isolate the ugly high-quality water effect (override the autoscaler).
+  of.add(oceanParams, 'reflect').name('planar reflection').onChange(applyOcean);
+  of.add(oceanParams, 'relief').name('wave displacement').onChange(applyOcean);
+  of.add(oceanParams, 'cloudRefl').name('cloud reflections').onChange(applyOcean);
   of.add(oceanParams, 'y', -200, 20, 1).name('sea level').onChange(applyOcean);
   of.add(oceanParams, 'wave', 0, 4, 0.05).name('wave height').onChange(applyOcean);
   of.add(oceanParams, 'freq', 0.02, 0.4, 0.005).name('wave freq').onChange(applyOcean);
