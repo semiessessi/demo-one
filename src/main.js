@@ -636,7 +636,7 @@ function frame() {
   lastNow = t;
   // FPS autoscaler: hold the target fps by shedding the heaviest work (cloud steps + shadow/
   // reflection/light caps) when slow, restoring it when there's headroom.
-  if (perf.auto && t - lastQAdjust > 500) {
+  if (perf.auto && t - lastQAdjust > 100) {
     lastQAdjust = t;
     // Prefer the GPU timer (finer than vsync) so we can target >60 with vsync on; otherwise fall back
     // to the wall clock, whose target is capped at 60 (it can never read higher than the refresh rate).
@@ -644,9 +644,14 @@ function frame() {
     const useGpu = gpuMs > 0.05;
     const fps = 1000 / (useGpu ? gpuMs : emaMs);
     const target = useGpu ? perf.targetFps : Math.min(perf.targetFps, 60);
-    if (fps < target - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.18 : 0.12));
-    else if (fps > target + 8) qualityScale = Math.min(QUALITY_MAX, qualityScale + 0.06); // climb past 1.0 to enrich when there's headroom
-    backend.setQualityScale(qualityScale);
+    // Sampled at ~100ms (was 500ms) for snappier response, with the per-tick step cut ~5x so the slew
+    // rate is unchanged — finer granularity means it settles smoothly instead of stepping in big jumps.
+    // The target-6 .. target+8 dead-zone is the hysteresis that stops it oscillating; only re-apply the
+    // uniforms when the scale actually moved so the 10Hz tick is otherwise free.
+    const prev = qualityScale;
+    if (fps < target - 6) qualityScale = Math.max(isMobile ? 0.12 : 0.3, qualityScale - (isMobile ? 0.036 : 0.024));
+    else if (fps > target + 8) qualityScale = Math.min(QUALITY_MAX, qualityScale + 0.012); // climb past 1.0 to enrich when there's headroom
+    if (qualityScale !== prev) backend.setQualityScale(qualityScale);
   }
   if (statsOn) {
     statsAcc += 1;
